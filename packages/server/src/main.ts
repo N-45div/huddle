@@ -71,6 +71,14 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   if (!llmUrl || !llmModel) console.log('  "Describe it" is off: set HUDDLE_LLM_URL and HUDDLE_LLM_MODEL to turn it on.');
 });
 
+server.on("error", (error: NodeJS.ErrnoException) => {
+  if (error.code === "EADDRINUSE") console.error(`Port ${port} is already in use (another Huddle?). Stop it, or set HUDDLE_PORT to a free port.`);
+  else if (error.code === "EACCES") console.error(`Huddle isn't allowed to listen on ${host}:${port}. Pick a port above 1024 with HUDDLE_PORT.`);
+  else console.error(error);
+  store.close();
+  process.exit(1);
+});
+
 function shutdown(): void {
   scheduler.stop();
   server.close(() => {
