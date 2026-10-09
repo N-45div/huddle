@@ -83,7 +83,8 @@ export class Router {
   async answer(request: { readonly model?: string; readonly models?: readonly string[]; readonly ask: string }): Promise<Routed> {
     const models = request.models ?? [];
     if (request.model !== AUTO) return this.ask([...new Set([...(request.model ? [request.model] : []), ...models])], request.ask);
-    const yours = this.store.assistants();
+    // "auto" never picks one that sends email: mail goes out when a flow's approval says so, or when you name it.
+    const yours = this.store.assistants().filter((assistant) => assistant.connector !== "email");
     const pool = models.length ? yours.filter((assistant) => models.includes(assistant.id)) : yours;
     if (pool.length === 0) throw new NoAnswer([{ id: AUTO, error: "There's no assistant to choose from yet: add some first." }]);
     let route: RouteInfo;

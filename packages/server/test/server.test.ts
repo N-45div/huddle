@@ -516,6 +516,14 @@ describe("the router (OpenAI-compatible)", () => {
     assert.match(models.data[0].description, /judged by jev/);
   });
 
+  it('never lets "auto" pick an assistant that sends email', async () => {
+    const { app, store } = routed();
+    store.saveAssistants([Assistant.parse({ id: "mail", connector: "email", to: ["asha@example.com"], from: "huddle@mydomain.com" }), Assistant.parse(mine[2])]);
+    const reply = await (await app.request("/v1/chat/completions", chat({ model: "auto", messages: [{ role: "user", content: "Email Asha that I'm late" }] }))).json();
+    assert.equal(reply.model, "local", "first in your list, but it sends email: skipped");
+    assert.equal(store.runs(10).length, 1);
+  });
+
   it("counts each assistant's calls, failures and time to answer, for the Assistants page", async () => {
     const { app, store } = routed({ token: TOKEN });
     store.saveAssistants(mine.map((one) => Assistant.parse(one)));
