@@ -5,7 +5,7 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
   {
     id: "openclaw",
     name: "OpenClaw",
-    description: "OpenClaw through its A2A channel. Turn on channels.a2a in OpenClaw and give Huddle a peer token.",
+    description: "OpenClaw through its A2A channel. Turn on channels.a2a in OpenClaw with a peer token for Huddle; it's needed even on the same machine.",
     fields: [
       { key: "url", label: "Address", required: false, placeholder: "http://127.0.0.1:18789" },
       { key: "keyEnv", label: "Token variable", required: false, placeholder: "OPENCLAW_A2A_TOKEN" },
@@ -14,7 +14,7 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
   {
     id: "hermes",
     name: "Hermes Agent",
-    description: "Hermes Agent through its A2A gateway (port 9900). No token is needed on the same machine.",
+    description: "Hermes Agent through its A2A gateway (port 9900). No token on the same machine; in Docker or elsewhere, set A2A_PEER_TOKENS and A2A_TRUSTED_PEERS in Hermes and the same token here.",
     fields: [
       { key: "url", label: "Address", required: false, placeholder: "http://127.0.0.1:9900" },
       { key: "keyEnv", label: "Token variable", required: false, placeholder: "HERMES_A2A_TOKEN" },
