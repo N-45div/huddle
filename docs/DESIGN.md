@@ -58,6 +58,7 @@ message or the command line can answer them.
 | `a2a` | A2A 1.0 JSON-RPC: the endpoint comes from the agent's card (`/.well-known/agent-card.json`), or is the url itself; `SendMessage`, then `GetTask` until the task completes, fails, or needs input or auth. A task that needs something comes back with that `state` for a flow to branch on |
 | `openclaw`, `hermes` | `a2a` with their usual local address (`127.0.0.1:18789`, `127.0.0.1:9900`) and token variable (`OPENCLAW_A2A_TOKEN`, `HERMES_A2A_TOKEN`) filled in |
 | `openai` | `POST <url>/v1/chat/completions` (or the full chat URL), memory as a system note; a plain reply with no task to follow |
+| `openshell` | runs the assistant's `command` in its OpenShell sandbox (`agentId`) through the gateway's `ExecSandbox` gRPC call, the request on stdin (or in place of `{{ask}}`); a non-zero exit is an error with the end of its stderr. Talks to the gateway with the vendored protobuf files and the CLI's mTLS certificate |
 | `ollama` | Ollama's own `POST <url>/api/chat` with `stream: false` (default `http://127.0.0.1:11434`; `https://ollama.com` with a key), memory as a system note; a model that isn't pulled says how to pull it. The server lists the models (`GET <url>/api/tags`) for the canvas |
 | `sochen` | Sochen's Agent API (`POST https://sochen.dev/api/v1/run`), with a key from the environment |
 | `homeassistant` | `POST <url>/api/conversation/process` with a long-lived token (`HASS_TOKEN`); no memory sent, since Assist matches plain commands; an "error" answer stops the flow |
@@ -90,6 +91,14 @@ Over A2A, a task is a run. `SendMessage` starts the flow named in the message's 
 one) and waits until the run ends or stops for an approval. The task's state follows the run: `running`
 and `waiting` are working, `done` is completed (the run's last answer is the artifact), `declined` is
 rejected, `failed` is failed. Only runs started over A2A can be read with `GetTask`.
+
+With an OpenShell gateway set (`HUDDLE_OPENSHELL_GATEWAY`), the server polls every ready sandbox's
+drafted network rules (`GetDraftPolicy`, pending only) every few seconds and streams a `sandbox` change
+when they change. The approvals inbox shows them beside the flows' approvals; allowing one calls
+`ApproveDraftChunk` with the review token OpenShell returned with it, so an approval only applies to
+exactly what the person saw (if the sandbox changed meanwhile, the answer is a 409 and the card
+refreshes). Denying calls `RejectDraftChunk` with a reason. Requests are read live from the gateway, not
+stored: OpenShell owns them.
 
 "Describe it" asks an OpenAI-compatible model for a flow, checks it like any other, and gives the model
 one more go with the problems listed. The draft only goes onto the canvas; nothing runs until you save

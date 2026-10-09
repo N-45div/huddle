@@ -5,7 +5,8 @@ memory, and draw how they hand work to each other, with you approving anything t
 
 > Status: early, and self-hosted. The canvas, the flow engine, shared memory, approvals, schedules,
 > webhooks, "describe it", and connectors for OpenClaw, Hermes Agent, any A2A agent, OpenAI-style APIs,
-> Home Assistant, Agent Zero and Sochen all work today, from one command or one container. Approvals on
+> Ollama, agents in NVIDIA OpenShell sandboxes, Home Assistant, Agent Zero and Sochen all work today,
+> from one command or one container. Approvals on
 > your phone and the hosted version are next. See [Roadmap](#roadmap).
 
 ---
@@ -35,6 +36,10 @@ teammate: you put them on a canvas, say who does what, and decide where you want
   address that anything can post to.
 - **Your assistants can call it too.** Huddle is an A2A agent itself, so OpenClaw, Hermes or any other
   A2A assistant can hand a job to one of your flows.
+- **Sandboxed assistants, with you holding the keys.** Run an agent inside an
+  [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandbox and use it in a flow. When OpenShell
+  blocks something the agent reaches for, the request lands in your Huddle approvals with OpenShell's
+  own risk check, and the agent carries on once you allow it.
 - **Describe it.** Write the flow in a sentence; Huddle drafts it on the canvas for you to check.
 - **Yours to host.** One command runs it on your own machine or server, with your data in one SQLite
   file. A hosted version is coming for people who'd rather not run anything.
@@ -70,6 +75,7 @@ teammate: you put them on a canvas, say who does what, and decide where you want
 | **`a2a`** | any agent that speaks [A2A](https://a2a-protocol.org) 1.0 (Agent2Agent) | ready |
 | **`openai`** | anything with an OpenAI-style chat API: Open WebUI, AnythingLLM, LibreChat's Agents API, Letta, and the API servers of OpenClaw and Hermes | ready |
 | **`ollama`** | a model in [Ollama](https://ollama.com), on your machine or on ollama.com | ready |
+| **`openshell`** | any agent with a one-shot command (Hermes, OpenCode, Claude Code, Codex…) inside an [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandbox | ready |
 | **`sochen`** | [Sochen](https://sochen.dev)'s agent and its pets, through the Agent API | ready |
 | **`homeassistant`** | [Home Assistant](https://github.com/home-assistant/core)'s Assist, through its conversation API | ready |
 | **`agentzero`** | [Agent Zero](https://github.com/agent0ai/agent-zero), through its external API | ready |
@@ -235,6 +241,52 @@ Both were tested live: Hermes asking a Huddle flow that asked OpenClaw, and Open
 flow that asked Hermes. Any other A2A client can use `/a2a`, naming the flow in the message's metadata as
 `"flow"`. While a token is set, Huddle's main card doesn't list your flows' names.
 
+## Sandboxed assistants with NVIDIA OpenShell
+
+[OpenShell](https://github.com/NVIDIA/OpenShell) runs an agent in a sandbox whose policy decides what it
+may read and which hosts it may reach, and it keeps model keys outside: the agent only ever sees a
+placeholder, and OpenShell adds the real key to requests it has approved. Connect Huddle to your
+OpenShell gateway and:
+
+- **An agent in a sandbox is a flow's assistant.** Anything with a one-shot command works. Huddle sends
+  the request (and the memory that assistant may read) on stdin, or where `{{ask}}` appears in the
+  command.
+- **What the sandbox asks for comes to you.** When OpenShell blocks a connection, it drafts a rule.
+  Huddle shows it in **Approvals** as, say, "python3.14 wants to reach api.openai.com:443", with
+  OpenShell's own risk check in plain words. Allow it and the sandbox loads the rule within a few
+  seconds, so the agent carries on in the same run; deny it and it stays blocked.
+
+Tell Huddle where the gateway is, and where the OpenShell CLI's client certificate is:
+
+```bash
+HUDDLE_OPENSHELL_GATEWAY=https://127.0.0.1:8080
+OPENSHELL_TLS_DIR=~/.config/openshell/gateways/openshell/mtls   # the default
+```
+
+(In Docker, use `https://host.docker.internal:8080` and mount that folder read-only, e.g. at `/certs`.)
+
+Then add the assistant, naming its sandbox and the command that runs it. For Hermes Agent:
+
+```json
+{ "id": "hermes", "connector": "openshell", "agentId": "hermes-agent", "memory": ["home"],
+  "command": ["env", "HERMES_HOME=/tmp/hermes", "/opt/hermes/bin/hermes", "--provider", "openai-api",
+              "chat", "--query-file", "/dev/stdin", "--oneshot", "-Q", "-m", "gpt-5.4-mini"] }
+```
+
+[`examples/openshell-hermes`](examples/openshell-hermes) has the image, policy and flow for that,
+tested with OpenShell 0.1.2 and Hermes Agent 0.21.6 on Windows (WSL 2 and Docker Desktop):
+
+```bash
+docker build -t huddle/hermes-sandbox:local examples/openshell-hermes
+openshell provider create --name openai --type openai --from-existing        # reads OPENAI_API_KEY
+openshell sandbox create --name hermes-agent --from huddle/hermes-sandbox:local --provider openai \
+  --policy examples/openshell-hermes/policy.yaml --no-tty --detach -- sleep infinity
+```
+
+A sandbox image needs a few things OpenShell checks: a non-root user, a working directory that user
+can write, and a single-platform image (on Docker Desktop, a one-line `FROM` build gives you one). The
+policy has to let the sandbox read the agent's install: sandboxes start with only system paths.
+
 ## Run it
 
 Requires Node.js 24 or later.
@@ -268,6 +320,8 @@ docker compose up -d   # http://localhost:7700, data in the huddle-data volume
 | `HUDDLE_PUBLIC_URL` | `http://localhost:7700` | how others reach this Huddle, for webhook and A2A addresses |
 | `HUDDLE_A2A_TOKEN` | `HUDDLE_TOKEN` | a separate token for assistants calling Huddle over A2A |
 | `HUDDLE_LLM_URL`, `HUDDLE_LLM_MODEL`, `HUDDLE_LLM_KEY` | none | any OpenAI-compatible chat API (OpenAI, OpenRouter, Ollama, LM Studio) for "describe it" |
+| `HUDDLE_OPENSHELL_GATEWAY` | none | an NVIDIA OpenShell gateway, for sandboxed assistants and their requests in Approvals |
+| `OPENSHELL_TLS_DIR` | `~/.config/openshell/gateways/openshell/mtls` | the OpenShell CLI's client certificate (`ca.crt`, `tls.crt`, `tls.key`) |
 
 To reach Huddle from outside your machine, put it behind HTTPS (Caddy, Cloudflare Tunnel, Tailscale)
 and set `HUDDLE_PUBLIC_URL`. Webhook addresses carry their own secret; make a new one from the flow's
@@ -287,8 +341,9 @@ npm run huddle -- runs                   # recent runs
 2. OpenClaw, Hermes Agent, A2A, OpenAI-style, Home Assistant and Agent Zero connectors (done); MCP next
 3. The canvas: drag assistants in, draw the hand-offs, watch runs live (done)
 4. Schedules, webhooks, Huddle as an A2A agent, and "describe it" (done)
-5. Approvals on your phone, and email and Telegram triggers
-6. The hosted version, for people who'd rather not run anything
+5. Ollama, and sandboxed assistants with NVIDIA OpenShell, their requests in your approvals (done)
+6. Approvals on your phone, and email and Telegram triggers
+7. The hosted version, for people who'd rather not run anything
 
 ## License
 
