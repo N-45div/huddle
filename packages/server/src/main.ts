@@ -34,6 +34,10 @@ import { webApp } from "./static.ts";
  *   HUDDLE_OPENSHELL_GATEWAY  an NVIDIA OpenShell gateway (e.g. https://127.0.0.1:8080), for sandboxed
  *                      assistants and their requests in the approvals inbox; OPENSHELL_TLS_DIR holds its
  *                      client certificate (default ~/.config/openshell/gateways/openshell/mtls)
+ *   RESEND_API_KEY     sends email (the email connector's default key) and reads mail that arrives;
+ *                      reading needs a full-access key
+ *   RESEND_WEBHOOK_SECRET  the signing secret of Resend's inbound webhook, pointed at /hooks/email
+ *   HUDDLE_OWNER_EMAILS    your addresses, comma-separated: mail from them counts as you
  */
 
 const env = (name: string): string | undefined => process.env[name]?.trim() || undefined;
@@ -103,6 +107,7 @@ const app = createApp({
   pact: identity,
   router: new Router(store, engine, judge),
   routerKey: env("HUDDLE_ROUTER_KEY"),
+  email: { webhookSecret: env("RESEND_WEBHOOK_SECRET"), apiKey: env("RESEND_API_KEY"), ownerEmails: (env("HUDDLE_OWNER_EMAILS") ?? "").split(",").filter((address) => address.trim()) },
 });
 const web = env("HUDDLE_WEB") ?? fileURLToPath(new URL("../../web/dist", import.meta.url));
 const built = existsSync(join(web, "index.html"));
@@ -119,6 +124,11 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   if (!llmUrl || !llmModel) console.log('  "Describe it" is off: set HUDDLE_LLM_URL and HUDDLE_LLM_MODEL to turn it on.');
   const finds = [memory.embedder ? `words and meaning (${memory.embedder.model})` : "words", ...(memory.reranker ? [`reranked by ${memory.reranker.model}`] : [])];
   console.log(`  Memory: up to ${budget} characters of kept notes per request, found by ${finds.join(", ")}`);
+  if (env("RESEND_WEBHOOK_SECRET")) {
+    console.log(`  Email in: point Resend's inbound webhook (email.received) at ${publicUrl}/hooks/email`);
+    if (!env("RESEND_API_KEY")) console.log("  ...but RESEND_API_KEY isn't set, so Huddle can't read the mail that arrives.");
+    if (!env("HUDDLE_OWNER_EMAILS")) console.log("  Set HUDDLE_OWNER_EMAILS to your addresses, or your own mail counts as a stranger's.");
+  }
   if (shell) {
     shell.health().then(
       ({ version: gatewayVersion }) => console.log(`  OpenShell gateway ${gatewayVersion} at ${shell?.gateway}: sandbox requests show in Approvals.`),

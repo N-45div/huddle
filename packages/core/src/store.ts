@@ -69,7 +69,7 @@ export type Change =
   | { readonly kind: "contacts" }
   | { readonly kind: "signin" };
 
-/** Someone you know, who reaches Huddle with their own token (or, later, from their email address). */
+/** Someone you know, who reaches Huddle with their own token, or by mailing a flow from one of their addresses. */
 export interface Contact {
   readonly id: string;
   readonly name: string;

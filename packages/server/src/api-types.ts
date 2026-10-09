@@ -20,6 +20,11 @@ export interface Info {
   readonly openshell: boolean;
   /** The router's OpenAI-compatible base URL (model = an assistant's id), when it's on. */
   readonly router: string | null;
+  /**
+   * Email in: where Resend's inbound webhook posts (one address for every flow), and whether Huddle
+   * can take it (RESEND_WEBHOOK_SECRET and RESEND_API_KEY are set).
+   */
+  readonly email: { readonly hook: string; readonly receiving: boolean };
 }
 
 /** One saved flow, as the list and the editor see it. */
@@ -187,6 +192,8 @@ export interface SandboxRequests {
  *   GET    /api/events?token=              -> SSE of ChangeEvent
  * Outside /api:
  *   POST   /hooks/:flowId/:secret          -> 202 { runId }       (body: text, or JSON { input })
+ *   POST   /hooks/email                    -> { started: runId[] } (Resend's email.received event, Svix-signed;
+ *                                                     starts the flows whose email trigger is an address it went to)
  *   GET    /.well-known/agent-card.json    -> Huddle's A2A Agent Card
  *   GET    /.well-known/jwks.json, /.well-known/openid-configuration   -> Huddle's PACT signing key
  *   POST   /a2a                            -> A2A 1.0 JSON-RPC (SendMessage, GetTask)

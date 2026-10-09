@@ -2,6 +2,7 @@ import { Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, 
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { a2aRoutes } from "./a2a.ts";
+import { type EmailOptions, emailRoutes } from "./email.ts";
 import { routerRoutes } from "./router.ts";
 import { bearerOf, same } from "./auth.ts";
 import type { ApiError, FlowView, Info, RouterUsage, RouterView, RunDetail, RunSummary, WaitingApproval } from "./api-types.ts";
@@ -9,9 +10,10 @@ import { CONNECTORS } from "./connectors-info.ts";
 import { noSandboxes, type SandboxInbox, Stale } from "./sandbox-requests.ts";
 
 /**
- * Huddle's server: the API the canvas uses (/api), webhooks that start flows (/hooks), and an A2A
- * endpoint so other assistants can hand work to a flow (/a2a). One token, when set, guards it all
- * (the A2A endpoint can have its own). Static files for the web app are added by main.ts.
+ * Huddle's server: the API the canvas uses (/api), webhooks that start flows (/hooks, and
+ * /hooks/email for mail through Resend), and an A2A endpoint so other assistants can hand work to a
+ * flow (/a2a). One token, when set, guards it all (the A2A endpoint can have its own). Static files
+ * for the web app are added by main.ts.
  */
 
 export interface AppOptions {
@@ -40,6 +42,8 @@ export interface AppOptions {
   readonly router?: Router;
   /** A key just for /v1 (HUDDLE_ROUTER_KEY), besides the Huddle token. */
   readonly routerKey?: string;
+  /** Email in through Resend: its webhook secret, a key to read the mail, and your addresses. */
+  readonly email?: EmailOptions;
 }
 
 /** A flow from a request body, or the problems with it, one line each. */
@@ -79,7 +83,15 @@ export function createApp(options: AppOptions): Hono {
 
   const sandboxes = options.sandboxes ?? noSandboxes;
   app.get("/api/info", (c) =>
-    c.json<Info>({ version: options.version, auth: Boolean(options.token), agentCard: `${options.publicUrl}/.well-known/agent-card.json`, describe: Boolean(options.describe), openshell: Boolean(options.sandboxes), router: options.router ? `${options.publicUrl}/v1` : null }),
+    c.json<Info>({
+      version: options.version,
+      auth: Boolean(options.token),
+      agentCard: `${options.publicUrl}/.well-known/agent-card.json`,
+      describe: Boolean(options.describe),
+      openshell: Boolean(options.sandboxes),
+      router: options.router ? `${options.publicUrl}/v1` : null,
+      email: { hook: `${options.publicUrl}/hooks/email`, receiving: Boolean(options.email?.webhookSecret && options.email.apiKey) },
+    }),
   );
 
   // What OpenShell sandboxes are asking for -----------------------------------------------------------
@@ -337,6 +349,7 @@ export function createApp(options: AppOptions): Hono {
     return bad(c, `The Provider turned the registration down: ${detail}.`, 502);
   });
 
+  app.route("/", emailRoutes(options));
   if (options.router) app.route("/", routerRoutes({ store, router: options.router, keys: [options.routerKey, options.token].filter((key): key is string => Boolean(key)) }));
   app.route("/", a2aRoutes(options));
   return app;

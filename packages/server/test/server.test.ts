@@ -61,7 +61,15 @@ describe("the API", () => {
     assert.equal((await app.request("/api/flows", { headers: { authorization: "Bearer wrong-token-0123456789" } })).status, 401);
     assert.equal((await app.request("/api/flows", { headers: auth })).status, 200);
     const info = await (await app.request("/api/info")).json();
-    assert.deepEqual(info, { version: "test", auth: true, agentCard: "http://huddle.test/.well-known/agent-card.json", describe: false, openshell: false, router: null });
+    assert.deepEqual(info, {
+      version: "test",
+      auth: true,
+      agentCard: "http://huddle.test/.well-known/agent-card.json",
+      describe: false,
+      openshell: false,
+      router: null,
+      email: { hook: "http://huddle.test/hooks/email", receiving: false },
+    });
     assert.equal((await app.request("/.well-known/agent-card.json")).status, 200);
   });
 
