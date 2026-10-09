@@ -108,7 +108,7 @@ benchmarked yet.
 | **`openai`** | anything with an OpenAI-style chat API: Open WebUI, AnythingLLM, LibreChat's Agents API, Letta, and the API servers of OpenClaw and Hermes | ready |
 | **`ollama`** | a model in [Ollama](https://ollama.com), on your machine or on ollama.com | ready |
 | **`openshell`** | any agent with a one-shot command (Hermes, OpenCode, Claude Code, Codex…) inside an [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandbox | ready |
-| **`pact`** | a business's support agent over [PACT](https://github.com/openpactprotocol/openpactprotocol), with Huddle as your personal agent | identity ready; sign-in next |
+| **`pact`** | a business's support agent over [PACT](https://github.com/openpactprotocol/openpactprotocol), with Huddle as your personal agent: its identity, and signing in to act for you | ready |
 | **`sochen`** | [Sochen](https://sochen.dev)'s agent and its pets, through the Agent API | ready |
 | **`homeassistant`** | [Home Assistant](https://github.com/home-assistant/core)'s Assist, through its conversation API | ready |
 | **`agentzero`** | [Agent Zero](https://github.com/agent0ai/agent-zero), through its external API | ready |
@@ -121,10 +121,15 @@ benchmarked yet.
 "Ready" means built and tested against each project's documented API. OpenClaw (2026.9.9), Hermes
 Agent (0.21.6) and Ollama (0.40) are also tested against real installs: a flow where OpenClaw plans, you
 approve, and Hermes follows up, each reading only its own slice of memory, and a local model answering
-from the slice it was given. The others haven't been run against a
+from the slice it was given. PACT is tested against its reference Provider: Skyline Airways checked a flight,
+asked for more permission to rebook it, and Huddle checked the signed receipt of each. The others haven't been run against a
 live install yet, so reports of what breaks are very welcome. Assistants with no way in from outside
 (some consumer apps have none) can't be connected yet, unless they read email (see [Email](#email));
 reaching them by a messaging channel is on the roadmap.
+
+**Open Instinct acts as its owner.** Everything Huddle sends it runs with its owner's full powers, whoever
+started the flow. If contacts or strangers can start a flow that asks it (see [who can start a flow](#who-can-start-a-flow)),
+put an approval step in front of that step.
 
 ### Bring your assistant
 
@@ -275,6 +280,22 @@ tells you, or that tells OpenClaw.
 Both were tested live: Hermes asking a Huddle flow that asked OpenClaw, and OpenClaw sending to a Huddle
 flow that asked Hermes. Any other A2A client can use `/a2a`, naming the flow in the message's metadata as
 `"flow"`. While a token is set, Huddle's main card doesn't list your flows' names.
+
+### Who can start a flow
+
+`HUDDLE_A2A_TOKEN` is yours: whoever sends it acts as you. For other people and their agents, add them
+under **Contacts**, closest first: partner, family, friend or contact. Each gets a token of their own
+(shown once; Huddle keeps only its hash), which their agent sends the same way. Then each flow's Trigger
+tab says who may start it:
+
+- **Starts at once for** you, or a tier and everyone closer.
+- **Contacts further away** wait for your OK: the run opens with an approval in Approvals, "Ravi
+  (contact) wants to run *Dinner plans* with: …". Or turn them away.
+- **People not in your contacts** are turned away by default, without learning whether the flow exists.
+  A flow can let them ask instead, like a front desk.
+
+Each contact sees only the tasks they started, a new token cuts the old one off at once, and every run's
+log starts with who started it. Email works the same way, by the sender's address (see [Email](#email)).
 
 ## Email
 
@@ -438,9 +459,22 @@ built on A2A 1.0 and OAuth. Huddle speaks it as your personal agent:
 ```
 
 Businesses must reach your Huddle's `jwks.json` over the internet, so set `HUDDLE_PUBLIC_URL` (or
-`HUDDLE_PACT_ISSUER`) to a public HTTPS address, e.g. through a tunnel. When a business needs you to
-sign in with it (PACT's delegated authority), the step comes back with state `auth_required` and the
-sign-in link for now; signing in from Approvals is next. Tested against PACT's reference Provider.
+`HUDDLE_PACT_ISSUER`) to a public HTTPS address, e.g. through a tunnel.
+
+**Signing in, so a business's agent can act for you** (PACT's delegated authority):
+
+- List what you'll allow in the assistant's `scopes` (the ids on the business's card, like
+  `flights:upcoming:read`). The first time a step needs them, Approvals shows the business's own sign-in
+  link and what it would let Huddle do, in the business's words. You sign in on its page; Huddle never
+  sees your password. The step carries on by itself once you approve, and the permission is kept for
+  next time.
+- If the business needs more mid-conversation ("I need permission to rebook"), Huddle asks you for just
+  that, then carries on in the same conversation.
+- Every answer comes with a receipt the business signed: what it did and with which permission. Huddle
+  checks the signature and the run log says "signed receipt checked", or warns when it doesn't hold.
+
+Tested against PACT's reference Provider: Skyline Airways checked a flight, asked for permission to
+rebook, and rebooked it, with both receipts checked.
 
 ## Run it
 
@@ -503,10 +537,10 @@ npm run huddle -- runs                   # recent runs
 1. The engine, shared memory, approvals and the first connectors (done)
 2. OpenClaw, Hermes Agent, A2A, OpenAI-style, Home Assistant and Agent Zero connectors (done); MCP next
 3. The canvas: drag assistants in, draw the hand-offs, watch runs live (done)
-4. Schedules, webhooks, Huddle as an A2A agent, and "describe it" (done)
+4. Schedules, webhooks, Huddle as an A2A agent, "describe it", and trust tiers for who may start a flow (done)
 5. Ollama, and sandboxed assistants with NVIDIA OpenShell, their requests in your approvals (done)
 6. The router: one OpenAI-compatible API to every assistant, "auto" judged by Jev, fallbacks (started)
-7. PACT: Huddle as your personal agent with businesses (identity done; signing in from Approvals next),
+7. PACT: Huddle as your personal agent with businesses, its identity and signing in from Approvals (done),
    and Sierra and Meta's Personal Agent Protocol when its v0.1 spec is out
 8. Email in and out through Resend (done); approvals on your phone and a Telegram trigger next
 9. The hosted version, for people who'd rather not run anything
