@@ -9,13 +9,17 @@ const id = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/i, "use letters, numbers
 /** Where a step goes next: another step's id, or "end". */
 const target = z.string().min(1);
 
+/** A plain email address. */
+export const EMAIL_PATTERN = /^[^\s@<>,;"]+@[^\s@<>,;".]+(?:\.[^\s@<>,;".]+)+$/;
+const emailAddress = z.string().max(254).regex(EMAIL_PATTERN, "an email address, like you@example.com");
+
 export const Assistant = z.object({
   id,
   name: z.string().optional(),
   /** What it's good at, in a sentence: what the router's judge reads to pick it. */
   description: z.string().max(500).optional(),
   /** How to reach it: openclaw and hermes are A2A with their usual local address filled in. */
-  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "openshell", "pact", "homeassistant", "agentzero", "instinct"]),
+  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "openshell", "pact", "homeassistant", "agentzero", "instinct", "email"]),
   /** The slices of shared memory this assistant may read. */
   memory: z.array(z.string().min(1)).default([]),
   /** http: where to POST. a2a: the agent's base address or its card. openai: the API base. sochen: if not https://sochen.dev. instinct: if not http://127.0.0.1:8080. */
@@ -34,12 +38,23 @@ export const Assistant = z.object({
   command: z.array(z.string().min(1)).min(1).max(64).optional(),
   /** mock: fixed answers; the first key found in the request (ignoring case) wins, then "*". */
   replies: z.record(z.string(), z.string()).optional(),
+  /** email: who it goes to, always these addresses (up to 50), so a step can't be talked into mailing someone else. */
+  to: z.array(emailAddress).min(1).max(50).optional(),
+  /** email: who it's from, an address on a domain you verified in Resend; "Name <address>" works too. */
+  from: z
+    .string()
+    .max(320)
+    .refine((value) => EMAIL_PATTERN.test(value) || EMAIL_PATTERN.test(/^[^<>]*<([^<>]+)>$/.exec(value.trim())?.[1] ?? ""), 'an email address, or "Name <address>"')
+    .optional(),
 });
 export type Assistant = z.infer<typeof Assistant>;
 
 /** What a connector needs that the shape alone can't say, one line each. */
 export function assistantProblems(assistant: Assistant): string[] {
   const problems: string[] = [];
+  if (assistant.connector === "email" && (!assistant.to || !assistant.from)) {
+    problems.push(`assistant "${assistant.id}" sends email: give who it goes to (to) and who it's from (from, on a domain you verified in Resend)`);
+  }
   if (assistant.connector === "openshell" && (!assistant.agentId || !assistant.command)) {
     problems.push(`assistant "${assistant.id}" runs in OpenShell: give its sandbox's name (agentId) and the command that runs its agent (command)`);
   }

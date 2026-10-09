@@ -1,6 +1,7 @@
 import type { Connector } from "../connector.ts";
 import { a2a } from "./a2a.ts";
 import { agentzero } from "./agentzero.ts";
+import { email } from "./email.ts";
 import { homeassistant } from "./homeassistant.ts";
 import { http } from "./http.ts";
 import { instinct } from "./instinct.ts";
@@ -28,5 +29,6 @@ export function defaultConnectors(): Readonly<Record<string, Connector>> {
     homeassistant: homeassistant(),
     agentzero: agentzero(),
     instinct: instinct(),
+    email: email(),
   };
 }

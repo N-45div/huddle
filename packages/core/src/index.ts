@@ -2,6 +2,7 @@ export { evaluate } from "./condition.ts";
 export { type Connector, type ConnectorRequest, dataIn } from "./connector.ts";
 export { a2a, type A2AOptions } from "./connectors/a2a.ts";
 export { agentzero } from "./connectors/agentzero.ts";
+export { email, RESEND_API, resendProblem, subjectAndBody, USER_AGENT } from "./connectors/email.ts";
 export { homeassistant } from "./connectors/homeassistant.ts";
 export { http } from "./connectors/http.ts";
 export { defaultConnectors } from "./connectors/index.ts";
@@ -23,6 +24,6 @@ export { type Reranker, reranker, type RerankerOptions } from "./memory/rerank.t
 export { findSecret, redactSecrets, SensitiveNote } from "./memory/sensitive.ts";
 export { askFrom, AUTO, type ChatMessage, NoAnswer, type RouteInfo, type Routed, Router } from "./router.ts";
 export { type Candidate, jevJudge, type JevOptions, type Judge, modelJudge, type ModelJudgeOptions, type Ranking } from "./judge.ts";
-export { askFirst, Assistant, assistantProblems, Assistants, type Caller, callerDecision, Callers, CONTACT_TIERS, type ContactTier, everyMs, Flow, parseFlow, Step, TIERS, type Tier, Trigger } from "./schema.ts";
+export { askFirst, Assistant, assistantProblems, Assistants, type Caller, callerDecision, Callers, CONTACT_TIERS, type ContactTier, EMAIL_PATTERN, everyMs, Flow, parseFlow, Step, TIERS, type Tier, Trigger } from "./schema.ts";
 export { type Approval, type Change, type Contact, type LogLine, type Note, type Run, type RunState, type SavedFlow, Store } from "./store.ts";
 export { lookup, render, type RunContext, type StepAnswer } from "./template.ts";
