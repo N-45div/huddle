@@ -55,6 +55,14 @@ function fakeAgents() {
         if (text.includes("secret")) return reply(response, { jsonrpc: "2.0", id: body.id, error: { code: -32001, message: "bad token tok-hermes" } });
         return reply(response, { jsonrpc: "2.0", id: body.id, result: { task: { id: "t2", contextId: "c2", status: { state: "TASK_STATE_INPUT_REQUIRED", message: { parts: [{ text: "Which calendar?" }] } } } } });
       }
+      // What the real ones did when we ran them: OpenClaw turns away the 2nd call here (its limit is 30 a minute) and
+      // answers a bad token with a plain {"error"} and a 401; Hermes, just started, closes a task with nothing in it.
+      if (path === "/busy/") {
+        if (calls.filter((call) => call.path === "/busy/").length === 2) return reply(response, { jsonrpc: "2.0", id: body.id, error: { code: -32000, message: "Peer is rate limited" } });
+        return reply(response, { jsonrpc: "2.0", id: body.id, result: { message: { role: "ROLE_AGENT", parts: [{ text: "pong" }] } } });
+      }
+      if (path === "/locked/") return reply(response, { error: "Unauthorized; configure channels.a2a.peers with a matching Bearer token" }, 401);
+      if (path === "/silent/") return reply(response, { jsonrpc: "2.0", id: body.id, result: { task: { id: "t4", contextId: "c4", status: { state: "TASK_STATE_COMPLETED" }, artifacts: [] } } });
       if (path === "/v1/chat/completions") return reply(response, { choices: [{ message: { content: CHAT_REPLY } }] });
       return reply(response, { error: "unknown" }, 404);
     });
@@ -104,6 +112,24 @@ describe("A2A agents (OpenClaw, Hermes and any other)", () => {
     });
     delete process.env.HERMES_TOKEN;
     await assert.rejects(connector.send({ assistant, ask: "x", memory: [] }), /HERMES_TOKEN environment variable/);
+  });
+
+  it("waits and tries again when an agent says it's rate limited, instead of failing the step", async () => {
+    const assistant = Assistant.parse({ id: "busy", connector: "a2a", url: `${fake.base}/busy/` });
+    const connector = a2a(fetch, { pollMs: 5 });
+    assert.equal((await connector.send({ assistant, ask: "ping", memory: [] })).text, "pong");
+    assert.equal((await connector.send({ assistant, ask: "ping", memory: [] })).text, "pong", "the limited call, sent again");
+    assert.equal(fake.calls.filter((call) => call.path === "/busy/").length, 3);
+  });
+
+  it("says why an agent refused, even when it doesn't answer in JSON-RPC", async () => {
+    const assistant = Assistant.parse({ id: "claw", connector: "a2a", url: `${fake.base}/locked/` });
+    await assert.rejects(a2a(fetch, { pollMs: 5 }).send({ assistant, ask: "ping", memory: [] }), /claw said: Unauthorized; configure channels\.a2a\.peers with a matching Bearer token \(HTTP 401\)/);
+  });
+
+  it("makes a finished task with no answer an error, not an empty answer", async () => {
+    const assistant = Assistant.parse({ id: "hermes", connector: "a2a", url: `${fake.base}/silent/` });
+    await assert.rejects(a2a(fetch, { pollMs: 5 }).send({ assistant, ask: "ping", memory: [] }), /hermes finished task t4 without an answer\. If it had only just started, run this again\./);
   });
 
   it("speaks the OpenAI chat format too, with the memory as a system note", async () => {

@@ -80,17 +80,30 @@ export function a2a(fetcher: typeof fetch = globalThis.fetch, options: A2AOption
       const endpoint = await endpointOf(base, headers);
       const deadline = Date.now() + timeoutMs;
 
+      /**
+       * One JSON-RPC call. A rate-limited call (HTTP 429, or OpenClaw's "Peer is rate limited") was
+       * turned away before the agent did anything, so it's safe to wait and send it again.
+       */
       const call = async (method: string, params: unknown): Promise<unknown> => {
-        const response = await fetcher(endpoint, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ jsonrpc: "2.0", id: randomUUID(), method, params }),
-          signal: signal ?? AbortSignal.timeout(Math.max(1_000, deadline - Date.now())),
-        });
-        const body = (await response.json().catch(() => null)) as { result?: unknown; error?: { message?: string; code?: number } } | null;
-        const problem = body?.error ? `${body.error.message ?? "error"} (${body.error.code ?? "?"})` : response.ok ? null : `HTTP ${response.status}`;
-        if (problem) throw new Error(`${assistant.id} said: ${key ? problem.replaceAll(key, "[key]") : problem}`);
-        return body?.result;
+        for (let attempt = 0; ; attempt += 1) {
+          const response = await fetcher(endpoint, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ jsonrpc: "2.0", id: randomUUID(), method, params }),
+            signal: signal ?? AbortSignal.timeout(Math.max(1_000, deadline - Date.now())),
+          });
+          const body = (await response.json().catch(() => null)) as { result?: unknown; error?: string | { message?: string; code?: number } } | null;
+          const problem = problemOf(response, body?.error);
+          if (problem && (response.status === 429 || RATE_LIMITED.test(problem)) && attempt < 5) {
+            const wait = retryAfter(response.headers.get("retry-after")) ?? pollMs * 2 ** (attempt + 1);
+            if (Date.now() + wait < deadline) {
+              await sleep(wait);
+              continue;
+            }
+          }
+          if (problem) throw new Error(`${assistant.id} said: ${key ? problem.replaceAll(key, "[key]") : problem}`);
+          return body?.result;
+        }
       };
 
       const text = memory.length ? `${ask}\n\nWhat you may use about me:\n${memoryText(memory)}` : ask;
@@ -98,13 +111,18 @@ export function a2a(fetcher: typeof fetch = globalThis.fetch, options: A2AOption
       // An agent may answer straight away with a message instead of a task.
       if (sent?.message) {
         const reply = textOf(sent.message.parts);
-        return { text: reply, data: { state: "completed", ...asObject(dataPart(sent.message.parts) ?? dataIn(reply)) } };
+        const data = dataPart(sent.message.parts);
+        if (!reply && data === undefined) throw new Error(silent(assistant.id));
+        return { text: reply, data: { state: "completed", ...asObject(data ?? dataIn(reply)) } };
       }
       let task = sent?.task;
       if (!task?.id) throw new Error(`${assistant.id} answered without a task or a message.`);
-      while (!DONE.has(stateOf(task)) && !FAILED.has(stateOf(task)) && !NEEDS.has(stateOf(task))) {
+      // Poll gently: agents count polls against their rate limits (OpenClaw allows 30 calls a minute).
+      let wait = pollMs;
+      while (!settled(task)) {
         if (Date.now() > deadline) throw new Error(`${assistant.id} was still working after ${Math.round(timeoutMs / 60_000)} minutes (task ${task.id}).`);
-        await new Promise((resolve) => setTimeout(resolve, pollMs));
+        await sleep(wait);
+        wait = Math.min(wait * 1.5, MAX_POLL_MS);
         const polled = (await call("GetTask", { id: task.id })) as Task | { task?: Task } | null;
         task = (polled && "task" in polled && polled.task ? polled.task : (polled as Task | null)) ?? task;
       }
@@ -112,10 +130,46 @@ export function a2a(fetcher: typeof fetch = globalThis.fetch, options: A2AOption
       const said = textOf(task.status?.message?.parts);
       if (FAILED.has(state)) throw new Error(`${assistant.id}'s task ${state}${said ? `: ${said}` : "."}`);
       const parts = (task.artifacts ?? []).flatMap((artifact) => artifact.parts ?? []);
+      const data = dataPart(parts);
+      if (DONE.has(state) && !textOf(parts) && !said && data === undefined) throw new Error(silent(assistant.id, task.id));
       const reply = textOf(parts) || said || (NEEDS.has(state) ? `${assistant.id} needs ${state === "auth_required" ? "you to sign in" : "more from you"} before it can go on.` : "");
-      return { text: reply, data: { ...asObject(dataPart(parts) ?? dataIn(reply)), state, task: task.id, context: task.contextId ?? null } };
+      return { text: reply, data: { ...asObject(data ?? dataIn(reply)), state, task: task.id, context: task.contextId ?? null } };
     },
   };
+}
+
+/** The longest wait between polls of a working task. */
+const MAX_POLL_MS = 15_000;
+const RATE_LIMITED = /rate.?limit/i;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Retry-After in milliseconds (seconds or an HTTP date), capped at a minute. */
+function retryAfter(header: string | null): number | undefined {
+  if (!header) return undefined;
+  const seconds = Number(header);
+  const ms = Number.isFinite(seconds) ? seconds * 1_000 : Date.parse(header) - Date.now();
+  return Number.isFinite(ms) ? Math.min(60_000, Math.max(0, ms)) : undefined;
+}
+
+/**
+ * A finished task with nothing in it. Hermes does this to a message that arrives while it's still
+ * starting up (it answers later, but into a task that's already closed), so it's an error a person can
+ * retry rather than an empty answer the next step quietly uses.
+ */
+const silent = (id: string, task?: string) => [id, "finished", ...(task ? ["task", task] : []), "without an answer. If it had only just started, run this again."].join(" ");
+
+/** Whether a task has stopped: finished, failed, or waiting on something only a person can give. */
+function settled(task: Task): boolean {
+  const state = stateOf(task);
+  return DONE.has(state) || FAILED.has(state) || NEEDS.has(state);
+}
+
+/** What went wrong, if anything: a JSON-RPC error object, or a plain {"error": "..."} beside an HTTP status (OpenClaw's 401). */
+function problemOf(response: Response, error: string | { message?: string; code?: number } | undefined): string | null {
+  if (typeof error === "string") return `${error} (HTTP ${response.status})`;
+  if (error) return `${error.message ?? "error"} (${error.code ?? "?"})`;
+  return response.ok ? null : `HTTP ${response.status}`;
 }
 
 function dataPart(parts: readonly Part[] | undefined): unknown {
