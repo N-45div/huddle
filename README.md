@@ -3,9 +3,10 @@
 **n8n for personal assistants.** Connect the AI assistants you already use, give them one shared
 memory, and draw how they hand work to each other, with you approving anything that matters.
 
-> Status: early. The flow engine, shared memory, approvals and connectors for OpenClaw, Hermes Agent, any
-> A2A agent, OpenAI-style APIs and Sochen run today from the command line. The canvas and the hosted
-> version are being built. See [Roadmap](#roadmap).
+> Status: early, and self-hosted. The canvas, the flow engine, shared memory, approvals, schedules,
+> webhooks, "describe it", and connectors for OpenClaw, Hermes Agent, any A2A agent, OpenAI-style APIs,
+> Home Assistant, Agent Zero and Sochen all work today, from one command or one container. Approvals on
+> your phone and the hosted version are next. See [Roadmap](#roadmap).
 
 ---
 
@@ -30,6 +31,11 @@ teammate: you put them on a canvas, say who does what, and decide where you want
   stops there until you tap yes or no. Nothing that spends, sends or books gets past one without you.
 - **Runs survive waiting.** A run that's waiting for your approval is saved, so it carries on later,
   after a restart, from exactly where it stopped.
+- **Runs start how you like.** Press Run, put it on a schedule ("every 2h"), or give it a webhook
+  address that anything can post to.
+- **Your assistants can call it too.** Huddle is an A2A agent itself, so OpenClaw, Hermes or any other
+  A2A assistant can hand a job to one of your flows.
+- **Describe it.** Write the flow in a sentence; Huddle drafts it on the canvas for you to check.
 - **Yours to host.** One command runs it on your own machine or server, with your data in one SQLite
   file. A hosted version is coming for people who'd rather not run anything.
 
@@ -70,10 +76,12 @@ teammate: you put them on a canvas, say who does what, and decide where you want
 | **`mock`** | a stand-in assistant for building and testing flows | ready |
 | `mcp` | assistants and tools exposed as Model Context Protocol servers | next |
 
-"Ready" means built and tested against each project's documented API; we haven't yet run every one
-against a live install, so reports of what breaks are very welcome. Assistants with no way in from
-outside (some consumer apps have none) can't be connected yet; reaching them by email or a messaging
-channel is on the roadmap.
+"Ready" means built and tested against each project's documented API. OpenClaw (2026.9.9) and Hermes
+Agent (0.21.6) are also tested against real installs: a flow where OpenClaw plans, you approve, and
+Hermes follows up, each reading only its own slice of memory. The others haven't been run against a
+live install yet, so reports of what breaks are very welcome. Assistants with no way in from outside
+(some consumer apps have none) can't be connected yet; reaching them by email or a messaging channel is
+on the roadmap.
 
 ### Bring your assistant
 
@@ -91,15 +99,39 @@ Then set the same `OPENCLAW_A2A_TOKEN` where Huddle runs, and add it to a flow:
 { "id": "claw", "connector": "openclaw", "memory": ["work"] }
 ```
 
-Huddle finds OpenClaw at `http://127.0.0.1:18789` unless you give a `url`.
+Huddle finds OpenClaw at `http://127.0.0.1:18789` unless you give a `url`. OpenClaw always wants the
+token, even on the same machine, and allows a peer 30 calls a minute; Huddle waits out that limit
+rather than failing, but you can raise it with `channels.a2a.rateLimitPerMinute`.
 
-**Hermes Agent.** Turn on its A2A gateway (`gateway.platforms.a2a.enabled: true`, port 9900; Hermes'
-[A2A docs](https://hermes-agent.nousresearch.com/docs)). On the same machine it needs no token; for a
-remote one, set a bearer token in Hermes and the same value in `HERMES_A2A_TOKEN` for Huddle.
+**Hermes Agent.** Turn on its A2A gateway in its `config.yaml` (Hermes'
+[A2A docs](https://hermes-agent.nousresearch.com/docs)):
+
+```yaml
+gateway:
+  platforms:
+    a2a:
+      enabled: true
+      extra:
+        port: 9900
+```
+
+On the same machine it needs no token. Anywhere else, including in Docker, give Hermes a peer token and
+trust it, in Hermes' environment:
+
+```bash
+A2A_PEER_TOKENS=huddle:<a long random token>
+A2A_TRUSTED_PEERS=huddle
+A2A_HOST=0.0.0.0        # Docker only: without a token Hermes listens inside its container only
+```
+
+and the same token as `HERMES_A2A_TOKEN` where Huddle runs. Then add it to a flow:
 
 ```json
 { "id": "hermes", "connector": "hermes", "memory": ["home"] }
 ```
+
+A message sent to Hermes in its first few seconds after starting can come back empty; Huddle stops the
+run with a message saying so, and running it again works.
 
 **Anything with an OpenAI-style chat API.** Give its address, and the model or agent to ask for. If its
 chat path isn't `/v1/chat/completions`, give the whole chat URL instead:
@@ -143,30 +175,78 @@ messaging channel or a local socket.
 An assistant only ever sees the memory slices it lists in `memory`. Keys always come from environment
 variables, never from the flow file.
 
-## Try it
+In Docker, `127.0.0.1` is the container itself: reach assistants running on the same machine at
+`http://host.docker.internal:<port>` (the compose file sets that name up).
+
+## Call Huddle from your assistants
+
+Huddle serves an A2A Agent Card at `/.well-known/agent-card.json`, with your saved flows as its skills,
+and takes A2A 1.0 JSON-RPC (`SendMessage`, `GetTask`) at `/a2a`. Point an assistant at your Huddle's
+address and it can start a flow and get its result:
+
+- Say which flow in the message's metadata as `"flow"` (its id or name). With one saved flow, that one
+  runs.
+- The message's text is the run's input. The reply is the last answer in the run, as the task's
+  artifact.
+- A run that reaches an approval stays *working* until you answer it, since it's you who has to decide,
+  not the assistant that asked. A "no" ends the task as *rejected*.
+- Callers need `HUDDLE_A2A_TOKEN` (or `HUDDLE_TOKEN`) as a Bearer token. While a token is set, the
+  public card doesn't list your flows' names.
+
+## Run it
 
 Requires Node.js 24 or later.
 
 ```bash
-git clone <repo> huddle && cd huddle
+git clone https://github.com/N-45div/huddle && cd huddle
 npm install
-npm run example        # runs examples/invoices.json with stand-in assistants
+npm run build          # builds the canvas
+npm start              # http://localhost:7700
 ```
 
-The run stops at the approval step and prints its ID. Answer it:
+Open http://localhost:7700, make a flow (or, with a model set up, press **Describe it**), and press
+**Run**. Runs that stop for
+an approval wait in **Approvals**; what your assistants suggest remembering waits in **Memory**.
+
+### With Docker
 
 ```bash
-npm run huddle -- approve <run-id> yes
+cp .env.example .env   # set HUDDLE_TOKEN (openssl rand -hex 32) and your assistants' keys
+docker compose up -d   # http://localhost:7700, data in the huddle-data volume
+```
+
+### Settings
+
+| Variable | Default | What it's for |
+|---|---|---|
+| `HUDDLE_TOKEN` | none | the token for the canvas and API; required unless Huddle listens on this machine only |
+| `HUDDLE_HOST` | `127.0.0.1` | the address to listen on (`0.0.0.0` in Docker) |
+| `HUDDLE_PORT` | `7700` | |
+| `HUDDLE_DB` | `huddle.db` | where everything is kept (`/data/huddle.db` in Docker) |
+| `HUDDLE_PUBLIC_URL` | `http://localhost:7700` | how others reach this Huddle, for webhook and A2A addresses |
+| `HUDDLE_A2A_TOKEN` | `HUDDLE_TOKEN` | a separate token for assistants calling Huddle over A2A |
+| `HUDDLE_LLM_URL`, `HUDDLE_LLM_MODEL`, `HUDDLE_LLM_KEY` | none | any OpenAI-compatible chat API (OpenAI, OpenRouter, Ollama, LM Studio) for "describe it" |
+
+To reach Huddle from outside your machine, put it behind HTTPS (Caddy, Cloudflare Tunnel, Tailscale)
+and set `HUDDLE_PUBLIC_URL`. Webhook addresses carry their own secret; make a new one from the flow's
+trigger settings if one leaks.
+
+### From the command line
+
+```bash
+npm run example                          # runs examples/invoices.json with stand-in assistants
+npm run huddle -- approve <run-id> yes   # answer the approval it stops at
+npm run huddle -- runs                   # recent runs
 ```
 
 ## Roadmap
 
 1. The engine, shared memory, approvals and the first connectors (done)
-2. OpenClaw, Hermes Agent, A2A and OpenAI-style connectors (done); MCP next
-3. The canvas: drag assistants in, draw the hand-offs, watch runs live
-4. Triggers: schedules, webhooks, email and Telegram, with approvals on your phone
-5. "Describe it": write the flow in a sentence and Huddle draws it
-6. One-command self-hosting with Docker, then the hosted version
+2. OpenClaw, Hermes Agent, A2A, OpenAI-style, Home Assistant and Agent Zero connectors (done); MCP next
+3. The canvas: drag assistants in, draw the hand-offs, watch runs live (done)
+4. Schedules, webhooks, Huddle as an A2A agent, and "describe it" (done)
+5. Approvals on your phone, and email and Telegram triggers
+6. The hosted version, for people who'd rather not run anything
 
 ## License
 

@@ -63,7 +63,38 @@ message or the command line can answer them.
 | `agentzero` | `POST <url>/api_message` with `X-API-KEY` (`AGENT_ZERO_API_KEY`); a synchronous `{ context_id, response }` |
 | `mcp` | next |
 
+## Triggers
+
+A flow's `trigger` says how its runs start:
+
+| Trigger | Starts a run |
+|---|---|
+| `{ "type": "manual" }` | when you press Run (the default) |
+| `{ "type": "schedule", "every": "2h", "input": "..." }` | every `m`inutes, `h`ours or `d`ays, counted from when the server starts or the flow is saved; skipped while the flow's last run is still going or waiting on you |
+| `{ "type": "webhook" }` | when something posts to the flow's secret address; a text body, or JSON's `input` (else the whole JSON), is the run's input |
+
+Missed schedules while Huddle was off aren't made up. A run that was mid-step when Huddle stopped is
+marked failed on the next start, since the call to its assistant is gone; runs waiting on an approval
+carry on as before.
+
+## The server
+
+One process serves the canvas, the API it uses (`/api`, described in
+`packages/server/src/api-types.ts`), webhooks (`/hooks`), and Huddle's own A2A endpoint (`/a2a`). Runs
+started from the API carry on in the background; the canvas follows them over a Server-Sent Events
+stream of changes. With `HUDDLE_TOKEN` set, every call needs it, and the server refuses to listen
+beyond this machine without one.
+
+Over A2A, a task is a run. `SendMessage` starts the flow named in the message's metadata (or the only
+one) and waits until the run ends or stops for an approval. The task's state follows the run: `running`
+and `waiting` are working, `done` is completed (the run's last answer is the artifact), `declined` is
+rejected, `failed` is failed. Only runs started over A2A can be read with `GetTask`.
+
+"Describe it" asks an OpenAI-compatible model for a flow, checks it like any other, and gives the model
+one more go with the problems listed. The draft only goes onto the canvas; nothing runs until you save
+it and press Run.
+
 ## Not yet
 
-The canvas, triggers other than a manual run (schedules, webhooks, email, Telegram), approvals on a
-phone, and the hosted version. See the README's roadmap.
+Approvals on a phone, email and Telegram triggers, an MCP connector, and the hosted version. See the
+README's roadmap.
