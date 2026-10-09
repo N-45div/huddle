@@ -6,6 +6,10 @@ import { type Connector, keyFor } from "../connector.ts";
  * Resend. The key comes from RESEND_API_KEY unless the assistant names another variable. A first line
  * "Subject: ..." is the subject and the rest is the message. Memory isn't sent: an email goes to
  * people, not to an assistant. Once it's sent it's gone, so put an approval step in front of it.
+ *
+ * Resend's receiving API is here too, for the server's email trigger: an email.received event only
+ * names the mail, and `receivedEmail` fetches what it says
+ * (https://resend.com/docs/api-reference/emails/retrieve-received-email).
  */
 
 export const RESEND_API = "https://api.resend.com";
@@ -58,7 +62,7 @@ async function resend(fetcher: typeof fetch, path: string, init: { readonly meth
     });
   } catch (error) {
     const timedOut = error instanceof Error && error.name === "TimeoutError";
-    throw new Error(timedOut ? `Resend didn't answer within ${TIMEOUT_MS / 1000} seconds.` : `Can't reach Resend: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(timedOut ? "Resend didn't answer in time." : `Can't reach Resend: ${error instanceof Error ? error.message : String(error)}`);
   }
   const said = (await response.json().catch(() => null)) as Record<string, unknown> | null;
   if (!response.ok) throw new Error(resendProblem(response.status, said, init.keyName, init.from).replaceAll(init.key, "[key]"));
@@ -77,5 +81,45 @@ export function email(fetcher: typeof fetch = globalThis.fetch): Connector {
       const id = typeof sent.id === "string" ? sent.id : null;
       return { text: `Sent to ${to.join(", ")}${id ? ` (id ${id})` : ""}.`, data: { id, to, subject } };
     },
+  };
+}
+
+/** A received email, as Resend's receiving API gives it: only what Huddle reads. */
+export interface ReceivedEmail {
+  readonly id: string;
+  /** The sender's bare address. */
+  readonly from: string;
+  readonly to: readonly string[];
+  readonly cc: readonly string[];
+  readonly bcc: readonly string[];
+  /** Who it was forwarded for (from the Received headers). */
+  readonly receivedFor: readonly string[];
+  readonly subject: string;
+  readonly text: string | null;
+  readonly html: string | null;
+  readonly headers: Readonly<Record<string, unknown>>;
+  /** SPF, DKIM and DMARC as the receiving server saw them ("pass", "fail", "gray"...); null for old mail. */
+  readonly authentication: { readonly spf: string; readonly dkim: string; readonly dmarc: string } | null;
+}
+
+const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : typeof value === "string" ? [value] : []);
+const stringOr = (value: unknown, fallback: string) => (typeof value === "string" ? value : fallback);
+
+/** Fetches a received email's content (an email.received event carries only who, to and subject). */
+export async function receivedEmail(id: string, key: string, fetcher: typeof fetch = globalThis.fetch, signal?: AbortSignal): Promise<ReceivedEmail> {
+  const got = await resend(fetcher, `/emails/receiving/${encodeURIComponent(id)}`, { method: "GET", key, keyName: "RESEND_API_KEY", signal });
+  const auth = got.authentication as Record<string, unknown> | null | undefined;
+  return {
+    id: stringOr(got.id, id),
+    from: stringOr(got.from, ""),
+    to: strings(got.to),
+    cc: strings(got.cc),
+    bcc: strings(got.bcc),
+    receivedFor: strings(got.received_for),
+    subject: stringOr(got.subject, ""),
+    text: typeof got.text === "string" ? got.text : null,
+    html: typeof got.html === "string" ? got.html : null,
+    headers: got.headers && typeof got.headers === "object" ? (got.headers as Record<string, unknown>) : {},
+    authentication: auth && typeof auth === "object" ? { spf: stringOr(auth.spf, "unknown"), dkim: stringOr(auth.dkim, "unknown"), dmarc: stringOr(auth.dmarc, "unknown") } : null,
   };
 }

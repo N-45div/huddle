@@ -2,7 +2,7 @@ export { evaluate } from "./condition.ts";
 export { type Connector, type ConnectorRequest, dataIn } from "./connector.ts";
 export { a2a, type A2AOptions } from "./connectors/a2a.ts";
 export { agentzero } from "./connectors/agentzero.ts";
-export { email, RESEND_API, resendProblem, subjectAndBody, USER_AGENT } from "./connectors/email.ts";
+export { email, type ReceivedEmail, receivedEmail, RESEND_API, resendProblem, subjectAndBody, USER_AGENT } from "./connectors/email.ts";
 export { homeassistant } from "./connectors/homeassistant.ts";
 export { http } from "./connectors/http.ts";
 export { defaultConnectors } from "./connectors/index.ts";
