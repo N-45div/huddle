@@ -66,12 +66,34 @@ const MemoryStep = z.object({
 export const Step = z.discriminatedUnion("type", [AgentStep, ConditionStep, ApprovalStep, MemoryStep]);
 export type Step = z.infer<typeof Step>;
 
+/** How long between scheduled runs: "15m", "2h", "1d" (at least 1 minute). */
+const every = z.string().regex(/^[1-9]\d*(m|h|d)$/, 'use a number and m, h or d, like "15m", "2h" or "1d"');
+
+export const Trigger = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("manual") }),
+  /** Runs every so often, with `input` as the run's input. */
+  z.object({ type: z.literal("schedule"), every, input: z.string().default("") }),
+  /** Runs when something posts to the flow's webhook address (the server shows it); the body is the input. */
+  z.object({ type: z.literal("webhook") }),
+]);
+export type Trigger = z.infer<typeof Trigger>;
+
+/** The milliseconds a schedule's "every" stands for. */
+export function everyMs(value: string): number {
+  const amount = Number.parseInt(value, 10);
+  const unit = value.slice(-1);
+  return amount * (unit === "d" ? 86_400_000 : unit === "h" ? 3_600_000 : 60_000);
+}
+
 export const Flow = z
   .object({
     name: z.string().min(1),
-    trigger: z.object({ type: z.literal("manual") }).default({ type: "manual" }),
+    description: z.string().optional(),
+    trigger: Trigger.default({ type: "manual" }),
     assistants: z.array(Assistant).default([]),
     steps: z.array(Step).min(1),
+    /** Where each step sits on the canvas; ignored by the engine. */
+    ui: z.object({ positions: z.record(z.string(), z.object({ x: z.number(), y: z.number() })).default({}) }).optional(),
   })
   .superRefine((flow, ctx) => {
     const steps = new Set<string>();
