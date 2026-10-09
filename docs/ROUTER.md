@@ -36,8 +36,14 @@ name), a connector and its settings, the memory slices it may read, and a `descr
 good at, in a sentence. The description is what automatic routing reads; without one the router uses
 the name and connector.
 
-Flows keep their own assistants for now; using the shared list from flows is next, so an assistant is
-set up once for both.
+The canvas's **Assistants** page manages the list. A flow's Assistants tab offers the same list, so an
+assistant is set up once and added to a flow in one step (the flow keeps its own copy, so a flow
+exported as JSON still runs on its own).
+
+The page also shows each assistant's calls through the router, failures and average time to answer
+(`GET /api/router`, counted from the run log), a **Try it** box that sends a message through `/v1` the
+way any app would and shows who answered and how "auto" judged, and the code to call it from
+JavaScript, Python or curl.
 
 ## Choosing who answers
 
@@ -83,8 +89,7 @@ last thing you said, with the conversation before it when there is one.
 
 ## Next
 
-1. Flows use the shared list.
-2. Trust tiers: who may call which assistants; strangers' requests wait in Approvals.
-3. Usage per assistant (calls, speed, failures, from the run log) and per-key budgets.
-4. Each assistant as an MCP tool and at its own A2A address.
-5. Learning from outcomes: which assistant answered well, fed back into routing.
+1. Trust tiers: who may call which assistants; strangers' requests wait in Approvals.
+2. Keys per app, each with its own budget and the assistants it may reach.
+3. Each assistant as an MCP tool and at its own A2A address.
+4. Learning from outcomes: which assistant answered well, fed back into routing.

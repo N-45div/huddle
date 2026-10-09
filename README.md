@@ -313,6 +313,8 @@ await huddle.chat.completions.create({ model: "claw", models: ["hermes"], messag
 - `models: [...]` are fallbacks in order, as on OpenRouter. The answer says what was skipped and why.
 - Each assistant only ever sees its own memory slices, whoever calls. Calls show in **Runs**.
 - `/v1` takes `HUDDLE_ROUTER_KEY` or `HUDDLE_TOKEN` as a Bearer key. Streaming works.
+- The canvas's **Assistants** page holds the list, with calls, failures and speed per assistant, a
+  **Try it** box that shows how "auto" judged, and the code to call it. Flows add assistants from it.
 
 Tested with the OpenAI Node SDK against OpenClaw, Hermes, a local Ollama model and Hermes in an
 OpenShell sandbox: "auto" sent a work question to OpenClaw, "what's my cat called?" to Hermes, and small
