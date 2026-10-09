@@ -56,7 +56,13 @@ export interface SavedFlow {
 }
 
 /** What changed, for anyone watching (the server streams these to the canvas). */
-export type Change = { readonly kind: "run"; readonly runId: string } | { readonly kind: "approval"; readonly runId: string } | { readonly kind: "memory" } | { readonly kind: "flow"; readonly flowId: string };
+export type Change =
+  | { readonly kind: "run"; readonly runId: string }
+  | { readonly kind: "approval"; readonly runId: string }
+  | { readonly kind: "memory" }
+  | { readonly kind: "flow"; readonly flowId: string }
+  /** What an OpenShell sandbox is asking for changed (the server watches the gateway). */
+  | { readonly kind: "sandbox" };
 
 export interface LogLine {
   readonly runId: string;
