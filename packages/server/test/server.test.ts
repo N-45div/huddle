@@ -177,6 +177,33 @@ describe("Huddle over A2A", () => {
     assert.equal(card.securitySchemes, undefined);
   });
 
+  it("gives each flow its own address and card, for assistants that can only send text to a URL", async () => {
+    const { app, store } = setup({ a2aToken: "a2a-token-0123456789" });
+    store.saveFlow(invoices);
+    const saved = store.saveFlow(greeter);
+    const peer = { authorization: "Bearer a2a-token-0123456789" };
+
+    const card = await (await app.request(`/a2a/flows/${saved.id}/.well-known/agent-card.json`)).json();
+    assert.equal(card.name, "Greeter");
+    assert.deepEqual(card.supportedInterfaces, [{ url: `http://huddle.test/a2a/flows/${saved.id}`, protocolBinding: "JSONRPC", protocolVersion: "1.0" }]);
+    assert.deepEqual(card.skills.map((skill: { id: string }) => skill.id), [saved.id]);
+    assert.equal((await app.request("/a2a/flows/flow_missing/.well-known/agent-card.json")).status, 404);
+
+    // Hermes' a2a_call: plain text, no metadata, waits for the answer, though there are two flows.
+    const waited = await (await app.request(`/a2a/flows/${saved.id}`, rpc("SendMessage", message("Ada"), peer))).json();
+    assert.equal(waited.result.task.status.state, "TASK_STATE_COMPLETED");
+    assert.deepEqual(waited.result.task.artifacts[0].parts, [{ text: "Hello from Huddle." }]);
+
+    // OpenClaw's outbound peers: the same, but returnImmediately, then nobody asks again; the run still finishes.
+    const quick = await (await app.request(`/a2a/flows/${saved.id}`, { ...rpc("SendMessage", { ...message("Ada"), configuration: { returnImmediately: true } }, peer) })).json();
+    assert.equal(quick.result.task.status.state, "TASK_STATE_WORKING");
+    assert.equal((await settle(store, quick.result.task.id)).state, "done");
+
+    // No token: refused before saying whether the flow exists.
+    assert.equal((await app.request("/a2a/flows/flow_missing", rpc("SendMessage", message("Ada")))).status, 401);
+    assert.equal((await app.request("/a2a/flows/flow_missing", rpc("SendMessage", message("Ada"), peer))).status, 404);
+  });
+
   it("runs the flow a message asks for and answers with its result", async () => {
     const { app, store } = setup({ token: undefined });
     store.saveFlow(invoices);

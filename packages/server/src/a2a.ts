@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Change, Run, RunState, SavedFlow, Store } from "@huddle/core";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import type { AppOptions } from "./app.ts";
 import { bearerOf, same } from "./auth.ts";
 
@@ -9,6 +9,10 @@ import { bearerOf, same } from "./auth.ts";
  * can hand work to a flow. The Agent Card lists the saved flows as skills; SendMessage starts one (the
  * flow named in the message's metadata as "flow" or "skill", or the only saved flow) and GetTask
  * follows it. A task is a run: its id is the run's id.
+ *
+ * Each flow is also an agent of its own at /a2a/flows/<id>, with its own card. That's the address to
+ * give an assistant that can't add metadata to a message: Hermes' a2a_call and OpenClaw's outbound peers
+ * both send plain text to a URL, so the URL has to say which flow.
  *
  * A run waiting on an approval stays TASK_STATE_WORKING, because the person who owns this Huddle has
  * to answer, not the agent that called. Messages wait for the run (A2A's default) until it finishes,
@@ -94,7 +98,8 @@ export function a2aRoutes(options: AppOptions & { readonly a2aWaitMs?: number })
     };
   };
 
-  const flowFor = (metadata: Record<string, unknown> | undefined): SavedFlow => {
+  const flowFor = (metadata: Record<string, unknown> | undefined, fixed: SavedFlow | null): SavedFlow => {
+    if (fixed) return fixed;
     const wanted = metadata?.flow ?? metadata?.skill;
     const flows = store.flows();
     if (typeof wanted === "string" && wanted) {
@@ -106,12 +111,12 @@ export function a2aRoutes(options: AppOptions & { readonly a2aWaitMs?: number })
     throw new RpcError(INVALID_PARAMS, flows.length ? `Say which flow in the message's metadata as "flow". Flows: ${flows.map((saved) => `${saved.id} (${saved.flow.name})`).join(", ")}.` : "This Huddle has no saved flows yet.");
   };
 
-  const methods: Readonly<Record<string, (params: Record<string, unknown>) => Promise<unknown>>> = {
-    async SendMessage(params) {
+  const methods: Readonly<Record<string, (params: Record<string, unknown>, fixed: SavedFlow | null) => Promise<unknown>>> = {
+    async SendMessage(params, fixed) {
       const message = params.message as { parts?: Part[]; contextId?: unknown; taskId?: unknown; metadata?: Record<string, unknown> } | undefined;
       if (!message || !Array.isArray(message.parts)) throw new RpcError(INVALID_PARAMS, "SendMessage needs a message with parts.");
       if (message.taskId) throw new RpcError(INVALID_PARAMS, "Huddle's tasks don't take follow-up messages; send a new message to start a new run.");
-      const saved = flowFor({ ...(params.metadata as Record<string, unknown> | undefined), ...message.metadata });
+      const saved = flowFor({ ...(params.metadata as Record<string, unknown> | undefined), ...message.metadata }, fixed);
       const input = message.parts
         .map((part) => (typeof part.text === "string" ? part.text : part.data !== undefined ? JSON.stringify(part.data) : ""))
         .filter(Boolean)
@@ -132,27 +137,48 @@ export function a2aRoutes(options: AppOptions & { readonly a2aWaitMs?: number })
     },
   };
 
+  const skillOf = (saved: SavedFlow) => ({ id: saved.id, name: saved.flow.name, description: saved.flow.description ?? `Runs the "${saved.flow.name}" flow.`, tags: ["huddle", saved.flow.trigger.type] });
+  const card = (name: string, description: string, path: string, skills: readonly object[]) => ({
+    name,
+    description,
+    version: options.version,
+    supportedInterfaces: [{ url: `${options.publicUrl}${path}`, protocolBinding: "JSONRPC", protocolVersion: "1.0" }],
+    provider: { organization: "Huddle", url: "https://github.com/N-45div/huddle" },
+    capabilities: { streaming: false, pushNotifications: false },
+    defaultInputModes: ["text/plain", "application/json"],
+    defaultOutputModes: ["text/plain", "application/json"],
+    skills,
+    ...(token ? { securitySchemes: { bearer: { httpAuthSecurityScheme: { scheme: "Bearer" } } }, securityRequirements: [{ schemes: { bearer: { list: [] } } }] } : {}),
+  });
+  const refused = (c: Context) => !!token && !same(bearerOf(c.req.header("authorization")), token);
+  const unauthorized = (c: Context) => c.json({ error: "Send Huddle's A2A token as Authorization: Bearer <token>." }, 401);
+
   app.get("/.well-known/agent-card.json", (c) => {
     // With a token, the public card doesn't name the flows; a caller learns them from a SendMessage.
     const skills = token
       ? [{ id: "flow", name: "Run a flow", description: 'Runs one of this Huddle\'s flows. Name it in the message metadata as "flow".', tags: ["huddle"] }]
-      : store.flows().map((saved) => ({ id: saved.id, name: saved.flow.name, description: saved.flow.description ?? `Runs the "${saved.flow.name}" flow.`, tags: ["huddle", saved.flow.trigger.type] }));
-    return c.json({
-      name: "Huddle",
-      description: "Hands work between personal assistants along flows their owner drew, with approvals and shared memory.",
-      version: options.version,
-      supportedInterfaces: [{ url: `${options.publicUrl}/a2a`, protocolBinding: "JSONRPC", protocolVersion: "1.0" }],
-      provider: { organization: "Huddle", url: "https://github.com/N-45div/huddle" },
-      capabilities: { streaming: false, pushNotifications: false },
-      defaultInputModes: ["text/plain", "application/json"],
-      defaultOutputModes: ["text/plain", "application/json"],
-      skills,
-      ...(token ? { securitySchemes: { bearer: { httpAuthSecurityScheme: { scheme: "Bearer" } } }, securityRequirements: [{ schemes: { bearer: { list: [] } } }] } : {}),
-    });
+      : store.flows().map(skillOf);
+    return c.json(card("Huddle", "Hands work between personal assistants along flows their owner drew, with approvals and shared memory.", "/a2a", skills));
   });
 
-  app.post("/a2a", async (c) => {
-    if (token && !same(bearerOf(c.req.header("authorization")), token)) return c.json({ error: "Send Huddle's A2A token as Authorization: Bearer <token>." }, 401);
+  app.get("/a2a/flows/:flowId/.well-known/agent-card.json", (c) => {
+    const saved = store.flow(c.req.param("flowId"));
+    if (!saved) return c.json({ error: "There's no such flow." }, 404);
+    return c.json(card(saved.flow.name, saved.flow.description ?? `A Huddle flow: ${saved.flow.name}.`, `/a2a/flows/${saved.id}`, [skillOf(saved)]));
+  });
+
+  app.post("/a2a/flows/:flowId", (c) => {
+    // The token first, so a caller without one can't learn which flow ids exist.
+    if (refused(c)) return unauthorized(c);
+    const saved = store.flow(c.req.param("flowId"));
+    if (!saved) return c.json({ error: "There's no such flow." }, 404);
+    return rpc(c, saved);
+  });
+
+  app.post("/a2a", (c) => (refused(c) ? unauthorized(c) : rpc(c, null)));
+
+  /** One JSON-RPC request, to the whole Huddle or (fixed) to one flow. */
+  async function rpc(c: Context, fixed: SavedFlow | null) {
     const request = (await c.req.json().catch(() => null)) as { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown } | null;
     const id = request && (typeof request.id === "string" || typeof request.id === "number") ? request.id : null;
     const reply = (body: object) => c.json({ jsonrpc: "2.0", id, ...body });
@@ -160,12 +186,12 @@ export function a2aRoutes(options: AppOptions & { readonly a2aWaitMs?: number })
     const method = methods[request.method];
     if (!method) return reply({ error: { code: METHOD_NOT_FOUND, message: `Huddle doesn't do ${request.method}; it does ${Object.keys(methods).join(" and ")}.` } });
     try {
-      return reply({ result: await method((request.params ?? {}) as Record<string, unknown>) });
+      return reply({ result: await method((request.params ?? {}) as Record<string, unknown>, fixed) });
     } catch (error) {
       const code = error instanceof RpcError ? error.code : -32603;
       return reply({ error: { code, message: error instanceof Error ? error.message : String(error) } });
     }
-  });
+  }
 
   return app;
 }
