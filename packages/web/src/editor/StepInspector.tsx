@@ -1,0 +1,219 @@
+import { useState } from "react";
+import { Hint, TemplateHint } from "../components/bits.tsx";
+import type { Assistant } from "../types.ts";
+import type { LinkHandle, StepContent, StepNode } from "./graph.ts";
+import { KIND_LABEL } from "./nodes.tsx";
+
+interface Props {
+  readonly node: StepNode;
+  readonly stepIds: readonly string[];
+  readonly links: Partial<Record<LinkHandle, string>>;
+  readonly assistants: readonly Assistant[];
+  /** Slices named anywhere in the flow, offered when typing one. */
+  readonly slices: readonly string[];
+  readonly onChange: (content: StepContent) => void;
+  /** Returns a reason when the new id can't be used. */
+  readonly onRename: (to: string) => string | null;
+  readonly onLink: (handle: LinkHandle, target: string | null) => void;
+  readonly onRemove: () => void;
+  readonly onOpenAssistants: () => void;
+}
+
+export function StepInspector({ node, stepIds, links, assistants, slices, onChange, onRename, onLink, onRemove, onOpenAssistants }: Props) {
+  const content = node.data;
+
+  return (
+    <div className="inspector-section">
+      <p className="eyebrow">{KIND_LABEL[content.type]} step</p>
+      <StepIdField key={node.id} id={node.id} onRename={onRename} />
+
+      {content.type === "agent" && (
+        <>
+          <div className="field">
+            <label htmlFor="step-agent">Assistant</label>
+            {assistants.length === 0 ? (
+              <div className="note note-soft">
+                <p>This flow has no assistants yet.</p>
+                <button type="button" className="btn btn-sm" onClick={onOpenAssistants}>
+                  Add an assistant
+                </button>
+              </div>
+            ) : (
+              <select id="step-agent" value={content.agent} onChange={(event) => onChange({ ...content, agent: event.target.value })}>
+                {!assistants.some((assistant) => assistant.id === content.agent) && <option value={content.agent}>{content.agent ? `"${content.agent}" (not in this flow)` : "Pick one"}</option>}
+                {assistants.map((assistant) => (
+                  <option key={assistant.id} value={assistant.id}>
+                    {assistant.name ? `${assistant.name} (${assistant.id})` : assistant.id}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div className="field">
+            <label htmlFor="step-ask">Ask</label>
+            <textarea id="step-ask" rows={5} value={content.ask} aria-describedby="step-ask-hint" onChange={(event) => onChange({ ...content, ask: event.target.value })} />
+            <TemplateHint id="step-ask-hint" />
+          </div>
+          <LinkSelect id="step-next" label="Then" value={links.next} options={stepIds} self={node.id} endLabel="End the run" onChange={(target) => onLink("next", target)} />
+        </>
+      )}
+
+      {content.type === "condition" && (
+        <>
+          <div className="field">
+            <label htmlFor="step-if">If</label>
+            <input id="step-if" className="mono" value={content.if} aria-describedby="step-if-hint" onChange={(event) => onChange({ ...content, if: event.target.value })} />
+            <Hint id="step-if-hint">
+              Two values and one of <code>&gt;</code> <code>&lt;</code> <code>&gt;=</code> <code>&lt;=</code> <code>==</code> <code>!=</code> <code>contains</code>. Values can be templates like{" "}
+              <code>{"{{stepId.data.field}}"}</code>.
+            </Hint>
+          </div>
+          <LinkSelect id="step-then" label="If yes, go to" value={links.then} options={stepIds} self={node.id} endLabel="End the run" onChange={(target) => onLink("then", target)} />
+          <LinkSelect id="step-else" label="If no, go to" value={links.else} options={stepIds} self={node.id} endLabel="End the run" onChange={(target) => onLink("else", target)} />
+        </>
+      )}
+
+      {content.type === "approval" && (
+        <>
+          <div className="field">
+            <label htmlFor="step-message">Question</label>
+            <textarea id="step-message" rows={3} value={content.message} aria-describedby="step-message-hint" onChange={(event) => onChange({ ...content, message: event.target.value })} />
+            <TemplateHint id="step-message-hint" />
+          </div>
+          <LinkSelect id="step-yes" label="If yes, go to" value={links.next} options={stepIds} self={node.id} endLabel="End the run" onChange={(target) => onLink("next", target)} />
+          <LinkSelect
+            id="step-no"
+            label="If no, go to"
+            value={links.onNo ?? (content.noFinishes ? FINISH : undefined)}
+            options={stepIds}
+            self={node.id}
+            endLabel="End the run as declined"
+            extra={{ value: FINISH, label: "End the run as done" }}
+            onChange={(target) => {
+              if (Boolean(content.noFinishes) !== (target === FINISH)) onChange({ ...content, noFinishes: target === FINISH });
+              onLink("onNo", target === FINISH ? null : target);
+            }}
+          />
+        </>
+      )}
+
+      {content.type === "memory" && (
+        <>
+          <div className="field">
+            <label htmlFor="step-slice">Slice</label>
+            <input id="step-slice" list="step-slices" value={content.slice} autoComplete="off" onChange={(event) => onChange({ ...content, slice: event.target.value })} />
+            <datalist id="step-slices">
+              {slices.map((slice) => (
+                <option key={slice} value={slice} />
+              ))}
+            </datalist>
+          </div>
+          <div className="field">
+            <label htmlFor="step-note">Note</label>
+            <textarea id="step-note" rows={4} value={content.note} aria-describedby="step-note-hint" onChange={(event) => onChange({ ...content, note: event.target.value })} />
+            <TemplateHint id="step-note-hint" />
+            <Hint>It goes in as a suggestion; you keep it or discard it in Memory.</Hint>
+          </div>
+          <LinkSelect id="step-next" label="Then" value={links.next} options={stepIds} self={node.id} endLabel="End the run" onChange={(target) => onLink("next", target)} />
+        </>
+      )}
+
+      <div className="inspector-foot">
+        <button type="button" className="btn btn-sm btn-ghost danger-text" onClick={onRemove}>
+          Remove this step
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StepIdField({ id, onRename }: { readonly id: string; readonly onRename: (to: string) => string | null }) {
+  const [draft, setDraft] = useState(id);
+  const [error, setError] = useState<string | null>(null);
+
+  const apply = () => {
+    const next = draft.trim();
+    if (next === id) {
+      setError(null);
+      return;
+    }
+    const problem = onRename(next);
+    setError(problem);
+  };
+
+  return (
+    <div className="field">
+      <label htmlFor="step-id">Step id</label>
+      <input
+        id="step-id"
+        className="mono"
+        value={draft}
+        autoComplete="off"
+        spellCheck={false}
+        aria-invalid={error ? true : undefined}
+        aria-describedby="step-id-hint"
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setError(null);
+        }}
+        onBlur={apply}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            apply();
+          } else if (event.key === "Escape") {
+            setDraft(id);
+            setError(null);
+          }
+        }}
+      />
+      {error ? (
+        <p className="error-text" id="step-id-hint" role="alert">
+          {error}
+        </p>
+      ) : (
+        <Hint id="step-id-hint">
+          Later steps read its answer as <code>{`{{${id}.text}}`}</code>. Renaming updates those references.
+        </Hint>
+      )}
+    </div>
+  );
+}
+
+/** The "no" choice that finishes the run as done (onNo: "end"); not a step id, since ids can't start with "_". */
+const FINISH = "__finish";
+
+function LinkSelect({
+  id,
+  label,
+  value,
+  options,
+  endLabel,
+  extra,
+  onChange,
+  self,
+}: {
+  readonly extra?: { readonly value: string; readonly label: string };
+  readonly self: string;
+  readonly id: string;
+  readonly label: string;
+  readonly value: string | undefined;
+  readonly options: readonly string[];
+  readonly endLabel: string;
+  readonly onChange: (target: string | null) => void;
+}) {
+  return (
+    <div className="field field-link">
+      <label htmlFor={id}>{label}</label>
+      <select id={id} value={value ?? ""} onChange={(event) => onChange(event.target.value || null)}>
+        <option value="">{endLabel}</option>
+        {extra && <option value={extra.value}>{extra.label}</option>}
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option === self ? `${option} (this step again)` : option}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
