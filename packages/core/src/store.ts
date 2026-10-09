@@ -65,7 +65,8 @@ export type Change =
   | { readonly kind: "sandbox" }
   /** The list of your assistants changed. */
   | { readonly kind: "assistants" }
-  | { readonly kind: "contacts" };
+  | { readonly kind: "contacts" }
+  | { readonly kind: "signin" };
 
 /** Someone you know, who reaches Huddle with their own token (or, later, from their email address). */
 export interface Contact {
@@ -261,6 +262,14 @@ export class Store {
   setting(key: string): string | null {
     const row = this.db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as Row | undefined;
     return row ? String(row.value) : null;
+  }
+
+  saveSetting(key: string, value: string): void {
+    this.db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(key, value);
+  }
+
+  deleteSetting(key: string): void {
+    this.db.prepare("DELETE FROM settings WHERE key = ?").run(key);
   }
 
   /** The value for `key`, made with `make` and kept the first time it's asked for. */

@@ -28,6 +28,8 @@ export const Assistant = z.object({
   model: z.string().min(1).optional(),
   /** pact: the audience the business's Provider gave Huddle when it registered (goes in each token's aud). */
   audience: z.string().min(1).optional(),
+  /** pact: what to ask the business to let Huddle do for you (scope ids from its Agent Card), signed in once. */
+  scopes: z.array(z.string().min(1).max(100)).max(50).optional(),
   /** openshell: the command that runs the agent in its sandbox; the request goes in on stdin, or where "{{ask}}" is. */
   command: z.array(z.string().min(1)).min(1).max(64).optional(),
   /** mock: fixed answers; the first key found in the request (ignoring case) wins, then "*". */
