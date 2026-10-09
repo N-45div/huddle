@@ -90,6 +90,15 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
     ],
   },
   {
+    id: "instinct",
+    name: "Open Instinct",
+    description: "An open-instinct agent, the personal agent you text, through its owner chat: Huddle talks to it as you. If it sets INSTINCT_CHAT_TOKEN, give Huddle the same token.",
+    fields: [
+      { key: "url", label: "Address", required: false, placeholder: "http://127.0.0.1:8080" },
+      { key: "keyEnv", label: "Token variable", required: false, placeholder: "INSTINCT_CHAT_TOKEN" },
+    ],
+  },
+  {
     id: "sochen",
     name: "Sochen",
     description: "Sochen's agent and its pets, through the Agent API (a Pro plan key).",
