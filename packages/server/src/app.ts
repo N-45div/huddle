@@ -1,4 +1,4 @@
-import { type Change, type Engine, Flow, type Note, ollamaModels, type SavedFlow, type Store } from "@huddle/core";
+import { type Change, type Engine, Flow, type Note, ollamaModels, type PactIdentity, type SavedFlow, type Store } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { a2aRoutes } from "./a2a.ts";
@@ -31,6 +31,8 @@ export interface AppOptions {
   readonly fetcher?: typeof fetch;
   /** What OpenShell sandboxes are asking for, when an OpenShell gateway is set up. */
   readonly sandboxes?: SandboxInbox;
+  /** Huddle's identity as a PACT personal agent: its key is published at /.well-known/jwks.json. */
+  readonly pact?: PactIdentity;
 }
 
 /** A flow from a request body, or the problems with it, one line each. */
@@ -207,6 +209,42 @@ export function createApp(options: AppOptions): Hono {
       input = await c.req.text();
     }
     return c.json({ runId: engine.launch(saved.flow, input.slice(0, 100_000), saved.id) }, 202);
+  });
+
+  // PACT: Huddle's public key, so businesses can check the requests it signs -------------------------
+  const pact = options.pact;
+  if (pact) {
+    app.get("/.well-known/jwks.json", (c) => c.json(pact.jwks(), 200, { "cache-control": "public, max-age=300" }));
+    // Open Providers find the key through OIDC discovery under the issuer.
+    app.get("/.well-known/openid-configuration", (c) => c.json({ issuer: pact.issuer, jwks_uri: pact.jwksUri }));
+  }
+  app.get("/api/pact", (c) => (pact ? c.json({ issuer: pact.issuer, jwksUri: pact.jwksUri, kid: pact.publicJwk().kid }) : bad(c, "PACT isn't set up on this Huddle.", 404)));
+  /**
+   * Registers Huddle with a Provider that offers self-service registration the way PACT's reference
+   * Provider does (POST {provider}/api/platforms, a token signed with Huddle's key). Others register by hand.
+   */
+  app.post("/api/pact/register", async (c) => {
+    if (!pact) return bad(c, "PACT isn't set up on this Huddle.", 404);
+    const { provider, name } = await body(c);
+    if (typeof provider !== "string" || !/^https?:\/\/\S+$/i.test(provider.trim())) return bad(c, "Give the Provider's address, starting with http:// or https://.");
+    if (typeof name !== "string" || !/^[a-z0-9][a-z0-9-]{1,62}$/i.test(name.trim())) return bad(c, "Give Huddle a name for this Provider: letters, numbers and dashes.");
+    const endpoint = `${provider.trim().replace(/\/+$/, "")}/api/platforms`;
+    let response: Response;
+    try {
+      response = await (options.fetcher ?? fetch)(endpoint, {
+        method: "POST",
+        headers: { authorization: `Bearer ${pact.sign({ aud: endpoint, sub: pact.issuer })}`, "content-type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), jwksUri: pact.jwksUri }),
+        signal: AbortSignal.timeout(20_000),
+      });
+    } catch {
+      return bad(c, `Can't reach ${endpoint}.`, 502);
+    }
+    const said = (await response.json().catch(() => null)) as { error?: unknown; message?: unknown; audience?: unknown } | null;
+    if (response.status === 201 || response.ok) return c.json({ registered: true, audience: typeof said?.audience === "string" ? said.audience : null });
+    if (response.status === 409) return bad(c, "This Provider already has that name or Huddle's issuer registered. If it's Huddle's, you're set.", 409);
+    const detail = typeof said?.error === "string" ? said.error : typeof said?.message === "string" ? said.message : `HTTP ${response.status}`;
+    return bad(c, `The Provider turned the registration down: ${detail}.`, 502);
   });
 
   app.route("/", a2aRoutes(options));

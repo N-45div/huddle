@@ -60,6 +60,16 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
     ],
   },
   {
+    id: "pact",
+    name: "A business's agent (PACT)",
+    description:
+      "A company's support agent that speaks PACT, the Personal Agent Consent & Trust Protocol. Huddle signs each request as your personal agent; register Huddle with the company's Provider first.",
+    fields: [
+      { key: "url", label: "Agent Card URL", required: true, placeholder: "https://shop.example/.well-known/agent-card.json" },
+      { key: "audience", label: "Provider's audience", required: true, placeholder: "https://provider.example/a2a" },
+    ],
+  },
+  {
     id: "homeassistant",
     name: "Home Assistant",
     description: "Home Assistant's Assist. Takes plain commands; memory isn't sent to it.",

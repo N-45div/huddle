@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { a2a, Engine, type Flow, mock, type OpenShell, parseFlow, type Run, Store } from "@huddle/core";
+import { a2a, Engine, type Flow, mock, newKey, type OpenShell, PactIdentity, parseFlow, type Run, Store } from "@huddle/core";
 import { Hono } from "hono";
 import { createApp } from "../src/app.ts";
 import { describer } from "../src/describe.ts";
@@ -279,6 +279,41 @@ describe("Huddle over A2A", () => {
     const view = await caller.start(flow, "");
     assert.equal(view.state, "done");
     assert.equal(view.context.steps.hello?.text, "Hello from Huddle.");
+  });
+});
+
+describe("Huddle as a PACT personal agent", () => {
+  const identity = new PactIdentity("http://huddle.test", newKey(), "huddle-user-1");
+  const claimsOf = (token: string) => JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString()) as Record<string, unknown>;
+
+  it("publishes its public key for businesses to check, without needing Huddle's token", async () => {
+    const { app } = setup({ pact: identity });
+    const jwks = await (await app.request("/.well-known/jwks.json")).json();
+    assert.deepEqual(jwks, identity.jwks());
+    assert.equal("d" in (jwks.keys[0] ?? {}), false);
+    assert.deepEqual(await (await app.request("/.well-known/openid-configuration")).json(), { issuer: "http://huddle.test", jwks_uri: "http://huddle.test/.well-known/jwks.json" });
+    assert.equal((await app.request("/api/pact")).status, 401, "but the API still wants the token");
+    assert.deepEqual(await (await app.request("/api/pact", { headers: auth })).json(), { issuer: "http://huddle.test", jwksUri: "http://huddle.test/.well-known/jwks.json", kid: identity.publicJwk().kid });
+  });
+
+  it("registers with a Provider the way PACT's reference Provider takes it, and says when it's already there", async () => {
+    const calls: { url: string; token: Record<string, unknown>; body: Record<string, unknown> }[] = [];
+    const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+      const token = claimsOf(String((init?.headers as Record<string, string>).authorization).replace(/^Bearer /, ""));
+      calls.push({ url: String(input), token, body: JSON.parse(String(init?.body)) });
+      return calls.length === 1 ? Response.json({ id: "p1", audience: "http://provider.test/a2a" }, { status: 201 }) : Response.json({ error: "conflict" }, { status: 409 });
+    }) as typeof fetch;
+    const { app } = setup({ pact: identity, fetcher });
+    const first = await app.request("/api/pact/register", json({ provider: "http://provider.test/", name: "my-huddle" }));
+    assert.deepEqual(await first.json(), { registered: true, audience: "http://provider.test/a2a" });
+    assert.equal(calls[0]!.url, "http://provider.test/api/platforms");
+    assert.deepEqual([calls[0]!.token.iss, calls[0]!.token.sub, calls[0]!.token.aud], ["http://huddle.test", "http://huddle.test", "http://provider.test/api/platforms"]);
+    assert.deepEqual(calls[0]!.body, { name: "my-huddle", jwksUri: "http://huddle.test/.well-known/jwks.json" });
+    const again = await app.request("/api/pact/register", json({ provider: "http://provider.test", name: "my-huddle" }));
+    assert.equal(again.status, 409);
+    assert.match((await again.json()).error, /already has that name or Huddle's issuer registered/);
+    assert.equal((await app.request("/api/pact/register", json({ provider: "ftp://x", name: "my-huddle" }))).status, 400);
+    assert.equal((await app.request("/api/pact/register", json({ provider: "http://provider.test", name: "no spaces" }))).status, 400);
   });
 });
 

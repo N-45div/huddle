@@ -62,7 +62,7 @@ export interface WaitingApproval {
 
 /** A field an assistant of this connector needs, for the "add assistant" form. */
 export interface ConnectorField {
-  readonly key: "url" | "keyEnv" | "model" | "agentId" | "command" | "replies";
+  readonly key: "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies";
   readonly label: string;
   readonly required: boolean;
   readonly placeholder?: string;
@@ -143,10 +143,13 @@ export interface SandboxRequests {
  *   POST   /api/describe { text }          -> { flow }            (501 when no model is set up)
  *   GET    /api/sandbox-requests           -> SandboxRequests
  *   POST   /api/sandbox-requests/:sandbox/:id { yes, reason? } -> { ok: true }   (409 when it changed meanwhile)
+ *   GET    /api/pact                       -> { issuer, jwksUri, kid }   (Huddle as a PACT personal agent)
+ *   POST   /api/pact/register { provider, name } -> { registered, audience }   (reference-style self-service)
  *   GET    /api/events?token=              -> SSE of ChangeEvent
  * Outside /api:
  *   POST   /hooks/:flowId/:secret          -> 202 { runId }       (body: text, or JSON { input })
  *   GET    /.well-known/agent-card.json    -> Huddle's A2A Agent Card
+ *   GET    /.well-known/jwks.json, /.well-known/openid-configuration   -> Huddle's PACT signing key
  *   POST   /a2a                            -> A2A 1.0 JSON-RPC (SendMessage, GetTask)
  *   GET    /a2a/flows/:id/.well-known/agent-card.json, POST /a2a/flows/:id   -> one flow as its own A2A agent
  */
