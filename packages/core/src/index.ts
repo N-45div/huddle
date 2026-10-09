@@ -1,7 +1,9 @@
 export { evaluate } from "./condition.ts";
 export { type Connector, type ConnectorRequest, dataIn } from "./connector.ts";
+export { a2a, type A2AOptions } from "./connectors/a2a.ts";
 export { http } from "./connectors/http.ts";
 export { mock } from "./connectors/mock.ts";
+export { openai } from "./connectors/openai.ts";
 export { sochen } from "./connectors/sochen.ts";
 export { Engine, MAX_STEPS, type RunView } from "./engine.ts";
 export { Assistant, Flow, parseFlow, Step } from "./schema.ts";

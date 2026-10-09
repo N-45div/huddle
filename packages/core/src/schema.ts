@@ -12,13 +12,16 @@ const target = z.string().min(1);
 export const Assistant = z.object({
   id,
   name: z.string().optional(),
-  connector: z.enum(["mock", "http", "sochen"]),
+  /** How to reach it: openclaw and hermes are A2A with their usual local address filled in. */
+  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai"]),
   /** The slices of shared memory this assistant may read. */
   memory: z.array(z.string().min(1)).default([]),
-  /** http: where to POST. sochen: the API base, if not https://sochen.dev. */
+  /** http: where to POST. a2a: the agent's base address or its card. openai: the API base. sochen: if not https://sochen.dev. */
   url: z.string().url().optional(),
   /** The environment variable that holds this assistant's key. Never the key itself. */
   keyEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/, "an environment variable name, like SOCHEN_API_KEY").optional(),
+  /** openai: the model to ask for (e.g. "openclaw/main" for an OpenClaw agent). */
+  model: z.string().min(1).optional(),
   /** mock: fixed answers; the first key found in the request (ignoring case) wins, then "*". */
   replies: z.record(z.string(), z.string()).optional(),
 });
