@@ -21,6 +21,8 @@ export interface RunView {
   /** What the run is waiting on, when it is. */
   readonly waiting: Pick<Approval, "id" | "message"> | null;
   readonly context: RunContext;
+  readonly createdAt: string;
+  readonly updatedAt: string;
 }
 
 export class Engine {
@@ -74,7 +76,17 @@ export class Engine {
     const run = this.store.run(runId);
     if (!run) throw new Error(`There's no run ${runId}.`);
     const waiting = run.state === "waiting" ? this.store.waitingApproval(run.id) : null;
-    return { id: run.id, flowId: run.flowId, state: run.state, at: run.at, error: run.error, waiting: waiting ? { id: waiting.id, message: waiting.message } : null, context: run.context };
+    return {
+      id: run.id,
+      flowId: run.flowId,
+      state: run.state,
+      at: run.at,
+      error: run.error,
+      waiting: waiting ? { id: waiting.id, message: waiting.message } : null,
+      context: run.context,
+      createdAt: run.createdAt,
+      updatedAt: run.updatedAt,
+    };
   }
 
   private async advance(run: Run, from: string): Promise<RunView> {
