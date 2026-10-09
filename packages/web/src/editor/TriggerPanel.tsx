@@ -104,7 +104,7 @@ export function TriggerPanel({ flowId, trigger, savedTrigger, webhookUrl, a2aUrl
               placeholder="inbox@yourdomain.com"
               autoComplete="off"
               spellCheck={false}
-              aria-invalid={EMAIL_PATTERN.test(trigger.address) ? undefined : true}
+              aria-invalid={trigger.address && !EMAIL_PATTERN.test(trigger.address) ? true : undefined}
               aria-describedby="trigger-address-hint"
               onChange={(event) => onChange({ ...trigger, address: event.target.value.trim() })}
             />
