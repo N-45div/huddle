@@ -4,9 +4,9 @@
 memory, and draw how they hand work to each other, with you approving anything that matters.
 
 > Status: early, and self-hosted. The canvas, the flow engine, shared memory, approvals, schedules,
-> webhooks, "describe it", and connectors for OpenClaw, Hermes Agent, any A2A agent, OpenAI-style APIs,
-> Ollama, agents in NVIDIA OpenShell sandboxes, Home Assistant, Agent Zero and Sochen all work today,
-> from one command or one container. Approvals on
+> webhooks, email in and out, "describe it", and connectors for OpenClaw, Hermes Agent, any A2A agent,
+> OpenAI-style APIs, Ollama, agents in NVIDIA OpenShell sandboxes, Home Assistant, Agent Zero and Sochen
+> all work today, from one command or one container. Approvals on
 > your phone and the hosted version are next. See [Roadmap](#roadmap).
 
 ---
@@ -32,8 +32,8 @@ teammate: you put them on a canvas, say who does what, and decide where you want
   stops there until you tap yes or no. Nothing that spends, sends or books gets past one without you.
 - **Runs survive waiting.** A run that's waiting for your approval is saved, so it carries on later,
   after a restart, from exactly where it stopped.
-- **Runs start how you like.** Press Run, put it on a schedule ("every 2h"), or give it a webhook
-  address that anything can post to.
+- **Runs start how you like.** Press Run, put it on a schedule ("every 2h"), give it a webhook
+  address that anything can post to, or an email address: mail to it starts the flow.
 - **Your assistants can call it too.** Huddle is an A2A agent itself, so OpenClaw, Hermes or any other
   A2A assistant can hand a job to one of your flows.
 - **One API to every assistant you run.** Huddle's router is OpenAI-compatible: point any app or SDK
@@ -113,6 +113,7 @@ benchmarked yet.
 | **`homeassistant`** | [Home Assistant](https://github.com/home-assistant/core)'s Assist, through its conversation API | ready |
 | **`agentzero`** | [Agent Zero](https://github.com/agent0ai/agent-zero), through its external API | ready |
 | **`instinct`** | [Open Instinct](https://github.com/mariagorskikh/open-instinct), the personal agent you text, through its owner chat | ready |
+| **`email`** | people, by email through [Resend](https://resend.com), always to the addresses you set (see [Email](#email)) | ready |
 | **`http`** | anything with a simple `{ ask } → { text }` API | ready |
 | **`mock`** | a stand-in assistant for building and testing flows | ready |
 | `mcp` | assistants and tools exposed as Model Context Protocol servers | next |
@@ -122,8 +123,8 @@ Agent (0.21.6) and Ollama (0.40) are also tested against real installs: a flow w
 approve, and Hermes follows up, each reading only its own slice of memory, and a local model answering
 from the slice it was given. The others haven't been run against a
 live install yet, so reports of what breaks are very welcome. Assistants with no way in from outside
-(some consumer apps have none) can't be connected yet; reaching them by email or a messaging channel is
-on the roadmap.
+(some consumer apps have none) can't be connected yet, unless they read email (see [Email](#email));
+reaching them by a messaging channel is on the roadmap.
 
 ### Bring your assistant
 
@@ -275,6 +276,69 @@ Both were tested live: Hermes asking a Huddle flow that asked OpenClaw, and Open
 flow that asked Hermes. Any other A2A client can use `/a2a`, naming the flow in the message's metadata as
 `"flow"`. While a token is set, Huddle's main card doesn't list your flows' names.
 
+## Email
+
+Huddle sends and receives mail through [Resend](https://resend.com), a hosted email API (there's no
+Resend server to run yourself).
+
+**Sending.** The `email` connector sends a step's text as an email, always to the addresses you give it,
+from an address on a domain you verified in Resend:
+
+```json
+{ "id": "mail-asha", "connector": "email", "to": ["asha@example.com"], "from": "Huddle <huddle@yourdomain.com>" }
+```
+
+- Start the step's text with `Subject: …` to give the email a subject; the rest is the message. Without
+  it, the subject is "A message from Huddle".
+- The key comes from `RESEND_API_KEY`, or the variable you name in `keyEnv`.
+- No memory goes out: only what the step says is in the email.
+- **Put an approval step before an email step**, so nothing leaves without your OK:
+
+```jsonc
+{ "id": "check", "type": "approval", "message": "Send this to Asha?\n\n{{draft.text}}" },
+{ "id": "send",  "type": "agent", "agent": "mail-asha", "ask": "Subject: Saturday\n\n{{draft.text}}" }
+```
+
+The router's `"auto"` never picks an email assistant; ask for one by its id if you mean it.
+
+**Receiving.** A flow whose trigger is **When an email arrives** starts when mail to its address reaches
+Huddle:
+
+```jsonc
+"trigger": { "type": "email", "address": "inbox@yourdomain.com" }
+```
+
+1. In Resend, turn on receiving: any address at the `<id>.resend.app` domain Resend gives you works at
+   once, or add Resend's MX record to receive at your own domain.
+2. Add a webhook for the `email.received` event pointing at `<HUDDLE_PUBLIC_URL>/hooks/email`, one
+   address for all your flows (Huddle has to be reachable from the internet, e.g. through a tunnel).
+3. Where Huddle runs, set `RESEND_WEBHOOK_SECRET` to the webhook's signing secret (`whsec_…`) and
+   `RESEND_API_KEY` to a full-access key. The event only names the mail; Huddle fetches it with the key,
+   and a sending-only key can't read mail.
+4. Set `HUDDLE_OWNER_EMAILS` to your own addresses.
+
+The email is the run's input: its plain text (or its HTML as text when there's none), up to 100,000
+characters, after who it's from, who it's to and the subject:
+
+```
+From: Asha <asha@example.com>
+To: inbox@yourdomain.com
+Subject: Saturday?
+
+Are you free for lunch?
+```
+
+Who sent it decides what happens, under the flow's **Who can start it from outside** rule, as for A2A:
+mail from your addresses counts as you, mail from an address one of your **Contacts** has counts as them
+at their tier, and anyone else is a stranger. Strangers are turned away unless the flow lets them ask, and
+turned-away mail is dropped with a line in Huddle's log. A From line is easy to forge, so a sender only
+counts as you or a contact when the receiving mail server found the mail really came from their domain
+(DKIM or DMARC passed); otherwise it's a stranger's. Every event must carry the webhook's signature and
+be less than five minutes old, and each one starts its runs once, however often Resend sends it again.
+
+Both directions are built from Resend's API docs and tested against stand-ins; they haven't run against a
+live Resend account yet, so reports are welcome.
+
 ## Sandboxed assistants with NVIDIA OpenShell
 
 [OpenShell](https://github.com/NVIDIA/OpenShell) runs an agent in a sandbox whose policy decides what it
@@ -418,6 +482,9 @@ docker compose up -d   # http://localhost:7700, data in the huddle-data volume
 | `TYPESAFE_API_KEY`, `HUDDLE_JEV_MODEL` | none, `jev-latest` | Jev judges the router's `"auto"` |
 | `HUDDLE_OPENSHELL_GATEWAY` | none | an NVIDIA OpenShell gateway, for sandboxed assistants and their requests in Approvals |
 | `OPENSHELL_TLS_DIR` | `~/.config/openshell/gateways/openshell/mtls` | the OpenShell CLI's client certificate (`ca.crt`, `tls.crt`, `tls.key`) |
+| `RESEND_API_KEY` | none | sends email (the `email` connector's default key) and reads mail that arrives; reading needs a full-access key |
+| `RESEND_WEBHOOK_SECRET` | none | the signing secret of Resend's `email.received` webhook, pointed at `/hooks/email`; without it Huddle takes no mail |
+| `HUDDLE_OWNER_EMAILS` | none | your own addresses, comma-separated: mail from them counts as you |
 
 To reach Huddle from outside your machine, put it behind HTTPS (Caddy, Cloudflare Tunnel, Tailscale)
 and set `HUDDLE_PUBLIC_URL`. Webhook addresses carry their own secret; make a new one from the flow's
@@ -441,7 +508,7 @@ npm run huddle -- runs                   # recent runs
 6. The router: one OpenAI-compatible API to every assistant, "auto" judged by Jev, fallbacks (started)
 7. PACT: Huddle as your personal agent with businesses (identity done; signing in from Approvals next),
    and Sierra and Meta's Personal Agent Protocol when its v0.1 spec is out
-8. Approvals on your phone, and email and Telegram triggers
+8. Email in and out through Resend (done); approvals on your phone and a Telegram trigger next
 9. The hosted version, for people who'd rather not run anything
 
 ## License
