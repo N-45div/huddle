@@ -55,8 +55,11 @@ message or the command line can answer them.
 |---|---|
 | `mock` | answers from a fixed list in the flow file; for building and testing |
 | `http` | `POST url` with `{ ask, memory }`, expecting `{ text, data? }` back |
+| `a2a` | A2A 1.0 JSON-RPC: the endpoint comes from the agent's card (`/.well-known/agent-card.json`), or is the url itself; `SendMessage`, then `GetTask` until the task completes, fails, or needs input or auth. A task that needs something comes back with that `state` for a flow to branch on |
+| `openclaw`, `hermes` | `a2a` with their usual local address (`127.0.0.1:18789`, `127.0.0.1:9900`) and token variable (`OPENCLAW_A2A_TOKEN`, `HERMES_A2A_TOKEN`) filled in |
+| `openai` | `POST <url>/v1/chat/completions` (or the full chat URL), memory as a system note; a plain reply with no task to follow |
 | `sochen` | Sochen's Agent API (`POST https://sochen.dev/api/v1/run`), with a key from the environment |
-| `a2a`, `mcp`, `openclaw` | next |
+| `mcp` | next |
 
 ## Not yet
 

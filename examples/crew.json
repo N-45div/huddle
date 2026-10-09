@@ -1,0 +1,15 @@
+{
+  "name": "Plan my week",
+  "assistants": [
+    { "id": "claw", "name": "OpenClaw", "connector": "openclaw", "memory": ["work"] },
+    { "id": "hermes", "name": "Hermes", "connector": "hermes", "memory": ["home"] },
+    { "id": "sochen", "name": "Sochen", "connector": "sochen", "memory": ["money"] }
+  ],
+  "steps": [
+    { "id": "work", "type": "agent", "agent": "claw", "ask": "List my work commitments for next week as JSON: {\"items\": [...]}." },
+    { "id": "home", "type": "agent", "agent": "hermes", "ask": "List what's on at home next week. Work already has: {{work.text}}" },
+    { "id": "costs", "type": "agent", "agent": "sochen", "ask": "Here's my week: {{work.text}} / {{home.text}}. Estimate what it will cost me and give the total as JSON: {\"total\": number}." },
+    { "id": "pricey", "type": "condition", "if": "{{costs.data.total}} > 300", "then": "check", "else": "end" },
+    { "id": "check", "type": "approval", "message": "Next week looks like ${{costs.data.total}}. Go ahead with it as planned?" }
+  ]
+}

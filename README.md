@@ -3,8 +3,9 @@
 **n8n for personal assistants.** Connect the AI assistants you already use, give them one shared
 memory, and draw how they hand work to each other, with you approving anything that matters.
 
-> Status: early. The flow engine, shared memory, approvals and the first connectors run today from the
-> command line. The canvas and the hosted version are being built. See [Roadmap](#roadmap).
+> Status: early. The flow engine, shared memory, approvals and connectors for OpenClaw, Hermes Agent, any
+> A2A agent, OpenAI-style APIs and Sochen run today from the command line. The canvas and the hosted
+> version are being built. See [Roadmap](#roadmap).
 
 ---
 
@@ -58,15 +59,57 @@ teammate: you put them on a canvas, say who does what, and decide where you want
 
 | Connector | Reaches | Status |
 |---|---|---|
-| **Sochen** | Sochen's agent and its pets, through the Agent API | works |
-| **HTTP** | anything with a simple request/response API | works |
-| **Mock** | a stand-in assistant for building and testing flows | works |
-| **A2A** | any agent that speaks the open Agent2Agent protocol | next |
-| **MCP** | assistants and tools exposed as Model Context Protocol servers | next |
-| **OpenClaw** | the open-source personal assistant | next |
+| **`openclaw`** | [OpenClaw](https://github.com/openclaw/openclaw), through its A2A channel | ready |
+| **`hermes`** | [Hermes Agent](https://github.com/NousResearch/hermes-agent), through its A2A gateway | ready |
+| **`a2a`** | any agent that speaks [A2A](https://a2a-protocol.org) 1.0 (Agent2Agent) | ready |
+| **`openai`** | anything with an OpenAI-style chat API: Open WebUI, AnythingLLM, LibreChat's Agents API, Letta, and the API servers of OpenClaw and Hermes | ready |
+| **`sochen`** | [Sochen](https://sochen.dev)'s agent and its pets, through the Agent API | ready |
+| **`http`** | anything with a simple `{ ask } → { text }` API | ready |
+| **`mock`** | a stand-in assistant for building and testing flows | ready |
+| `mcp` | assistants and tools exposed as Model Context Protocol servers | next |
 
-Assistants that offer no way in from outside (some consumer apps don't) can't be connected yet. Where
-an assistant can be reached by email or a messaging channel, that's on the roadmap.
+"Ready" means built and tested against each project's documented API; we haven't yet run every one
+against a live install, so reports of what breaks are very welcome. Assistants with no way in from
+outside (some consumer apps have none) can't be connected yet; reaching them by email or a messaging
+channel is on the roadmap.
+
+### Bring your assistant
+
+**OpenClaw.** Turn on its A2A channel and give Huddle a token (OpenClaw's
+[A2A docs](https://docs.openclaw.ai/channels/a2a.md)):
+
+```json5
+// in OpenClaw's config
+{ channels: { a2a: { enabled: true, peers: { huddle: { token: "${OPENCLAW_A2A_TOKEN}" } } } } }
+```
+
+Then set the same `OPENCLAW_A2A_TOKEN` where Huddle runs, and add it to a flow:
+
+```json
+{ "id": "claw", "connector": "openclaw", "memory": ["work"] }
+```
+
+Huddle finds OpenClaw at `http://127.0.0.1:18789` unless you give a `url`.
+
+**Hermes Agent.** Turn on its A2A gateway (`gateway.platforms.a2a.enabled: true`, port 9900; Hermes'
+[A2A docs](https://hermes-agent.nousresearch.com/docs)). On the same machine it needs no token; for a
+remote one, set a bearer token in Hermes and the same value in `HERMES_A2A_TOKEN` for Huddle.
+
+```json
+{ "id": "hermes", "connector": "hermes", "memory": ["home"] }
+```
+
+**Anything with an OpenAI-style chat API.** Give its address, and the model or agent to ask for. If its
+chat path isn't `/v1/chat/completions`, give the whole chat URL instead:
+
+```json
+{ "id": "webui", "connector": "openai", "url": "http://localhost:3000/api/chat/completions", "model": "my-agent", "keyEnv": "OPENWEBUI_KEY" }
+```
+
+**Sochen.** Set `SOCHEN_API_KEY` (a Pro plan's `sk_sochen_…` key) and add `{ "id": "sochen", "connector": "sochen" }`.
+
+An assistant only ever sees the memory slices it lists in `memory`. Keys always come from environment
+variables, never from the flow file.
 
 ## Try it
 
@@ -87,7 +130,7 @@ npm run huddle -- approve <run-id> yes
 ## Roadmap
 
 1. The engine, shared memory, approvals and the first connectors (done)
-2. A2A, MCP and OpenClaw connectors
+2. OpenClaw, Hermes Agent, A2A and OpenAI-style connectors (done); MCP next
 3. The canvas: drag assistants in, draw the hand-offs, watch runs live
 4. Triggers: schedules, webhooks, email and Telegram, with approvals on your phone
 5. "Describe it": write the flow in a sentence and Huddle draws it
