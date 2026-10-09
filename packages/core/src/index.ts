@@ -1,6 +1,8 @@
 export { evaluate } from "./condition.ts";
 export { type Connector, type ConnectorRequest, dataIn } from "./connector.ts";
 export { a2a, type A2AOptions } from "./connectors/a2a.ts";
+export { agentzero } from "./connectors/agentzero.ts";
+export { homeassistant } from "./connectors/homeassistant.ts";
 export { http } from "./connectors/http.ts";
 export { mock } from "./connectors/mock.ts";
 export { openai } from "./connectors/openai.ts";

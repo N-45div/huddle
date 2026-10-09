@@ -13,13 +13,15 @@ export const Assistant = z.object({
   id,
   name: z.string().optional(),
   /** How to reach it: openclaw and hermes are A2A with their usual local address filled in. */
-  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai"]),
+  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "homeassistant", "agentzero"]),
   /** The slices of shared memory this assistant may read. */
   memory: z.array(z.string().min(1)).default([]),
   /** http: where to POST. a2a: the agent's base address or its card. openai: the API base. sochen: if not https://sochen.dev. */
   url: z.string().url().optional(),
   /** The environment variable that holds this assistant's key. Never the key itself. */
   keyEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/, "an environment variable name, like SOCHEN_API_KEY").optional(),
+  /** homeassistant: which conversation agent; agentzero: which agent profile. */
+  agentId: z.string().min(1).optional(),
   /** openai: the model to ask for (e.g. "openclaw/main" for an OpenClaw agent). */
   model: z.string().min(1).optional(),
   /** mock: fixed answers; the first key found in the request (ignoring case) wins, then "*". */

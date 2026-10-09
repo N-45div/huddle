@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import type { Connector } from "./connector.ts";
 import { a2a } from "./connectors/a2a.ts";
+import { agentzero } from "./connectors/agentzero.ts";
+import { homeassistant } from "./connectors/homeassistant.ts";
 import { http } from "./connectors/http.ts";
 import { mock } from "./connectors/mock.ts";
 import { openai } from "./connectors/openai.ts";
@@ -22,7 +24,7 @@ import { Store } from "./store.ts";
  */
 
 const agentToAgent = a2a();
-const CONNECTORS: Readonly<Record<string, Connector>> = { mock, http: http(), sochen: sochen(), a2a: agentToAgent, openclaw: agentToAgent, hermes: agentToAgent, openai: openai() };
+const CONNECTORS: Readonly<Record<string, Connector>> = { mock, http: http(), sochen: sochen(), a2a: agentToAgent, openclaw: agentToAgent, hermes: agentToAgent, openai: openai(), homeassistant: homeassistant(), agentzero: agentzero() };
 
 const store = new Store(process.env.HUDDLE_DB ?? "huddle.db");
 const engine = new Engine(store, CONNECTORS);
