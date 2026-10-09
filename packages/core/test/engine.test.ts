@@ -3,9 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import type { Connector, ConnectorRequest } from "../src/connector.ts";
+import { type Connector, type ConnectorRequest, memoryText } from "../src/connector.ts";
 import { mock } from "../src/connectors/mock.ts";
 import { Engine, MAX_STEPS } from "../src/engine.ts";
+import { Memory } from "../src/memory/memory.ts";
 import { parseFlow } from "../src/schema.ts";
 import { Store } from "../src/store.ts";
 
@@ -77,9 +78,10 @@ describe("a run", () => {
   it("shows the run as running again the moment an approval is answered, not once the next assistant is done", async () => {
     const store = new Store();
     let release = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
     const slow: Connector = {
       async send(request) {
-        if (request.assistant.id === "calendar") await new Promise<void>((resolve) => (release = resolve));
+        if (request.assistant.id === "calendar") await gate;
         return mock.send(request);
       },
     };
@@ -132,6 +134,27 @@ describe("shared memory", () => {
     assert.equal(store.keep(guess.id), true);
     await engine.start(flow, "");
     assert.deepEqual(seen[1]?.memory.map((note) => note.note), ["Rent is due on the 5th.", "Probably pays by card."]);
+  });
+
+  it("sends what recall picks for the ask once the slices hold more than the budget, never from another slice", async () => {
+    const store = new Store();
+    store.remember("home", "Miso the cat is fed at 7.");
+    for (let index = 0; index < 30; index += 1) store.remember("home", `Note ${index}: the garden needs water.`);
+    store.remember("health", "Miso the cat is allergic to fish, and is fed at 7.");
+    const seen: ConnectorRequest[] = [];
+    const spy: Connector = { send: async (request) => { seen.push(request); return { text: "ok" }; } };
+    const flow = parseFlow({
+      name: "pets",
+      assistants: [{ id: "home", connector: "mock", memory: ["home"] }],
+      steps: [{ id: "ask", type: "agent", agent: "home", ask: "When is {{input}} fed?" }],
+    });
+    const run = await new Engine(store, { mock: spy }, { memory: new Memory(store, { budget: 250 }) }).start(flow, "Miso");
+    const memory = seen[0]?.memory ?? [];
+    assert.ok(memory.some((note) => note.note === "Miso the cat is fed at 7."), "the note about the ask, though it's the oldest");
+    assert.ok(memory.length < 31 && memoryText(memory).replaceAll("\n", "").length <= 250);
+    assert.deepEqual(memory.filter((note) => note.slice !== "home"), []);
+    const asked = store.logOf(run.id).find((line) => line.kind === "asked");
+    assert.deepEqual((asked?.detail as { memory: string[] }).memory, memory.map((note) => note.id));
   });
 
   it("takes what a flow learns as a suggestion, never as kept memory", async () => {

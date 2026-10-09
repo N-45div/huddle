@@ -1,5 +1,6 @@
 import { evaluate } from "./condition.ts";
 import type { Connector } from "./connector.ts";
+import { Memory } from "./memory/memory.ts";
 import type { Flow, Step } from "./schema.ts";
 import type { Approval, Run, Store } from "./store.ts";
 import { type RunContext, render } from "./template.ts";
@@ -33,13 +34,20 @@ export interface StartedBy {
   readonly via: string;
 }
 
+export interface EngineOptions {
+  /** Picks the notes each agent step sends (default: found by their words, within Sochen's budget). */
+  readonly memory?: Memory;
+}
+
 export class Engine {
   readonly store: Store;
   readonly connectors: Readonly<Record<string, Connector>>;
+  readonly memory: Memory;
 
-  constructor(store: Store, connectors: Readonly<Record<string, Connector>>) {
+  constructor(store: Store, connectors: Readonly<Record<string, Connector>>, options: EngineOptions = {}) {
     this.store = store;
     this.connectors = connectors;
+    this.memory = options.memory ?? new Memory(store);
   }
 
   async start(flow: Flow, input: string, flowId: string | null = null, startedBy?: StartedBy): Promise<RunView> {
@@ -137,7 +145,8 @@ export class Engine {
         const connector = this.connectors[assistant.connector];
         if (!connector) throw new Error(`There's no "${assistant.connector}" connector set up for "${assistant.id}".`);
         const ask = render(step.ask, context);
-        const memory = this.store.keptNotes(assistant.memory);
+        // Kept notes from this assistant's slices only: all that fit the budget, the ones about this ask first.
+        const memory = await this.memory.recall(ask, assistant.memory);
         this.store.log(run.id, step.id, "asked", { assistant: assistant.id, ask, memory: memory.map((note) => note.id) });
         const answer = await connector.send({ assistant, ask, memory, runId: run.id });
         this.store.log(run.id, step.id, "answered", answer);

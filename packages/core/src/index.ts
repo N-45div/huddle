@@ -16,7 +16,7 @@ export { type GrantStore, type SignIn, SignIns, storedGrants } from "./pact/sign
 export { newKey, PactIdentity, type PrivateJwk, type PublicJwk, thumbprint } from "./pact/identity.ts";
 export { DEFAULT_CERT_DIR, type ExecResult, OpenShell, type OpenShellOptions, type SandboxRequest } from "./openshell/client.ts";
 export { sochen } from "./connectors/sochen.ts";
-export { Engine, MAX_STEPS, type RunView, type StartedBy } from "./engine.ts";
+export { Engine, type EngineOptions, MAX_STEPS, type RunView, type StartedBy } from "./engine.ts";
 export { type Embedder, embedder, type EmbedderOptions } from "./memory/embeddings.ts";
 export { Memory, type MemoryHit, type MemoryOptions, NOTE_CLIP, RECALL_BUDGET } from "./memory/memory.ts";
 export { type Reranker, reranker, type RerankerOptions } from "./memory/rerank.ts";
