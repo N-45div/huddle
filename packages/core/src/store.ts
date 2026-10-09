@@ -91,6 +91,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS approvals (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, step_id TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, decided_at TEXT);
       CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, slice TEXT NOT NULL, note TEXT NOT NULL, status TEXT NOT NULL, source TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS log (seq INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, step_id TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL, at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS approvals_run ON approvals (run_id);
       CREATE INDEX IF NOT EXISTS notes_slice ON notes (slice, status);
       CREATE INDEX IF NOT EXISTS log_run ON log (run_id, seq);
@@ -148,6 +149,22 @@ export class Store {
 
   close(): void {
     this.db.close();
+  }
+
+  // Settings: small things Huddle keeps about itself, like its PACT signing key ----------------------
+
+  setting(key: string): string | null {
+    const row = this.db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as Row | undefined;
+    return row ? String(row.value) : null;
+  }
+
+  /** The value for `key`, made with `make` and kept the first time it's asked for. */
+  settingOr(key: string, make: () => string): string {
+    const existing = this.setting(key);
+    if (existing !== null) return existing;
+    const value = make();
+    this.db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)").run(key, value);
+    return this.setting(key) ?? value;
   }
 
   // Runs -------------------------------------------------------------------------------------------
