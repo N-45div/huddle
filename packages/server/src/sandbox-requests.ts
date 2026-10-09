@@ -5,7 +5,7 @@ import type { SandboxRequests as View, SandboxRequestView } from "./api-types.ts
  * What OpenShell sandboxes are asking for. When OpenShell blocks a connection it drafts a rule and
  * holds it for a person; this watches the gateway for those, so they land in Huddle's approvals inbox
  * next to the flows' own approvals, and decides them when the person answers. An approved rule loads
- * into the running sandbox at once, so the agent can retry.
+ * into the running sandbox within a few seconds (3 to 7 on gateway 0.1.2), so the agent can retry.
  */
 
 export interface SandboxInbox {
