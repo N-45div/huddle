@@ -127,10 +127,43 @@ interface Draft {
   keyEnv: string;
   model: string;
   agentId: string;
+  /** A command line, split into the command's parts on save. */
+  command: string;
   replies: { key: string; answer: string }[];
 }
 
-type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "agentId" | "replies", string>>;
+type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "agentId" | "command" | "replies", string>>;
+
+/** A command line's parts: split on spaces, with "double" or 'single' quotes keeping spaces in; null if a quote isn't closed. */
+function splitCommand(line: string): string[] | null {
+  const parts: string[] = [];
+  let current = "";
+  let quote: string | null = null;
+  let started = false;
+  for (const char of line.trim()) {
+    if (quote) {
+      if (char === quote) quote = null;
+      else current += char;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+      started = true;
+    } else if (/\s/.test(char)) {
+      if (started || current) parts.push(current);
+      current = "";
+      started = false;
+    } else {
+      current += char;
+    }
+  }
+  if (quote) return null;
+  if (started || current) parts.push(current);
+  return parts;
+}
+
+/** The parts back as one line, quoting any that need it. */
+function joinCommand(parts: readonly string[] | undefined): string {
+  return (parts ?? []).map((part) => (part === "" || /[\s"']/.test(part) ? (part.includes('"') ? `'${part}'` : `"${part}"`) : part)).join(" ");
+}
 
 function draftOf(assistant: Assistant | undefined): Draft {
   return {
@@ -142,6 +175,7 @@ function draftOf(assistant: Assistant | undefined): Draft {
     keyEnv: assistant?.keyEnv ?? "",
     model: assistant?.model ?? "",
     agentId: assistant?.agentId ?? "",
+    command: joinCommand(assistant?.command),
     replies: Object.entries(assistant?.replies ?? {}).map(([key, answer]) => ({ key, answer })),
   };
 }
@@ -203,6 +237,7 @@ function AssistantForm({
     }
     const url = draft.url.trim();
     if (fields.some((field) => field.key === "url") && url && !looksLikeUrl(url)) found.url = "That doesn't look like a web address. It should start with http:// or https://.";
+    if (fields.some((field) => field.key === "command") && draft.command.trim() && splitCommand(draft.command) === null) found.command = "A quote isn't closed.";
     const keyEnv = draft.keyEnv.trim();
     if (fields.some((field) => field.key === "keyEnv") && keyEnv && !ENV_PATTERN.test(keyEnv)) found.keyEnv = "Use the variable's name in capitals, like SOCHEN_API_KEY. Never paste the key itself here.";
     return found;
@@ -222,6 +257,8 @@ function AssistantForm({
       const value = shown.has(key) ? draft[key].trim() : (kept?.[key] ?? "");
       if (value) assistant[key] = value;
     }
+    const command = shown.has("command") ? splitCommand(draft.command) : kept?.command;
+    if (command?.length) assistant.command = command;
     if (shown.has("replies")) {
       const replies = Object.fromEntries(draft.replies.filter((reply) => reply.key.trim()).map((reply) => [reply.key.trim(), reply.answer]));
       if (Object.keys(replies).length) assistant.replies = replies;
@@ -378,7 +415,7 @@ function ConnectorFieldInput({
       <label htmlFor={id}>{label}</label>
       <input
         id={id}
-        className={key === "keyEnv" ? "mono" : undefined}
+        className={key === "keyEnv" || key === "command" ? "mono" : undefined}
         value={draft[key]}
         placeholder={field.placeholder}
         autoComplete="off"
