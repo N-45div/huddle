@@ -9,7 +9,7 @@
   "scripts": {
     "huddle": "node --no-warnings packages/core/src/cli.ts",
     "example": "node --no-warnings packages/core/src/cli.ts run examples/invoices.json --input @examples/invoice.txt",
-    "test": "node --no-warnings --test \"packages/*/test/*.test.ts\"",
+    "test": "node --no-warnings --test \"packages/core/test/*.test.ts\" \"packages/server/test/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
