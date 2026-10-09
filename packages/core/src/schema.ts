@@ -13,17 +13,19 @@ export const Assistant = z.object({
   id,
   name: z.string().optional(),
   /** How to reach it: openclaw and hermes are A2A with their usual local address filled in. */
-  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "homeassistant", "agentzero"]),
+  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "openshell", "homeassistant", "agentzero"]),
   /** The slices of shared memory this assistant may read. */
   memory: z.array(z.string().min(1)).default([]),
   /** http: where to POST. a2a: the agent's base address or its card. openai: the API base. sochen: if not https://sochen.dev. */
   url: z.string().url().optional(),
   /** The environment variable that holds this assistant's key. Never the key itself. */
   keyEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/, "an environment variable name, like SOCHEN_API_KEY").optional(),
-  /** homeassistant: which conversation agent; agentzero: which agent profile. */
+  /** homeassistant: which conversation agent; agentzero: which agent profile; openshell: which sandbox. */
   agentId: z.string().min(1).optional(),
-  /** openai: the model to ask for (e.g. "openclaw/main" for an OpenClaw agent). */
+  /** openai, ollama: the model to ask for (e.g. "openclaw/main" for an OpenClaw agent). */
   model: z.string().min(1).optional(),
+  /** openshell: the command that runs the agent in its sandbox; the request goes in on stdin, or where "{{ask}}" is. */
+  command: z.array(z.string().min(1)).min(1).max(64).optional(),
   /** mock: fixed answers; the first key found in the request (ignoring case) wins, then "*". */
   replies: z.record(z.string(), z.string()).optional(),
 });
@@ -102,6 +104,11 @@ export const Flow = z
       steps.add(step.id);
     }
     const assistants = new Set(flow.assistants.map((assistant) => assistant.id));
+    for (const assistant of flow.assistants) {
+      if (assistant.connector === "openshell" && (!assistant.agentId || !assistant.command)) {
+        ctx.addIssue({ code: "custom", message: `assistant "${assistant.id}" runs in OpenShell: give its sandbox's name (agentId) and the command that runs its agent (command)` });
+      }
+    }
     const check = (from: string, to: string | undefined) => {
       if (to !== undefined && to !== "end" && !steps.has(to)) ctx.addIssue({ code: "custom", message: `step "${from}" goes to "${to}", which isn't a step` });
     };

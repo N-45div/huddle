@@ -8,6 +8,8 @@ export { defaultConnectors } from "./connectors/index.ts";
 export { mock } from "./connectors/mock.ts";
 export { OLLAMA_URL, ollama, ollamaModels } from "./connectors/ollama.ts";
 export { openai } from "./connectors/openai.ts";
+export { openshell } from "./connectors/openshell.ts";
+export { DEFAULT_CERT_DIR, type ExecResult, OpenShell, type OpenShellOptions, type SandboxRequest } from "./openshell/client.ts";
 export { sochen } from "./connectors/sochen.ts";
 export { Engine, MAX_STEPS, type RunView } from "./engine.ts";
 export { Assistant, everyMs, Flow, parseFlow, Step, Trigger } from "./schema.ts";

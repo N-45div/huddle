@@ -5,6 +5,7 @@ import { homeassistant } from "./homeassistant.ts";
 import { http } from "./http.ts";
 import { mock } from "./mock.ts";
 import { ollama } from "./ollama.ts";
+import { openshell } from "./openshell.ts";
 import { openai } from "./openai.ts";
 import { sochen } from "./sochen.ts";
 
@@ -20,6 +21,7 @@ export function defaultConnectors(): Readonly<Record<string, Connector>> {
     hermes: agentToAgent,
     openai: openai(),
     ollama: ollama(),
+    openshell: openshell(),
     homeassistant: homeassistant(),
     agentzero: agentzero(),
   };
