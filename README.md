@@ -36,6 +36,9 @@ teammate: you put them on a canvas, say who does what, and decide where you want
   address that anything can post to.
 - **Your assistants can call it too.** Huddle is an A2A agent itself, so OpenClaw, Hermes or any other
   A2A assistant can hand a job to one of your flows.
+- **One API to every assistant you run.** Huddle's router is OpenAI-compatible: point any app or SDK
+  at it and the model name is your assistant (`"hermes"`, `"claw"`, or `"auto"` to let Huddle pick).
+  Every call still gets only that assistant's memory, and shows in Runs.
 - **Sandboxed assistants, with you holding the keys.** Run an agent inside an
   [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandbox and use it in a flow. When OpenShell
   blocks something the agent reaches for, the request lands in your Huddle approvals with OpenShell's
@@ -288,6 +291,33 @@ A sandbox image needs a few things OpenShell checks: a non-root user, a working 
 can write, and a single-platform image (on Docker Desktop, a one-line `FROM` build gives you one). The
 policy has to let the sandbox read the agent's install: sandboxes start with only system paths.
 
+## The router: one API to every assistant you run
+
+Like OpenRouter for models, but for your assistants, with your memory and your approvals in the middle.
+Set your assistants up once (`PUT /api/assistants`), each with a one-line description of what it's good
+at, then use any OpenAI SDK:
+
+```js
+import OpenAI from "openai";
+const huddle = new OpenAI({ baseURL: "http://localhost:7700/v1", apiKey: process.env.HUDDLE_ROUTER_KEY });
+
+await huddle.chat.completions.create({ model: "hermes", messages: [{ role: "user", content: "What's my cat called?" }] });
+await huddle.chat.completions.create({ model: "auto", messages: [{ role: "user", content: "Fit a walk around my meetings" }] });
+await huddle.chat.completions.create({ model: "claw", models: ["hermes"], messages: [/* … */] }); // falls back to hermes
+```
+
+- `GET /v1/models` lists your assistants, plus `auto`.
+- `model: "auto"` asks a judge which assistant fits: [Jev](https://docs.typesafe.ai) with your
+  `TYPESAFE_API_KEY` (one calibrated choice over your assistants' descriptions, a probability for each),
+  or else your "describe it" model. The answer says how it was routed (`huddle.route`).
+- `models: [...]` are fallbacks in order, as on OpenRouter. The answer says what was skipped and why.
+- Each assistant only ever sees its own memory slices, whoever calls. Calls show in **Runs**.
+- `/v1` takes `HUDDLE_ROUTER_KEY` or `HUDDLE_TOKEN` as a Bearer key. Streaming works.
+
+Tested with the OpenAI Node SDK against OpenClaw, Hermes, a local Ollama model and Hermes in an
+OpenShell sandbox: "auto" sent a work question to OpenClaw, "what's my cat called?" to Hermes, and small
+talk to the local model. [docs/ROUTER.md](docs/ROUTER.md) has the design.
+
 ## Talk to businesses as your personal agent (PACT)
 
 [PACT](https://github.com/openpactprotocol/openpactprotocol), the Personal Agent Consent & Trust
@@ -349,6 +379,8 @@ docker compose up -d   # http://localhost:7700, data in the huddle-data volume
 | `HUDDLE_PUBLIC_URL` | `http://localhost:7700` | how others reach this Huddle, for webhook and A2A addresses |
 | `HUDDLE_A2A_TOKEN` | `HUDDLE_TOKEN` | a separate token for assistants calling Huddle over A2A |
 | `HUDDLE_LLM_URL`, `HUDDLE_LLM_MODEL`, `HUDDLE_LLM_KEY` | none | any OpenAI-compatible chat API (OpenAI, OpenRouter, Ollama, LM Studio) for "describe it" |
+| `HUDDLE_ROUTER_KEY` | `HUDDLE_TOKEN` | a key just for the router's `/v1` |
+| `TYPESAFE_API_KEY`, `HUDDLE_JEV_MODEL` | none, `jev-latest` | Jev judges the router's `"auto"` |
 | `HUDDLE_OPENSHELL_GATEWAY` | none | an NVIDIA OpenShell gateway, for sandboxed assistants and their requests in Approvals |
 | `OPENSHELL_TLS_DIR` | `~/.config/openshell/gateways/openshell/mtls` | the OpenShell CLI's client certificate (`ca.crt`, `tls.crt`, `tls.key`) |
 
@@ -371,10 +403,11 @@ npm run huddle -- runs                   # recent runs
 3. The canvas: drag assistants in, draw the hand-offs, watch runs live (done)
 4. Schedules, webhooks, Huddle as an A2A agent, and "describe it" (done)
 5. Ollama, and sandboxed assistants with NVIDIA OpenShell, their requests in your approvals (done)
-6. PACT: Huddle as your personal agent with businesses (identity done; signing in from Approvals next),
+6. The router: one OpenAI-compatible API to every assistant, "auto" judged by Jev, fallbacks (started)
+7. PACT: Huddle as your personal agent with businesses (identity done; signing in from Approvals next),
    and Sierra and Meta's Personal Agent Protocol when its v0.1 spec is out
-7. Approvals on your phone, and email and Telegram triggers
-8. The hosted version, for people who'd rather not run anything
+8. Approvals on your phone, and email and Telegram triggers
+9. The hosted version, for people who'd rather not run anything
 
 ## License
 
