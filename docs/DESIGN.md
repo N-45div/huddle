@@ -41,7 +41,15 @@ Conditions are parsed, never evaluated as code: a flow can't run JavaScript.
 Notes are short pieces of text in named slices (`money`, `calendar`, `health`, ...). An assistant reads
 only the slices it lists. A `memory` step, or anything an assistant learns, goes in as a **suggestion**;
 only a person makes it part of the memory (`huddle memory keep <id>`). One assistant's guess never
-quietly becomes something every other assistant believes.
+quietly becomes something every other assistant believes. Suggestions have secrets masked (passwords,
+card numbers, one-time codes, keys), and a note a person writes with one is refused.
+
+An agent step sends the kept notes from the assistant's slices, as many as fit a budget (4,000
+characters, each note clipped at 1,200). Past the budget, recall (packages/core/src/memory, ported
+from Sochen) ranks that assistant's own notes against the request: by the request's words each note
+holds, weighted by idf over those notes, fused by rank with an optional vector search, optionally
+reranked; matches go first, then the newest. Search only ever sees the notes it's handed, so the
+slices decide what can be recalled, never the ranking.
 
 ## Runs
 

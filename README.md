@@ -69,6 +69,35 @@ teammate: you put them on a canvas, say who does what, and decide where you want
 }
 ```
 
+## Shared memory
+
+Notes live in slices (`money`, `home`, `health`), and an assistant reads only the slices its `memory`
+lists. What a flow or an assistant learns waits as a suggestion until you keep it. Passwords, card
+numbers, one-time codes and keys stay out: they're masked in suggestions, and a note you write with
+one is refused.
+
+Each request carries the kept notes from the assistant's slices, up to 4,000 characters
+(`HUDDLE_MEMORY_BUDGET`), with any note over 1,200 characters clipped. When the slices hold more than
+that, the notes that match the request go first, then the newest. The matching is
+[Sochen](https://sochen.dev)'s memory engine, ported to SQLite: a note scores by the request's words it
+holds, each weighted by how rare it is among your notes (BM25's idf, without length scaling), so
+"passport" outweighs a name that's in half of them. That works with nothing to set up. Two extras are
+optional, from any provider:
+
+- **Embeddings** (`HUDDLE_EMBED_URL`, `HUDDLE_EMBED_MODEL`, `HUDDLE_EMBED_KEY`, any OpenAI-compatible
+  API): notes are found by meaning too, so "kitten" finds "Miso is a cat". Vectors stay in the same
+  SQLite file.
+- **A reranker** (`HUDDLE_RERANK_URL`, `HUDDLE_RERANK_MODEL`, `HUDDLE_RERANK_KEY`: Voyage, Cohere or
+  Jina): reads the matches against the request and puts the best first.
+
+If either is down, memory carries on without it, and a run never fails over memory. **Memory** on the
+canvas has a search box that ranks notes the same way.
+
+In Sochen, on Postgres with Voyage embeddings and reranking and a reader model for counting
+questions, this engine scored 89.2% on LongMemEval. That number is Sochen's: Huddle has the ranking
+but not the reader, stems words with SQLite's Porter stemmer rather than Postgres', and hasn't been
+benchmarked yet.
+
 ## Connectors
 
 | Connector | Reaches | Status |
@@ -382,6 +411,9 @@ docker compose up -d   # http://localhost:7700, data in the huddle-data volume
 | `HUDDLE_PUBLIC_URL` | `http://localhost:7700` | how others reach this Huddle, for webhook and A2A addresses |
 | `HUDDLE_A2A_TOKEN` | `HUDDLE_TOKEN` | a separate token for assistants calling Huddle over A2A |
 | `HUDDLE_LLM_URL`, `HUDDLE_LLM_MODEL`, `HUDDLE_LLM_KEY` | none | any OpenAI-compatible chat API (OpenAI, OpenRouter, Ollama, LM Studio) for "describe it" |
+| `HUDDLE_MEMORY_BUDGET` | `4000` | characters of kept notes each request carries; past that, the notes that match it go first |
+| `HUDDLE_EMBED_URL`, `HUDDLE_EMBED_MODEL`, `HUDDLE_EMBED_KEY` | none | any OpenAI-compatible embeddings API, so memory finds notes by meaning too |
+| `HUDDLE_RERANK_URL`, `HUDDLE_RERANK_MODEL`, `HUDDLE_RERANK_KEY` | none | a rerank API (Voyage, Cohere, Jina) that orders the notes memory finds |
 | `HUDDLE_ROUTER_KEY` | `HUDDLE_TOKEN` | a key just for the router's `/v1` |
 | `TYPESAFE_API_KEY`, `HUDDLE_JEV_MODEL` | none, `jev-latest` | Jev judges the router's `"auto"` |
 | `HUDDLE_OPENSHELL_GATEWAY` | none | an NVIDIA OpenShell gateway, for sandboxed assistants and their requests in Approvals |
