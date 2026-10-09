@@ -180,18 +180,45 @@ In Docker, `127.0.0.1` is the container itself: reach assistants running on the 
 
 ## Call Huddle from your assistants
 
-Huddle serves an A2A Agent Card at `/.well-known/agent-card.json`, with your saved flows as its skills,
-and takes A2A 1.0 JSON-RPC (`SendMessage`, `GetTask`) at `/a2a`. Point an assistant at your Huddle's
-address and it can start a flow and get its result:
+Huddle is an A2A 1.0 agent too, so your assistants can start your flows. Every flow has its own
+address, shown in its trigger settings: `<your Huddle>/a2a/flows/<flow id>`, with its own Agent Card.
+Give that address to an assistant, with `HUDDLE_A2A_TOKEN` (or `HUDDLE_TOKEN`) as its Bearer token:
 
-- Say which flow in the message's metadata as `"flow"` (its id or name). With one saved flow, that one
-  runs.
-- The message's text is the run's input. The reply is the last answer in the run, as the task's
-  artifact.
-- A run that reaches an approval stays *working* until you answer it, since it's you who has to decide,
-  not the assistant that asked. A "no" ends the task as *rejected*.
-- Callers need `HUDDLE_A2A_TOKEN` (or `HUDDLE_TOKEN`) as a Bearer token. While a token is set, the
-  public card doesn't list your flows' names.
+- What the assistant sends becomes the run's input. The reply is the run's last answer.
+- A run that reaches an approval stays *working* until you answer it, since it's you who decides, not
+  the assistant that asked. A "no" ends the task as *rejected*.
+
+**Hermes Agent** calls other agents with its `a2a` toolset. Add Huddle's flow to its `config.yaml`:
+
+```yaml
+a2a_agents:
+  huddle:
+    url: "http://<your Huddle>/a2a/flows/<flow id>"
+    auth: { type: bearer, token: "<HUDDLE_A2A_TOKEN>" }
+    timeout: 120
+```
+
+then `hermes tools enable a2a --platform cli` (or your messaging platform), and ask it: *"Ask the huddle
+agent to plan a walk for me tomorrow."* Hermes waits for the run and tells you its answer.
+
+**OpenClaw** sends to peers on its A2A channel. Give the `huddle` peer the flow's address:
+
+```json5
+{ channels: { a2a: { enabled: true, peers: { huddle: {
+  token: "${OPENCLAW_A2A_TOKEN}",                    // Huddle -> OpenClaw, as above
+  url: "http://<your Huddle>/a2a/flows/<flow id>",  // OpenClaw -> Huddle
+  outboundToken: "${HUDDLE_A2A_TOKEN}",
+} } } } }
+```
+
+Anything OpenClaw sends to `a2a:huddle` then starts the flow, for example an agent turn delivered there:
+`openclaw agent -m "Remind me to buy cat food tomorrow" --channel a2a --reply-to huddle --deliver`.
+OpenClaw hands the message over and doesn't wait for the result, so end the flow with a step that
+tells you, or that tells OpenClaw.
+
+Both were tested live: Hermes asking a Huddle flow that asked OpenClaw, and OpenClaw sending to a Huddle
+flow that asked Hermes. Any other A2A client can use `/a2a`, naming the flow in the message's metadata as
+`"flow"`. While a token is set, Huddle's main card doesn't list your flows' names.
 
 ## Run it
 
