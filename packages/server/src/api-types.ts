@@ -24,6 +24,8 @@ export interface FlowView {
   readonly flow: Flow;
   /** POST here to run it (shown only for webhook flows, but always valid). */
   readonly webhookUrl: string;
+  /** Where another assistant starts it over A2A (with the A2A token), whatever its trigger. */
+  readonly a2aUrl: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 }

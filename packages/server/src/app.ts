@@ -48,6 +48,7 @@ export function createApp(options: AppOptions): Hono {
     id: saved.id,
     flow: saved.flow,
     webhookUrl: `${options.publicUrl}/hooks/${saved.id}/${saved.webhookSecret}`,
+    a2aUrl: `${options.publicUrl}/a2a/flows/${saved.id}`,
     createdAt: saved.createdAt,
     updatedAt: saved.updatedAt,
   });

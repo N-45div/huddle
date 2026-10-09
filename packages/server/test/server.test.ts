@@ -79,6 +79,7 @@ describe("the API", () => {
     assert.equal(created.status, 201);
     const saved = await created.json();
     assert.match(saved.webhookUrl, new RegExp(`^http://huddle\\.test/hooks/${saved.id}/[0-9a-f]{32}$`));
+    assert.equal(saved.a2aUrl, `http://huddle.test/a2a/flows/${saved.id}`);
     assert.equal((await (await app.request("/api/flows", { headers: auth })).json()).length, 1);
 
     const changed = await app.request(`/api/flows/${saved.id}`, { ...json({ flow: { ...invoices, name: "Bills" } }), method: "PUT" });
