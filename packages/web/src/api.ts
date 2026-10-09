@@ -108,6 +108,7 @@ const id = encodeURIComponent;
 export const api = {
   info: () => call<Info>("GET", "/info"),
   connectors: () => call<ConnectorInfo[]>("GET", "/connectors"),
+  models: (connector: string, url: string) => call<{ models: string[] }>("GET", `/connectors/${id(connector)}/models` + (url ? `?url=${id(url)}` : "")),
 
   flows: () => call<FlowView[]>("GET", "/flows"),
   flow: (flowId: string) => call<FlowView>("GET", `/flows/${id(flowId)}`),

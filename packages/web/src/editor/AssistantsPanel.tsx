@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api, describeError } from "../api.ts";
 import { ChipsInput } from "../components/ChipsInput.tsx";
 import { ConfirmDialog } from "../components/Dialog.tsx";
 import { ErrorNote, Hint, Icon, Loading } from "../components/bits.tsx";
@@ -369,6 +370,8 @@ function ConnectorFieldInput({
     );
   }
 
+  if (field.suggest === "models") return <ModelField field={field} draft={draft} error={error} onChange={onChange} />;
+
   const key = field.key;
   return (
     <div className="field">
@@ -392,6 +395,76 @@ function ConnectorFieldInput({
         <Hint id={hintId}>The NAME of an environment variable on the server that holds the key, never the key itself. Set the variable where Huddle runs.</Hint>
       ) : (
         <span id={hintId} hidden />
+      )}
+    </div>
+  );
+}
+
+/** A model name, with the ones the server can see at this assistant's address offered as you type. */
+function ModelField({
+  field,
+  draft,
+  error,
+  onChange,
+}: {
+  readonly field: ConnectorField;
+  readonly draft: Draft;
+  readonly error: string | undefined;
+  readonly onChange: <K extends keyof Draft>(key: K, value: Draft[K]) => void;
+}) {
+  const id = `assistant-${field.key}`;
+  const [found, setFound] = useState<{ readonly models: readonly string[]; readonly problem: string | null; readonly looking: boolean }>({ models: [], problem: null, looking: true });
+  const url = draft.url.trim();
+
+  useEffect(() => {
+    let current = true;
+    setFound((previous) => ({ ...previous, looking: true }));
+    // Wait for typing to pause before asking the address.
+    const timer = window.setTimeout(() => {
+      api.models(draft.connector, url).then(
+        ({ models }) => current && setFound({ models, problem: null, looking: false }),
+        (failure: unknown) => current && setFound({ models: [], problem: describeError(failure), looking: false }),
+      );
+    }, 400);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+    };
+  }, [draft.connector, url]);
+
+  const note = found.looking
+    ? "Looking for its models…"
+    : found.problem
+      ? `${found.problem} You can still type a model's name.`
+      : found.models.length === 0
+        ? "It has no models yet. Pull one first, for example: ollama pull qwen3"
+        : `It has ${plural(found.models.length, "model")}. Type to pick one.`;
+
+  return (
+    <div className="field">
+      <label htmlFor={id}>{field.required ? field.label : `${field.label} (optional)`}</label>
+      <input
+        id={id}
+        list={`${id}-choices`}
+        value={draft.model}
+        placeholder={field.placeholder}
+        autoComplete="off"
+        spellCheck={false}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={`${id}-hint`}
+        onChange={(event) => onChange("model", event.target.value)}
+      />
+      <datalist id={`${id}-choices`}>
+        {found.models.map((model) => (
+          <option key={model} value={model} />
+        ))}
+      </datalist>
+      {error ? (
+        <p className="error-text" id={`${id}-hint`}>
+          {error}
+        </p>
+      ) : (
+        <Hint id={`${id}-hint`}>{note}</Hint>
       )}
     </div>
   );
