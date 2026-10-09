@@ -101,11 +101,24 @@ export function ApprovalsScreen() {
 /** The program's name, from the path OpenShell reports (/usr/bin/python3 -> python3). */
 const programOf = (binary: string) => binary.split("/").filter(Boolean).at(-1) || binary || "A program";
 
+/** What OpenShell's policy prover findings mean, in words a person deciding can use. */
+const FINDINGS: Readonly<Record<string, string>> = {
+  credential_reach_expansion: "this would let the program use a key that OpenShell holds for the sandbox, which it can't use now",
+};
+
+/** The prover's findings, when it reports any ("1 new finding credential_reach_expansion: ..."). */
+function findingsIn(validation: string): string[] {
+  if (!/\b[1-9]\d* new findings?\b/i.test(validation)) return [];
+  const codes = [...new Set(validation.match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? [])];
+  return codes.length ? codes.map((code) => FINDINGS[code] ?? code.replaceAll("_", " ")) : ["see OpenShell's check below"];
+}
+
 function SandboxRequestCard({ request, onDecided }: { readonly request: SandboxRequestView; readonly onDecided: () => void }) {
   const { refreshWaiting } = useApp();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const flagged = request.securityNotes.trim() !== "";
+  const findings = findingsIn(request.validation);
+  const flagged = request.securityNotes.trim() !== "" || findings.length > 0;
 
   const decide = async (yes: boolean) => {
     setBusy(true);
@@ -148,9 +161,11 @@ function SandboxRequestCard({ request, onDecided }: { readonly request: SandboxR
         )}
       </p>
       {flagged && (
-        <p className="note note-warn" role="note">
-          OpenShell flags this: {request.securityNotes}
-        </p>
+        <div className="note note-warn" role="note">
+          <p>
+            <strong>Look before allowing.</strong> OpenShell found a risk: {[...findings, request.securityNotes.trim()].filter(Boolean).join("; ")}.
+          </p>
+        </div>
       )}
       <div className="approval-foot">
         <div className="answer">
