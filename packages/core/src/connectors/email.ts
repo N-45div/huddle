@@ -38,7 +38,8 @@ export function resendProblem(status: number, said: ResendError | null, keyName:
   const name = typeof said?.name === "string" ? said.name : "";
   const message = typeof said?.message === "string" && said.message ? said.message : `HTTP ${status}`;
   if (name === "restricted_api_key" && status === 401) return `The key in ${keyName} can only send email; reading received mail needs a full-access key (Resend → API Keys).`;
-  if (["missing_api_key", "invalid_api_key", "restricted_api_key", "suspended_api_key"].includes(name) || ((status === 401 || status === 403) && /api key/i.test(message))) {
+  // A wrong key comes back as 401 validation_error "API key is invalid" (400 on the receiving API).
+  if (["missing_api_key", "invalid_api_key", "restricted_api_key", "suspended_api_key"].includes(name) || (status >= 400 && status < 500 && /api key/i.test(message))) {
     return `Resend didn't take the key in ${keyName}: ${message}. Check it in Resend → API Keys.`;
   }
   if (/domain is not verified/i.test(message)) return `Resend won't send from ${from ?? "that address"}: its domain isn't verified. Verify it in Resend → Domains, or send from an address on a domain you did verify.`;

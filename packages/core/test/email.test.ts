@@ -56,7 +56,9 @@ describe("the email connector (Resend)", () => {
       }
       throw new Error("it should have failed");
     };
-    assert.equal(await fails({ statusCode: 403, name: "validation_error", message: "API key is invalid" }, 403), "Resend didn't take the key in RESEND_API_KEY: API key is invalid. Check it in Resend → API Keys.");
+    // What Resend really answers for a wrong key (seen live, Oct 2026).
+    assert.equal(await fails({ message: "API key is invalid", name: "validation_error", statusCode: 401 }, 401), "Resend didn't take the key in RESEND_API_KEY: API key is invalid. Check it in Resend → API Keys.");
+    assert.match(await fails({ statusCode: 400, message: "API key is invalid", name: "validation_error" }, 400), /^Resend didn't take the key/);
     assert.match(await fails({ statusCode: 401, name: "missing_api_key", message: "Missing API key in the authorization header." }, 401), /^Resend didn't take the key in RESEND_API_KEY/);
     assert.equal(
       await fails({ statusCode: 403, name: "validation_error", message: "The mydomain.com domain is not verified. Please, add and verify your domain." }, 403),
