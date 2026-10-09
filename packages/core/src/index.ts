@@ -6,6 +6,7 @@ export { homeassistant } from "./connectors/homeassistant.ts";
 export { http } from "./connectors/http.ts";
 export { defaultConnectors } from "./connectors/index.ts";
 export { mock } from "./connectors/mock.ts";
+export { OLLAMA_URL, ollama, ollamaModels } from "./connectors/ollama.ts";
 export { openai } from "./connectors/openai.ts";
 export { sochen } from "./connectors/sochen.ts";
 export { Engine, MAX_STEPS, type RunView } from "./engine.ts";

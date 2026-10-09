@@ -4,6 +4,7 @@ import { agentzero } from "./agentzero.ts";
 import { homeassistant } from "./homeassistant.ts";
 import { http } from "./http.ts";
 import { mock } from "./mock.ts";
+import { ollama } from "./ollama.ts";
 import { openai } from "./openai.ts";
 import { sochen } from "./sochen.ts";
 
@@ -18,6 +19,7 @@ export function defaultConnectors(): Readonly<Record<string, Connector>> {
     openclaw: agentToAgent,
     hermes: agentToAgent,
     openai: openai(),
+    ollama: ollama(),
     homeassistant: homeassistant(),
     agentzero: agentzero(),
   };
