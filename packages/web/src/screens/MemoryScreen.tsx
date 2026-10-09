@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { api, describeError } from "../api.ts";
 import { useApp } from "../app-context.ts";
 import { Empty, ErrorNote, Hint, Loading } from "../components/bits.tsx";
@@ -7,7 +7,7 @@ import { TabPanel, Tabs } from "../components/Tabs.tsx";
 import { useChanges } from "../events.ts";
 import { ago, fullTime } from "../format.ts";
 import { useDebounced, useResource } from "../hooks.ts";
-import type { Note } from "../types.ts";
+import type { MemoryHit, Note } from "../types.ts";
 
 type Status = Note["status"];
 
@@ -19,10 +19,13 @@ export function MemoryScreen() {
   const [forgetting, setForgetting] = useState<Note | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [changes, setChanges] = useState(0);
 
   const refetch = useDebounced(() => {
     void kept.reload();
     void suggested.reload();
+    setChanges((count) => count + 1);
   }, 200);
 
   useChanges((change) => {
@@ -79,58 +82,70 @@ export function MemoryScreen() {
         }}
       />
 
-      <Tabs
-        idPrefix="memory"
-        label="Notes"
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { id: "kept", label: "Kept" },
-          {
-            id: "suggested",
-            label: (
-              <>
-                Suggested{suggestedCount > 0 && <span className="tab-count">{suggestedCount}</span>}
-              </>
-            ),
-          },
-        ]}
-      />
+      <div className="field">
+        <label htmlFor="memory-search">Search</label>
+        <input id="memory-search" type="search" value={query} autoComplete="off" aria-describedby="memory-search-hint" onChange={(event) => setQuery(event.target.value)} />
+        <Hint id="memory-search-hint">Ranked the way assistants get notes when there are more than fit: the rarer a word, the more it counts.</Hint>
+      </div>
 
-      <TabPanel idPrefix="memory" id={tab} className="tab-panel">
-        {tab === "suggested" && <Hint>What assistants and memory steps think is worth remembering. Nothing here reaches an assistant until you keep it.</Hint>}
-        {actionError && <ErrorNote message={actionError} />}
-        {current.error && <ErrorNote message={current.error} onRetry={() => void current.reload()} />}
-        {current.loading && !current.data && <Loading label="Loading notes…" />}
-        {current.data && current.data.length === 0 && (
-          <Empty title={tab === "kept" ? "No kept notes yet." : "No suggestions waiting."}>
-            <p className="hint">{tab === "kept" ? "Add one above, or keep a suggestion." : "Memory steps in your flows put their notes here for you to look over."}</p>
-          </Empty>
-        )}
-        {current.data && current.data.length > 0 && (
-          <NoteGroups
-            notes={current.data}
-            render={(note) => (
-              <div className="note-actions">
-                {tab === "suggested" ? (
+      {query.trim() ? (
+        <SearchResults query={query.trim()} changes={changes} />
+      ) : (
+        <>
+          <Tabs
+            idPrefix="memory"
+            label="Notes"
+            value={tab}
+            onChange={setTab}
+            tabs={[
+              { id: "kept", label: "Kept" },
+              {
+                id: "suggested",
+                label: (
                   <>
-                    <button type="button" className="btn btn-sm btn-primary" disabled={busy === note.id} onClick={() => void keep(note)}>
-                      Keep
-                    </button>
-                    <button type="button" className="btn btn-sm" disabled={busy === note.id} onClick={() => void discard(note)}>
-                      Discard
-                    </button>
+                    Suggested{suggestedCount > 0 && <span className="tab-count">{suggestedCount}</span>}
                   </>
-                ) : (
-                  <button type="button" className="btn btn-sm btn-ghost danger-text" onClick={() => setForgetting(note)}>
-                    Forget
-                  </button>
-                )}
-              </div>
-            )}
+                ),
+              },
+            ]}
           />
-        )}
-      </TabPanel>
+
+          <TabPanel idPrefix="memory" id={tab} className="tab-panel">
+            {tab === "suggested" && <Hint>What assistants and memory steps think is worth remembering. Nothing here reaches an assistant until you keep it.</Hint>}
+            {actionError && <ErrorNote message={actionError} />}
+            {current.error && <ErrorNote message={current.error} onRetry={() => void current.reload()} />}
+            {current.loading && !current.data && <Loading label="Loading notes…" />}
+            {current.data && current.data.length === 0 && (
+              <Empty title={tab === "kept" ? "No kept notes yet." : "No suggestions waiting."}>
+                <p className="hint">{tab === "kept" ? "Add one above, or keep a suggestion." : "Memory steps in your flows put their notes here for you to look over."}</p>
+              </Empty>
+            )}
+            {current.data && current.data.length > 0 && (
+              <NoteGroups
+                notes={current.data}
+                render={(note) => (
+                  <div className="note-actions">
+                    {tab === "suggested" ? (
+                      <>
+                        <button type="button" className="btn btn-sm btn-primary" disabled={busy === note.id} onClick={() => void keep(note)}>
+                          Keep
+                        </button>
+                        <button type="button" className="btn btn-sm" disabled={busy === note.id} onClick={() => void discard(note)}>
+                          Discard
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" className="btn btn-sm btn-ghost danger-text" onClick={() => setForgetting(note)}>
+                        Forget
+                      </button>
+                    )}
+                  </div>
+                )}
+              />
+            )}
+          </TabPanel>
+        </>
+      )}
 
       <ConfirmDialog
         open={forgetting !== null}
@@ -149,6 +164,63 @@ export function MemoryScreen() {
         <p>No assistant will see it again.</p>
       </ConfirmDialog>
     </div>
+  );
+}
+
+/** Notes matching what's typed, kept and suggested, best first. */
+function SearchResults({ query, changes }: { readonly query: string; readonly changes: number }) {
+  const { authVersion } = useApp();
+  const [hits, setHits] = useState<MemoryHit[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    // Waits for a pause in typing.
+    const timer = window.setTimeout(() => {
+      api.searchMemory(query).then(
+        (found) => {
+          if (!live) return;
+          setHits(found);
+          setError(null);
+        },
+        (caught: unknown) => {
+          if (live) setError(describeError(caught));
+        },
+      );
+    }, 250);
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [query, changes, authVersion]);
+
+  if (error) return <ErrorNote message={error} />;
+  if (!hits) return <Loading label="Searching…" />;
+  if (hits.length === 0) {
+    return (
+      <Empty title="Nothing in memory matches.">
+        <p className="hint">Try other words. Common ones like "the" or "when" aren't searched.</p>
+      </Empty>
+    );
+  }
+  return (
+    <ul className="note-list" aria-label="Search results">
+      {hits.map(({ note }) => (
+        <li key={note.id} className="note-item">
+          <div className="note-text">
+            <p>{note.note}</p>
+            <p className="note-meta">
+              <span>{note.slice}</span>
+              {note.status === "suggested" && " · suggested, not kept yet"}
+              {" · "}
+              <time dateTime={note.createdAt} title={fullTime(note.createdAt)}>
+                {ago(note.createdAt)}
+              </time>
+            </p>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 

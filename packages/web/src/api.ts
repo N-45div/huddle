@@ -7,6 +7,7 @@ import type {
   Flow,
   FlowView,
   Info,
+  MemoryHit,
   Note,
   RunDetail,
   RouterView,
@@ -202,6 +203,7 @@ export const api = {
   answer: (approvalId: string, yes: boolean) => call<{ runId: string }>("POST", `/approvals/${id(approvalId)}`, { yes }),
 
   memory: (status: Note["status"]) => call<Note[]>("GET", `/memory?status=${status}`),
+  searchMemory: (query: string) => call<MemoryHit[]>("GET", `/memory/search?q=${encodeURIComponent(query)}`),
   addNote: (slice: string, note: string) => call<Note>("POST", "/memory", { slice, note }),
   keepNote: (noteId: string) => call<{ ok: true }>("POST", `/memory/${id(noteId)}/keep`),
   deleteNote: (noteId: string) => call<{ ok: true }>("DELETE", `/memory/${id(noteId)}`),
