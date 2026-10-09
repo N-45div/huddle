@@ -120,6 +120,8 @@ export const Trigger = z.discriminatedUnion("type", [
   z.object({ type: z.literal("schedule"), every, input: z.string().default("") }),
   /** Runs when something posts to the flow's webhook address (the server shows it); the body is the input. */
   z.object({ type: z.literal("webhook") }),
+  /** Runs when mail to `address` reaches Huddle, through Resend's inbound webhook; the email is the input. */
+  z.object({ type: z.literal("email"), address: emailAddress }),
 ]);
 export type Trigger = z.infer<typeof Trigger>;
 

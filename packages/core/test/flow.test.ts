@@ -66,6 +66,12 @@ describe("flow files", () => {
     });
   });
 
+  it("start from an email to an address, which has to be a real one", () => {
+    assert.deepEqual(parseFlow({ ...base, trigger: { type: "email", address: "Inbox@MyDomain.com" } }).trigger, { type: "email", address: "Inbox@MyDomain.com" });
+    assert.throws(() => parseFlow({ ...base, trigger: { type: "email", address: "inbox" } }), /trigger\.address: an email address/);
+    assert.throws(() => parseFlow({ ...base, trigger: { type: "email" } }), /trigger\.address/);
+  });
+
   it("keep keys out of flow files: an assistant names an environment variable instead", () => {
     assert.throws(() => parseFlow({ ...base, assistants: [{ id: "a", connector: "http", keyEnv: "sk_live_abc" }] }), /environment variable name/);
   });
