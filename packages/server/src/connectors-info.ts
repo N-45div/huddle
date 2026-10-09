@@ -40,6 +40,16 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
     ],
   },
   {
+    id: "ollama",
+    name: "Ollama",
+    description: "A model running in Ollama, on this machine or on ollama.com. Pick one of the models it has; for ollama.com, give https://ollama.com and a key.",
+    fields: [
+      { key: "url", label: "Address", required: false, placeholder: "http://127.0.0.1:11434" },
+      { key: "model", label: "Model", required: true, placeholder: "qwen3", suggest: "models" },
+      { key: "keyEnv", label: "Key variable for ollama.com", required: false, placeholder: "OLLAMA_API_KEY" },
+    ],
+  },
+  {
     id: "homeassistant",
     name: "Home Assistant",
     description: "Home Assistant's Assist. Takes plain commands; memory isn't sent to it.",

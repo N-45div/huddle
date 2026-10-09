@@ -64,6 +64,8 @@ export interface ConnectorField {
   readonly label: string;
   readonly required: boolean;
   readonly placeholder?: string;
+  /** "models": the server can list the choices (GET /api/connectors/:id/models?url=). */
+  readonly suggest?: "models";
 }
 
 /** GET /api/connectors */
@@ -87,6 +89,7 @@ export type ChangeEvent = { readonly kind: "run"; readonly runId: string } | { r
  * Routes:
  *   GET    /api/info                       -> Info
  *   GET    /api/connectors                 -> ConnectorInfo[]
+ *   GET    /api/connectors/:id/models?url= -> { models: string[] }  (Ollama; 502 ApiError when it can't be reached)
  *   GET    /api/flows                      -> FlowView[]
  *   POST   /api/flows        { flow }      -> FlowView            (400 ApiError with problems)
  *   POST   /api/flows/check  { flow }      -> { ok: true } | ApiError
@@ -109,4 +112,5 @@ export type ChangeEvent = { readonly kind: "run"; readonly runId: string } | { r
  *   POST   /hooks/:flowId/:secret          -> 202 { runId }       (body: text, or JSON { input })
  *   GET    /.well-known/agent-card.json    -> Huddle's A2A Agent Card
  *   POST   /a2a                            -> A2A 1.0 JSON-RPC (SendMessage, GetTask)
+ *   GET    /a2a/flows/:id/.well-known/agent-card.json, POST /a2a/flows/:id   -> one flow as its own A2A agent
  */

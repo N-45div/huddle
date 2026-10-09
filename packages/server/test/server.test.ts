@@ -140,6 +140,23 @@ describe("the API", () => {
     assert.equal((await app.request(`/api/memory/${note.id}`, { method: "DELETE", headers: auth })).status, 404);
   });
 
+  it("lists an Ollama's models for the assistant form, and says plainly when it can't reach one", async () => {
+    const fetcher = (async (input: string | URL | Request) => {
+      if (String(input) === "http://box:11434/api/tags") return Response.json({ models: [{ name: "qwen3:latest" }, { name: "gemma3:270m" }] });
+      throw new TypeError("fetch failed");
+    }) as typeof fetch;
+    const { app } = setup({ fetcher });
+    assert.equal((await app.request("/api/connectors/ollama/models?url=http://box:11434")).status, 401);
+    assert.deepEqual(await (await app.request("/api/connectors/ollama/models?url=http://box:11434", { headers: auth })).json(), { models: ["gemma3:270m", "qwen3:latest"] });
+    const down = await app.request("/api/connectors/ollama/models?url=http://nobody:1", { headers: auth });
+    assert.equal(down.status, 502);
+    assert.match((await down.json()).error, /Can't reach Ollama at http:\/\/nobody:1\. Is it running\?/);
+    assert.equal((await app.request("/api/connectors/ollama/models?url=file:///etc/passwd", { headers: auth })).status, 400);
+    assert.equal((await app.request("/api/connectors/openai/models", { headers: auth })).status, 404);
+    const ollama = (await (await app.request("/api/connectors", { headers: auth })).json()).find((connector: { id: string }) => connector.id === "ollama");
+    assert.equal(ollama.fields.find((field: { key: string }) => field.key === "model").suggest, "models");
+  });
+
   it("drafts a flow from a sentence only when a model is set up", async () => {
     assert.equal((await setup().app.request("/api/describe", json({ text: "greet people" }))).status, 501);
     const { app } = setup({ describe: async () => greeter });

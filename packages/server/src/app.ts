@@ -1,4 +1,4 @@
-import { type Change, type Engine, Flow, type Note, type SavedFlow, type Store } from "@huddle/core";
+import { type Change, type Engine, Flow, type Note, ollamaModels, type SavedFlow, type Store } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { a2aRoutes } from "./a2a.ts";
@@ -26,6 +26,8 @@ export interface AppOptions {
   readonly describe?: (text: string) => Promise<Flow>;
   /** How long an A2A message waits for its run before answering "still working" (default 100 s). */
   readonly a2aWaitMs?: number;
+  /** For reaching other servers (listing a connector's models); tests pass a stand-in. */
+  readonly fetcher?: typeof fetch;
 }
 
 /** A flow from a request body, or the problems with it, one line each. */
@@ -35,7 +37,7 @@ export function checkFlow(input: unknown): { flow: Flow } | { problems: string[]
   return { problems: result.error.issues.map((issue) => (issue.path.length ? `${issue.path.join(".")}: ${issue.message}` : issue.message)) };
 }
 
-const bad = (c: Context, error: string, status: 400 | 401 | 404 | 409 | 501 = 400, problems?: string[]) => c.json<ApiError>(problems ? { error, problems } : { error }, status);
+const bad = (c: Context, error: string, status: 400 | 401 | 404 | 409 | 501 | 502 = 400, problems?: string[]) => c.json<ApiError>(problems ? { error, problems } : { error }, status);
 
 async function body(c: Context): Promise<Record<string, unknown>> {
   return ((await c.req.json().catch(() => null)) ?? {}) as Record<string, unknown>;
@@ -65,6 +67,16 @@ export function createApp(options: AppOptions): Hono {
 
   app.get("/api/info", (c) => c.json<Info>({ version: options.version, auth: Boolean(options.token), agentCard: `${options.publicUrl}/.well-known/agent-card.json`, describe: Boolean(options.describe) }));
   app.get("/api/connectors", (c) => c.json(CONNECTORS));
+  app.get("/api/connectors/:id/models", async (c) => {
+    if (c.req.param("id") !== "ollama") return bad(c, "This connector doesn't list models.", 404);
+    const url = c.req.query("url")?.trim() || undefined;
+    if (url && !/^https?:\/\/[^\s]+$/i.test(url)) return bad(c, "The address should start with http:// or https://.");
+    try {
+      return c.json({ models: await ollamaModels(url, options.fetcher) });
+    } catch (error) {
+      return bad(c, error instanceof Error ? error.message : String(error), 502);
+    }
+  });
 
   // Flows -----------------------------------------------------------------------------------------
   app.get("/api/flows", (c) => c.json(store.flows().map(view)));
