@@ -3,9 +3,9 @@
  * can't drift apart. All routes are under /api; when the server has a token, every call carries
  * `Authorization: Bearer <token>` (the event stream takes `?token=` instead).
  */
-import type { Assistant, Contact, ContactTier, Flow, LogLine, Note, RunState, RunView, SignIn, Trigger } from "@huddle/core";
+import type { Assistant, Contact, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger } from "@huddle/core";
 
-export type { Assistant, Contact, ContactTier, Flow, LogLine, Note, RunState, RunView, SignIn, Trigger };
+export type { Assistant, Contact, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger };
 
 /** GET /api/info: what this Huddle can do. */
 export interface Info {
@@ -175,8 +175,9 @@ export interface SandboxRequests {
  *   GET    /api/approvals                  -> WaitingApproval[]
  *   POST   /api/approvals/:id { yes }      -> 202 { runId }
  *   GET    /api/memory?status=             -> Note[]
- *   POST   /api/memory { slice, note }     -> Note                (a person's own note: kept)
- *   POST   /api/memory/:id/keep            -> { ok: true }
+ *   GET    /api/memory/search?q=&slice=&status=&limit= -> MemoryHit[]   (best first; slice may repeat)
+ *   POST   /api/memory { slice, note }     -> Note                (a person's own note: kept; 400 if it holds a secret)
+ *   POST   /api/memory/:id/keep            -> { ok: true }        (400 if it holds a secret)
  *   DELETE /api/memory/:id                 -> { ok: true }
  *   POST   /api/describe { text }          -> { flow }            (501 when no model is set up)
  *   GET    /api/sandbox-requests           -> SandboxRequests

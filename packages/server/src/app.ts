@@ -1,4 +1,4 @@
-import { Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type Note, ollamaModels, type PactIdentity, type Router, type SavedFlow, type SignIns, type Store } from "@huddle/core";
+import { Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type MemoryHit, type Note, ollamaModels, type PactIdentity, type Router, type SavedFlow, SensitiveNote, type SignIns, type Store } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { a2aRoutes } from "./a2a.ts";
@@ -233,12 +233,33 @@ export function createApp(options: AppOptions): Hono {
     const status = c.req.query("status");
     return c.json<Note[]>(store.notes(status === "kept" || status === "suggested" ? status : undefined));
   });
+  // Search, as recall ranks notes: by their words (rarer words count for more) and, when set up, meaning.
+  app.get("/api/memory/search", async (c) => {
+    const query = c.req.query("q")?.trim().slice(0, 500) ?? "";
+    if (!query) return bad(c, "Search for some words.");
+    const status = c.req.query("status");
+    const slices = (c.req.queries("slice") ?? []).map((slice) => slice.trim()).filter(Boolean);
+    const limit = Math.min(50, Math.max(1, Number(c.req.query("limit") ?? 20) || 20));
+    return c.json<MemoryHit[]>(await engine.memory.search(query, { slices: slices.length ? slices : undefined, status: status === "kept" || status === "suggested" ? status : undefined, limit }));
+  });
   app.post("/api/memory", async (c) => {
     const { slice, note } = await body(c);
     if (typeof slice !== "string" || !slice.trim() || typeof note !== "string" || !note.trim()) return bad(c, "A note needs a slice and some text.");
-    return c.json(store.remember(slice.trim(), note.trim()), 201);
+    try {
+      return c.json(store.remember(slice.trim(), note.trim()), 201);
+    } catch (error) {
+      if (error instanceof SensitiveNote) return bad(c, error.message);
+      throw error;
+    }
   });
-  app.post("/api/memory/:id/keep", (c) => (store.keep(c.req.param("id")) ? c.json({ ok: true }) : bad(c, "There's no such suggestion.", 404)));
+  app.post("/api/memory/:id/keep", (c) => {
+    try {
+      return store.keep(c.req.param("id")) ? c.json({ ok: true }) : bad(c, "There's no such suggestion.", 404);
+    } catch (error) {
+      if (error instanceof SensitiveNote) return bad(c, error.message);
+      throw error;
+    }
+  });
   app.delete("/api/memory/:id", (c) => (store.forget(c.req.param("id")) ? c.json({ ok: true }) : bad(c, "There's no such note.", 404)));
 
   // Describe it -------------------------------------------------------------------------------------

@@ -141,6 +141,34 @@ describe("the API", () => {
     assert.equal((await app.request(`/api/memory/${note.id}`, { method: "DELETE", headers: auth })).status, 404);
   });
 
+  it("searches memory, best match first, within the slices asked for", async () => {
+    const { app, store } = setup();
+    store.remember("home", "Asha waters the plants.");
+    store.remember("home", "Asha's passport expires in March.");
+    store.remember("travel", "Renew the passport before booking flights.");
+    store.suggest("home", "Asha might like a new passport cover.", "test");
+    const search = async (query: string) => (await (await app.request(`/api/memory/search?${query}`, { headers: auth })).json()) as { note: { note: string; status: string }; match: { share: number } | null }[];
+    const all = await search("q=when+does+Asha's+passport+expire");
+    assert.equal(all[0]?.note.note, "Asha's passport expires in March.");
+    assert.ok((all[0]?.match?.share ?? 0) > 0.9);
+    assert.deepEqual((await search("q=passport&slice=travel")).map((hit) => hit.note.note), ["Renew the passport before booking flights."]);
+    assert.deepEqual((await search("q=passport&slice=home&status=suggested")).map((hit) => hit.note.status), ["suggested"]);
+    assert.equal((await app.request("/api/memory/search?q=+", { headers: auth })).status, 400);
+    assert.equal((await app.request("/api/memory/search?q=passport")).status, 401);
+  });
+
+  it("won't keep a password, a card number, a code or a key", async () => {
+    const { app, store } = setup();
+    const refused = await app.request("/api/memory", json({ slice: "home", note: "The wifi password is hunter22" }));
+    assert.equal(refused.status, 400);
+    assert.match((await refused.json()).error, /Not saved: this looks like a password/);
+    store.db.prepare("INSERT INTO notes (id, slice, note, status, source, created_at) VALUES ('note_old', 'money', 'Card 4111 1111 1111 1111', 'suggested', 'old', ?)").run(new Date().toISOString());
+    const kept = await app.request("/api/memory/note_old/keep", json({}));
+    assert.equal(kept.status, 400);
+    assert.match((await kept.json()).error, /Not kept: this looks like a card number/);
+    assert.deepEqual(store.notes("kept"), []);
+  });
+
   it("lists an Ollama's models for the assistant form, and says plainly when it can't reach one", async () => {
     const fetcher = (async (input: string | URL | Request) => {
       if (String(input) === "http://box:11434/api/tags") return Response.json({ models: [{ name: "qwen3:latest" }, { name: "gemma3:270m" }] });
