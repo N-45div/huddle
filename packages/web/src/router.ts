@@ -2,7 +2,7 @@ import { useEffect, useSyncExternalStore } from "react";
 
 /**
  * Hash routes, so the built app works from any path the server serves it on:
- *   #/flows  #/flows/:id  #/assistants  #/runs?flow=  #/runs/:id  #/approvals  #/memory
+ *   #/flows  #/flows/:id  #/assistants  #/contacts  #/runs?flow=  #/runs/:id  #/approvals  #/memory
  */
 
 export type Route =
@@ -11,6 +11,7 @@ export type Route =
   | { readonly name: "runs"; readonly flow: string | null }
   | { readonly name: "run"; readonly id: string }
   | { readonly name: "assistants" }
+  | { readonly name: "contacts" }
   | { readonly name: "approvals" }
   | { readonly name: "memory" };
 
@@ -32,6 +33,8 @@ export function parseRoute(hash: string): Route {
       return parts[1] ? { name: "run", id: parts[1] } : { name: "runs", flow: params.get("flow") };
     case "assistants":
       return { name: "assistants" };
+    case "contacts":
+      return { name: "contacts" };
     case "approvals":
       return { name: "approvals" };
     case "memory":
@@ -49,6 +52,7 @@ export const href = {
   runs: (flow?: string | null) => (flow ? `#/runs?flow=${part(flow)}` : "#/runs"),
   run: (id: string) => `#/runs/${part(id)}`,
   assistants: () => "#/assistants",
+  contacts: () => "#/contacts",
   approvals: () => "#/approvals",
   memory: () => "#/memory",
 };

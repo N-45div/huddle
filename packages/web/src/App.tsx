@@ -9,6 +9,7 @@ import { useDebounced } from "./hooks.ts";
 import { clearLeaveGuard, href, leaveGuard, type Route, useRoute } from "./router.ts";
 import { ApprovalsScreen } from "./screens/ApprovalsScreen.tsx";
 import { AssistantsScreen } from "./screens/AssistantsScreen.tsx";
+import { ContactsScreen } from "./screens/ContactsScreen.tsx";
 import { FlowsScreen } from "./screens/FlowsScreen.tsx";
 import { MemoryScreen } from "./screens/MemoryScreen.tsx";
 import { RunScreen } from "./screens/RunScreen.tsx";
@@ -129,6 +130,8 @@ function Screen({ route }: { readonly route: Route }) {
       return <RunScreen key={route.id} runId={route.id} />;
     case "assistants":
       return <AssistantsScreen />;
+    case "contacts":
+      return <ContactsScreen />;
     case "approvals":
       return <ApprovalsScreen />;
     case "memory":
@@ -142,6 +145,7 @@ function Sidebar({ route, onSaveToken }: { readonly route: Route; readonly onSav
   const items = [
     { to: href.flows(), label: "Flows", icon: "flows", active: route.name === "flows" || route.name === "flow" },
     { to: href.assistants(), label: "Assistants", icon: "assistants", active: route.name === "assistants" },
+    { to: href.contacts(), label: "Contacts", icon: "contacts", active: route.name === "contacts" },
     { to: href.runs(), label: "Runs", icon: "runs", active: route.name === "runs" || route.name === "run" },
     { to: href.approvals(), label: "Approvals", icon: "approvals", active: route.name === "approvals", badge: waiting },
     { to: href.memory(), label: "Memory", icon: "memory", active: route.name === "memory" },

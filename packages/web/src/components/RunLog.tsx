@@ -41,6 +41,19 @@ function describe(line: LogLine): Described {
     }
     case "answered":
       return { title: "Answered", body: text(detail, "text"), data: field(detail, "data") };
+    case "started": {
+      const tier = text(detail, "tier");
+      const via = text(detail, "via");
+      return {
+        title: (
+          <>
+            Started by <strong>{text(detail, "name") || "someone"}</strong>
+            {tier && tier !== "owner" && <span className="muted"> ({tier === "stranger" ? "not in your contacts" : tier})</span>}
+            {via && <span className="muted"> over {via === "a2a" ? "A2A" : via}</span>}
+          </>
+        ),
+      };
+    }
     case "checked": {
       const result = field(detail, "result");
       return {

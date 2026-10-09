@@ -9,6 +9,8 @@ export type {
   ChangeEvent,
   ConnectorField,
   ConnectorInfo,
+  Contact,
+  ContactTier,
   Flow,
   FlowView,
   Info,
@@ -29,6 +31,8 @@ export type {
 export type Step = Flow["steps"][number];
 export type StepType = Step["type"];
 export type Assistant = Flow["assistants"][number];
+/** Who may start a flow from outside: see the Trigger tab. */
+export type Callers = NonNullable<Flow["callers"]>;
 export type ConnectorId = Assistant["connector"];
 export type StepOf<T extends StepType> = Extract<Step, { type: T }>;
 

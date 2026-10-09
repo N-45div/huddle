@@ -2,7 +2,9 @@ import { type ReactNode, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { ConfirmDialog } from "../components/Dialog.tsx";
 import { Hint, Icon } from "../components/bits.tsx";
-import { EVERY_PATTERN, type FlowView, type Trigger } from "../types.ts";
+import { href } from "../router.ts";
+import { TIER_LABELS, TIER_ORDER } from "../screens/ContactsScreen.tsx";
+import { type Callers, EVERY_PATTERN, type FlowView, type Trigger } from "../types.ts";
 
 interface Props {
   readonly flowId: string;
@@ -13,6 +15,8 @@ interface Props {
   readonly stepIds: readonly string[];
   readonly firstStep: string | undefined;
   readonly onChange: (trigger: Trigger) => void;
+  readonly callers: Callers | undefined;
+  readonly onCallers: (callers: Callers) => void;
   readonly onFirstStep: (stepId: string | null) => void;
   readonly onRotated: (view: FlowView) => void;
 }
@@ -26,7 +30,7 @@ function absolute(address: string): string {
   }
 }
 
-export function TriggerPanel({ flowId, trigger, savedTrigger, webhookUrl, a2aUrl, stepIds, firstStep, onChange, onFirstStep, onRotated }: Props) {
+export function TriggerPanel({ flowId, trigger, savedTrigger, webhookUrl, a2aUrl, stepIds, firstStep, onChange, callers, onCallers, onFirstStep, onRotated }: Props) {
   const [lastEvery, setLastEvery] = useState(trigger.type === "schedule" ? trigger.every : "1d");
   const changed = JSON.stringify(trigger) !== JSON.stringify(savedTrigger ?? { type: "manual" });
 
@@ -98,10 +102,53 @@ export function TriggerPanel({ flowId, trigger, savedTrigger, webhookUrl, a2aUrl
       </div>
 
       <CopyAddress id="a2a-url" label="For your other assistants (A2A)" address={absolute(a2aUrl)}>
-        Give this address to OpenClaw, Hermes or any A2A assistant, with Huddle's A2A token, and it can start this flow
-        whatever its trigger. What it sends becomes the input.
+        Give this address to OpenClaw, Hermes or any A2A assistant, with Huddle's A2A token or a contact's own token, and it
+        can start this flow whatever its trigger. What it sends becomes the input.
       </CopyAddress>
+
+      <CallersFields callers={callers} onChange={onCallers} />
     </div>
+  );
+}
+
+const DEFAULT_CALLERS: Callers = { starts: "owner", others: "ask", strangers: "refuse" };
+
+/** Who may start the flow from outside: closer tiers at once, the rest after your OK, strangers only if you let them. */
+function CallersFields({ callers, onChange }: { readonly callers: Callers | undefined; readonly onChange: (callers: Callers) => void }) {
+  const rules = { ...DEFAULT_CALLERS, ...callers };
+  return (
+    <fieldset className="field callers">
+      <legend>Who can start it from outside</legend>
+      <div className="field">
+        <label htmlFor="callers-starts">Starts at once for</label>
+        <select id="callers-starts" value={rules.starts} onChange={(event) => onChange({ ...rules, starts: event.target.value as Callers["starts"] })}>
+          <option value="owner">Only you</option>
+          {TIER_ORDER.map((tier, index) => (
+            <option key={tier} value={tier}>
+              {index === 0 ? TIER_LABELS[tier] : `${TIER_LABELS[tier]} and closer`}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label htmlFor="callers-others">Contacts further away</label>
+        <select id="callers-others" value={rules.others} onChange={(event) => onChange({ ...rules, others: event.target.value as Callers["others"] })}>
+          <option value="ask">Ask me first</option>
+          <option value="refuse">Turn them away</option>
+        </select>
+      </div>
+      <div className="field">
+        <label htmlFor="callers-strangers">People not in your contacts</label>
+        <select id="callers-strangers" value={rules.strangers} onChange={(event) => onChange({ ...rules, strangers: event.target.value as Callers["strangers"] })}>
+          <option value="refuse">Turn them away</option>
+          <option value="ask">Ask me first</option>
+        </select>
+      </div>
+      <Hint>
+        A run you're asked about waits in Approvals, saying who sent it and what. Add people and their tokens in{" "}
+        <a href={href.contacts()}>Contacts</a>.
+      </Hint>
+    </fieldset>
   );
 }
 

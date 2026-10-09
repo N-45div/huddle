@@ -1,6 +1,8 @@
 import type {
   ApiError,
   Assistant,
+  Contact,
+  ContactTier,
   ConnectorInfo,
   Flow,
   FlowView,
@@ -77,7 +79,7 @@ function fallbackMessage(status: number): string {
   return `The server said no (${status}).`;
 }
 
-async function call<T>(method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
+async function call<T>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (memoryToken) headers.Authorization = `Bearer ${memoryToken}`;
@@ -158,6 +160,12 @@ export const api = {
   assistants: () => call<Assistant[]>("GET", "/assistants"),
   saveAssistants: (assistants: readonly Assistant[]) => call<Assistant[]>("PUT", "/assistants", { assistants }),
   router: () => call<RouterView>("GET", "/router"),
+  contacts: () => call<Contact[]>("GET", "/contacts"),
+  /** Their token comes back this once. */
+  addContact: (name: string, tier: ContactTier, emails: readonly string[]) => call<{ contact: Contact; token: string }>("POST", "/contacts", { name, tier, emails }),
+  updateContact: (contactId: string, change: { name?: string; tier?: ContactTier; emails?: readonly string[] }) => call<Contact>("PATCH", `/contacts/${id(contactId)}`, change),
+  newContactToken: (contactId: string) => call<{ token: string }>("POST", `/contacts/${id(contactId)}/token`),
+  removeContact: (contactId: string) => call<null>("DELETE", `/contacts/${id(contactId)}`),
   /** One chat through the router's OpenAI-compatible /v1, the way any app would call it. */
   chat: (model: string, text: string) => routerChat(model, text),
   models: (connector: string, url: string) => call<{ models: string[] }>("GET", `/connectors/${id(connector)}/models` + (url ? `?url=${id(url)}` : "")),

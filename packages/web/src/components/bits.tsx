@@ -84,7 +84,7 @@ export function TemplateHint({ id }: { readonly id?: string }) {
   );
 }
 
-export function Icon({ name }: { readonly name: "flows" | "assistants" | "runs" | "approvals" | "memory" | "copy" | "back" | "plus" | "close" }) {
+export function Icon({ name }: { readonly name: "flows" | "assistants" | "contacts" | "runs" | "approvals" | "memory" | "copy" | "back" | "plus" | "close" }) {
   const paths: Record<typeof name, ReactNode> = {
     flows: (
       <>
@@ -98,6 +98,13 @@ export function Icon({ name }: { readonly name: "flows" | "assistants" | "runs" 
         <circle cx="8.5" cy="9" r="3" />
         <circle cx="16.5" cy="9.5" r="2.5" />
         <path d="M3.5 19c.8-3 2.6-4.5 5-4.5s4.2 1.5 5 4.5M14.5 14.6c.6-.1 1.3-.1 2-.1 2.1 0 3.6 1.2 4.2 3.5" />
+      </>
+    ),
+    contacts: (
+      <>
+        <rect x="4" y="3.5" width="16" height="17" rx="2.5" />
+        <circle cx="12" cy="10" r="2.6" />
+        <path d="M7.8 16.8c.7-2 2.2-3 4.2-3s3.5 1 4.2 3" />
       </>
     ),
     runs: (

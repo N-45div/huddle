@@ -2370,3 +2370,101 @@ h1 .badge {
     padding-top: 6px;
   }
 }
+
+/* ---------- Contacts ---------- */
+
+.add-contact,
+.token-card {
+  gap: 12px;
+}
+
+.add-contact > .btn,
+.token-card > .btn {
+  align-self: flex-start;
+}
+
+.contact-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 12em);
+  gap: 12px;
+}
+
+.contact-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.contact-card {
+  gap: 8px;
+}
+
+.contact-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.contact-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.contact-head select {
+  width: auto;
+  flex: none;
+}
+
+.contact-name {
+  font-weight: 620;
+  overflow-wrap: anywhere;
+}
+
+.contact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.tier-badge {
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.tier-partner,
+.tier-family {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.tier-contact {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.callers {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+@media (max-width: 560px) {
+  .contact-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

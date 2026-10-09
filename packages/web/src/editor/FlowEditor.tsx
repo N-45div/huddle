@@ -617,6 +617,8 @@ function Editor({ flowId, openDescribe }: { readonly flowId: string; readonly op
                 stepIds={stepIds}
                 firstStep={firstStep}
                 onChange={(trigger) => setMeta((current) => ({ ...current, trigger }))}
+                callers={meta.callers}
+                onCallers={(callers) => setMeta((current) => ({ ...current, callers }))}
                 onFirstStep={(stepId) => setLink(START_ID, "next", stepId)}
                 onRotated={(rotated) => setView((current) => (current ? { ...current, webhookUrl: rotated.webhookUrl } : rotated))}
               />

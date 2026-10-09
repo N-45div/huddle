@@ -1,5 +1,5 @@
 import { type Edge, MarkerType, type Node, type XYPosition } from "@xyflow/react";
-import type { Assistant, Flow, Step, StepType, Trigger } from "../types.ts";
+import type { Assistant, Callers, Flow, Step, StepType, Trigger } from "../types.ts";
 
 /**
  * The flow file on one side, the canvas on the other. On the canvas a step's content lives in its
@@ -31,6 +31,8 @@ export interface Meta {
   readonly name: string;
   readonly description: string;
   readonly trigger: Trigger;
+  /** Who may start it from outside; none means only you. */
+  readonly callers?: Callers;
   readonly assistants: readonly Assistant[];
 }
 
@@ -268,6 +270,7 @@ export function flowToGraph(flow: Flow): Graph {
       name: flow.name ?? "",
       description: flow.description ?? "",
       trigger: flow.trigger ?? { type: "manual" },
+      ...(flow.callers ? { callers: flow.callers } : {}),
       assistants: flow.assistants ?? [],
     },
     nodes,
@@ -340,6 +343,7 @@ export function graphToFlow(meta: Meta, nodes: readonly EditorNode[], edges: rea
     name: meta.name,
     ...(description ? { description: meta.description } : {}),
     trigger: meta.trigger,
+    ...(meta.callers ? { callers: meta.callers } : {}),
     assistants: [...meta.assistants],
     steps,
     ui: { positions },
