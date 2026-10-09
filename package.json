@@ -1,0 +1,19 @@
+{
+  "name": "huddle",
+  "private": true,
+  "type": "module",
+  "description": "n8n for personal assistants: connect your AI assistants, give them one shared memory, and draw how they hand work to each other.",
+  "license": "AGPL-3.0-only",
+  "workspaces": ["packages/*"],
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "huddle": "node --no-warnings packages/core/src/cli.ts",
+    "example": "node --no-warnings packages/core/src/cli.ts run examples/invoices.json --input @examples/invoice.txt",
+    "test": "node --no-warnings --test \"packages/*/test/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}
