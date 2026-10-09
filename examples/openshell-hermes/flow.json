@@ -1,0 +1,17 @@
+{
+  "name": "Hermes in OpenShell",
+  "description": "Hermes runs inside an NVIDIA OpenShell sandbox; OpenShell decides what it may reach and holds its model key.",
+  "assistants": [
+    {
+      "id": "hermes",
+      "name": "Hermes (sandboxed)",
+      "connector": "openshell",
+      "agentId": "hermes-agent",
+      "command": ["env", "HERMES_HOME=/tmp/hermes", "/opt/hermes/bin/hermes", "--provider", "openai-api", "chat", "--query-file", "/dev/stdin", "--oneshot", "-Q", "-m", "gpt-5.4-mini"],
+      "memory": ["home"]
+    }
+  ],
+  "steps": [
+    { "id": "remind", "type": "agent", "agent": "hermes", "ask": "Write a one-line reminder to feed my cat tonight, using its name. Reply with just the line." }
+  ]
+}

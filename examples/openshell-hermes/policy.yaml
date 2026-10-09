@@ -1,0 +1,21 @@
+# OpenShell's default sandbox policy, plus read-only access to Hermes' own install (/opt/hermes).
+# Network access starts closed except what the OpenAI provider adds (curl only); anything else Hermes
+# needs is blocked, drafted as a rule, and decided by a person in Huddle's Approvals.
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /bin
+    - /usr
+    - /lib
+    - /proc
+    - /dev/urandom
+    - /etc
+    - /var/log
+    - /opt/hermes
+  read_write:
+    - /tmp
+    - /dev/null
+landlock:
+  compatibility: best_effort
+network_policies: {}
