@@ -78,6 +78,6 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
     id: "mock",
     name: "Stand-in",
     description: "Answers from a fixed list, for building and testing a flow.",
-    fields: [{ key: "replies", label: 'Replies (JSON: { "keyword": "answer", "*": "otherwise" })', required: false }],
+    fields: [{ key: "replies", label: "Fixed answers", required: false }],
   },
 ];

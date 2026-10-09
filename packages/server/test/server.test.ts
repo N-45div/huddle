@@ -54,18 +54,19 @@ async function settle(store: Store, runId: string): Promise<Run> {
 }
 
 describe("the API", () => {
-  it("needs the token on /api, but not for the Agent Card", async () => {
+  it("needs the token on /api, but not for the Agent Card or to learn that a token is needed", async () => {
     const { app } = setup();
-    assert.equal((await app.request("/api/info")).status, 401);
-    assert.equal((await app.request("/api/info", { headers: { authorization: "Bearer wrong-token-0123456789" } })).status, 401);
-    const info = await (await app.request("/api/info", { headers: auth })).json();
+    assert.equal((await app.request("/api/flows")).status, 401);
+    assert.equal((await app.request("/api/flows", { headers: { authorization: "Bearer wrong-token-0123456789" } })).status, 401);
+    assert.equal((await app.request("/api/flows", { headers: auth })).status, 200);
+    const info = await (await app.request("/api/info")).json();
     assert.deepEqual(info, { version: "test", auth: true, agentCard: "http://huddle.test/.well-known/agent-card.json", describe: false });
     assert.equal((await app.request("/.well-known/agent-card.json")).status, 200);
   });
 
   it("is open on this machine when no token is set", async () => {
     const { app } = setup({ token: undefined });
-    assert.equal((await app.request("/api/info")).status, 200);
+    assert.equal((await app.request("/api/flows")).status, 200);
   });
 
   it("saves, lists, changes and deletes flows, and says what's wrong with a bad one", async () => {

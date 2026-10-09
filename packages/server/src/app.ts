@@ -53,7 +53,8 @@ export function createApp(options: AppOptions): Hono {
   });
 
   app.use("/api/*", async (c, next) => {
-    if (!options.token) return next();
+    // /api/info is open: it holds nothing private, and it's how the canvas learns it needs to ask for the token.
+    if (!options.token || c.req.path === "/api/info") return next();
     const bearer = bearerOf(c.req.header("authorization"));
     // EventSource can't send headers, so the event stream takes the token in the query.
     const queried = c.req.path === "/api/events" ? c.req.query("token") : undefined;
