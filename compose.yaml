@@ -1,0 +1,20 @@
+# docker compose up -d   (copy .env.example to .env first and set HUDDLE_TOKEN)
+services:
+  huddle:
+    build: .
+    restart: unless-stopped
+    # This machine only. To reach Huddle from elsewhere, put it behind HTTPS and set HUDDLE_PUBLIC_URL.
+    ports:
+      - "127.0.0.1:7700:7700"
+    # Everything in .env reaches Huddle, including the keys your flows name in "keyEnv".
+    env_file: .env
+    environment:
+      HUDDLE_TOKEN: ${HUDDLE_TOKEN:?Set HUDDLE_TOKEN in .env, e.g. openssl rand -hex 32}
+    # Assistants running on this machine (OpenClaw, Hermes, Ollama...) are at host.docker.internal.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - huddle-data:/data
+
+volumes:
+  huddle-data:
