@@ -18,6 +18,8 @@ export interface Info {
   readonly describe: boolean;
   /** Whether an OpenShell gateway is set up, for sandboxed assistants and their requests. */
   readonly openshell: boolean;
+  /** The router's OpenAI-compatible base URL (model = an assistant's id), when it's on. */
+  readonly router: string | null;
 }
 
 /** One saved flow, as the list and the editor see it. */
@@ -123,6 +125,8 @@ export interface SandboxRequests {
  * Routes:
  *   GET    /api/info                       -> Info
  *   GET    /api/connectors                 -> ConnectorInfo[]
+ *   GET    /api/assistants                 -> Assistant[]          (your assistants, for the router)
+ *   PUT    /api/assistants { assistants }  -> Assistant[]          (replaces the list; 400 ApiError with problems)
  *   GET    /api/connectors/:id/models?url= -> { models: string[] }  (Ollama; 502 ApiError when it can't be reached)
  *   GET    /api/flows                      -> FlowView[]
  *   POST   /api/flows        { flow }      -> FlowView            (400 ApiError with problems)
@@ -151,5 +155,7 @@ export interface SandboxRequests {
  *   GET    /.well-known/agent-card.json    -> Huddle's A2A Agent Card
  *   GET    /.well-known/jwks.json, /.well-known/openid-configuration   -> Huddle's PACT signing key
  *   POST   /a2a                            -> A2A 1.0 JSON-RPC (SendMessage, GetTask)
+ *   GET    /v1/models, POST /v1/chat/completions   -> the router, OpenAI-compatible (model = assistant id;
+ *                                                     `models: [...]` for fallbacks; stream supported)
  *   GET    /a2a/flows/:id/.well-known/agent-card.json, POST /a2a/flows/:id   -> one flow as its own A2A agent
  */

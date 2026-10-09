@@ -1,7 +1,8 @@
-import { type Change, type Engine, Flow, type Note, ollamaModels, type PactIdentity, type SavedFlow, type Store } from "@huddle/core";
+import { Assistants, type Change, type Engine, Flow, type Note, ollamaModels, type PactIdentity, type Router, type SavedFlow, type Store } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { a2aRoutes } from "./a2a.ts";
+import { routerRoutes } from "./router.ts";
 import { bearerOf, same } from "./auth.ts";
 import type { ApiError, FlowView, Info, RunDetail, RunSummary, WaitingApproval } from "./api-types.ts";
 import { CONNECTORS } from "./connectors-info.ts";
@@ -33,6 +34,10 @@ export interface AppOptions {
   readonly sandboxes?: SandboxInbox;
   /** Huddle's identity as a PACT personal agent: its key is published at /.well-known/jwks.json. */
   readonly pact?: PactIdentity;
+  /** The router: your assistants by id behind an OpenAI-compatible /v1. */
+  readonly router?: Router;
+  /** A key just for /v1 (HUDDLE_ROUTER_KEY), besides the Huddle token. */
+  readonly routerKey?: string;
 }
 
 /** A flow from a request body, or the problems with it, one line each. */
@@ -72,7 +77,7 @@ export function createApp(options: AppOptions): Hono {
 
   const sandboxes = options.sandboxes ?? noSandboxes;
   app.get("/api/info", (c) =>
-    c.json<Info>({ version: options.version, auth: Boolean(options.token), agentCard: `${options.publicUrl}/.well-known/agent-card.json`, describe: Boolean(options.describe), openshell: Boolean(options.sandboxes) }),
+    c.json<Info>({ version: options.version, auth: Boolean(options.token), agentCard: `${options.publicUrl}/.well-known/agent-card.json`, describe: Boolean(options.describe), openshell: Boolean(options.sandboxes), router: options.router ? `${options.publicUrl}/v1` : null }),
   );
 
   // What OpenShell sandboxes are asking for -----------------------------------------------------------
@@ -89,6 +94,15 @@ export function createApp(options: AppOptions): Hono {
     }
   });
   app.get("/api/connectors", (c) => c.json(CONNECTORS));
+
+  // Your assistants, set up once: what the router reaches by id ---------------------------------------
+  app.get("/api/assistants", (c) => c.json(store.assistants()));
+  app.put("/api/assistants", async (c) => {
+    const result = Assistants.safeParse((await body(c)).assistants);
+    if (!result.success) return bad(c, "These assistants have problems.", 400, result.error.issues.map((issue) => (issue.path.length ? `${issue.path.join(".")}: ${issue.message}` : issue.message)));
+    store.saveAssistants(result.data);
+    return c.json(store.assistants());
+  });
   app.get("/api/connectors/:id/models", async (c) => {
     if (c.req.param("id") !== "ollama") return bad(c, "This connector doesn't list models.", 404);
     const url = c.req.query("url")?.trim() || undefined;
@@ -247,6 +261,7 @@ export function createApp(options: AppOptions): Hono {
     return bad(c, `The Provider turned the registration down: ${detail}.`, 502);
   });
 
+  if (options.router) app.route("/", routerRoutes({ store, router: options.router, keys: [options.routerKey, options.token].filter((key): key is string => Boolean(key)) }));
   app.route("/", a2aRoutes(options));
   return app;
 }

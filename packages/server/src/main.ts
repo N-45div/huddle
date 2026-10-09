@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { defaultConnectors, Engine, OpenShell, openshell, PactIdentity, pact, Store } from "@huddle/core";
+import { defaultConnectors, Engine, jevJudge, type Judge, modelJudge, OpenShell, openshell, PactIdentity, pact, Router, Store } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
 import { SandboxWatcher } from "./sandbox-requests.ts";
@@ -21,6 +21,9 @@ import { webApp } from "./static.ts";
  *   HUDDLE_A2A_TOKEN   a separate token for assistants calling Huddle over A2A (default HUDDLE_TOKEN)
  *   HUDDLE_LLM_URL, HUDDLE_LLM_MODEL, HUDDLE_LLM_KEY   an OpenAI-compatible model for "describe it"
  *   HUDDLE_WEB         the built canvas to serve (default packages/web/dist)
+ *   HUDDLE_ROUTER_KEY  a key just for the router's OpenAI-compatible /v1 (HUDDLE_TOKEN works there too)
+ *   TYPESAFE_API_KEY   Jev judges model "auto" (HUDDLE_JEV_MODEL, default jev-latest); without it the
+ *                      HUDDLE_LLM_* model judges; with neither, "auto" uses your list's order
  *   HUDDLE_PACT_ISSUER who Huddle says it is when it talks PACT to businesses (default HUDDLE_PUBLIC_URL);
  *                      its public key is at {issuer}/.well-known/jwks.json, so businesses must reach it
  *   HUDDLE_OPENSHELL_GATEWAY  an NVIDIA OpenShell gateway (e.g. https://127.0.0.1:8080), for sandboxed
@@ -64,6 +67,11 @@ const engine = new Engine(store, { ...defaultConnectors(), openshell: openshell(
 const sandboxes = shell ? new SandboxWatcher(shell, store) : undefined;
 const scheduler = new Scheduler(store, engine);
 
+const typesafeKey = env("TYPESAFE_API_KEY");
+let judge: Judge | null = null;
+if (typesafeKey) judge = jevJudge({ key: typesafeKey, model: env("HUDDLE_JEV_MODEL") });
+else if (llmUrl && llmModel) judge = modelJudge({ url: llmUrl, model: llmModel, key: env("HUDDLE_LLM_KEY") });
+
 const app = createApp({
   store,
   engine,
@@ -74,6 +82,8 @@ const app = createApp({
   describe: llmUrl && llmModel ? describer({ url: llmUrl, model: llmModel, key: env("HUDDLE_LLM_KEY") }) : undefined,
   sandboxes,
   pact: identity,
+  router: new Router(store, engine, judge),
+  routerKey: env("HUDDLE_ROUTER_KEY"),
 });
 const web = env("HUDDLE_WEB") ?? fileURLToPath(new URL("../../web/dist", import.meta.url));
 const built = existsSync(join(web, "index.html"));
@@ -85,6 +95,7 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   sandboxes?.start();
   console.log(`Huddle ${version} is on ${publicUrl}${token ? " (token required)" : ""}`);
   console.log(`  A2A Agent Card: ${publicUrl}/.well-known/agent-card.json`);
+  console.log(`  Router (OpenAI-compatible): ${publicUrl}/v1, model = one of your assistants' ids, or "auto" (${judge ? `judged by ${judge.name}` : "no judge: your list's order"})`);
   if (!built) console.log(`  The canvas isn't built (no ${join(web, "index.html")}): run npm run build.`);
   if (!llmUrl || !llmModel) console.log('  "Describe it" is off: set HUDDLE_LLM_URL and HUDDLE_LLM_MODEL to turn it on.');
   if (shell) {

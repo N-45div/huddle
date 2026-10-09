@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { a2a, Engine, type Flow, mock, newKey, type OpenShell, PactIdentity, parseFlow, type Run, Store } from "@huddle/core";
+import { a2a, Assistant, type Connector, Engine, type Flow, mock, newKey, type OpenShell, PactIdentity, parseFlow, Router, type Run, Store } from "@huddle/core";
 import { Hono } from "hono";
 import { createApp } from "../src/app.ts";
 import { describer } from "../src/describe.ts";
@@ -61,7 +61,7 @@ describe("the API", () => {
     assert.equal((await app.request("/api/flows", { headers: { authorization: "Bearer wrong-token-0123456789" } })).status, 401);
     assert.equal((await app.request("/api/flows", { headers: auth })).status, 200);
     const info = await (await app.request("/api/info")).json();
-    assert.deepEqual(info, { version: "test", auth: true, agentCard: "http://huddle.test/.well-known/agent-card.json", describe: false, openshell: false });
+    assert.deepEqual(info, { version: "test", auth: true, agentCard: "http://huddle.test/.well-known/agent-card.json", describe: false, openshell: false, router: null });
     assert.equal((await app.request("/.well-known/agent-card.json")).status, 200);
   });
 
@@ -279,6 +279,114 @@ describe("Huddle over A2A", () => {
     const view = await caller.start(flow, "");
     assert.equal(view.state, "done");
     assert.equal(view.context.steps.hello?.text, "Hello from Huddle.");
+  });
+});
+
+describe("the router (OpenAI-compatible)", () => {
+  /** A Huddle whose "http" assistants are a stand-in that records what it was sent, and fails for "down". */
+  function routed(extra: Partial<Parameters<typeof createApp>[0]> = {}) {
+    const store = new Store();
+    const sent: { id: string; ask: string; memory: string[] }[] = [];
+    const recorder: Connector = {
+      async send({ assistant, ask, memory }) {
+        sent.push({ id: assistant.id, ask, memory: memory.map((note) => note.note) });
+        if (assistant.id === "down") throw new Error("down is offline");
+        return { text: `${assistant.id} heard: ${ask}` };
+      },
+    };
+    const engine = new Engine(store, { mock, http: recorder });
+    const app = createApp({ store, engine, version: "test", publicUrl: "http://huddle.test", router: new Router(store, engine), ...extra });
+    store.remember("home", "My cat is called Miso.");
+    store.remember("money", "Rent is due on the 1st.");
+    return { app, store, sent };
+  }
+  const chat = (body: object, headers: Record<string, string> = {}) => ({ method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+  const mine = [
+    { id: "hermes", name: "Hermes", connector: "http", url: "http://hermes.test", memory: ["home"] },
+    { id: "down", connector: "http", url: "http://down.test" },
+    { id: "local", connector: "mock", replies: { "*": "Local model here." } },
+  ];
+
+  it("keeps your assistants in one list, and says what's wrong with a bad one", async () => {
+    const { app } = routed();
+    assert.deepEqual(await (await app.request("/api/assistants")).json(), []);
+    const bad = await app.request("/api/assistants", { ...chat({ assistants: [...mine, { id: "box", connector: "openshell" }] }), method: "PUT" });
+    assert.equal(bad.status, 400);
+    assert.match((await bad.json()).problems.join(" "), /runs in OpenShell: give its sandbox's name/);
+    const twice = await app.request("/api/assistants", { ...chat({ assistants: [mine[0], mine[0]] }), method: "PUT" });
+    assert.match((await twice.json()).problems.join(" "), /two assistants are called "hermes"/);
+    const saved = await (await app.request("/api/assistants", { ...chat({ assistants: mine }), method: "PUT" })).json();
+    assert.deepEqual(saved.map((one: { id: string }) => one.id), ["hermes", "down", "local"]);
+    assert.equal((await (await app.request("/api/info")).json()).router, "http://huddle.test/v1");
+  });
+
+  it("lists your assistants as models, and answers a chat the way OpenAI does, with only that assistant's memory", async () => {
+    const { app, store, sent } = routed();
+    store.saveAssistants(mine.map((one) => Assistant.parse(one)));
+    const models = await (await app.request("/v1/models")).json();
+    assert.deepEqual(models.data.map((model: { id: string; object: string }) => [model.id, model.object]), [["auto", "model"], ["hermes", "model"], ["down", "model"], ["local", "model"]]);
+
+    const reply = await (await app.request("/v1/chat/completions", chat({ model: "hermes", messages: [{ role: "user", content: "What's my cat called?" }] }))).json();
+    assert.equal(reply.object, "chat.completion");
+    assert.equal(reply.model, "hermes");
+    assert.deepEqual(reply.choices[0].message, { role: "assistant", content: "hermes heard: What's my cat called?" });
+    assert.deepEqual(sent.at(-1)?.memory, ["My cat is called Miso."], "the home slice only, never money");
+    const run = store.run(reply.huddle.run);
+    assert.deepEqual([run?.flow.name, run?.state], ["Router: Hermes", "done"], "the call shows in Runs");
+  });
+
+  it("carries the conversation, and falls back in order when an assistant fails", async () => {
+    const { app, store, sent } = routed();
+    store.saveAssistants(mine.map((one) => Assistant.parse(one)));
+    await app.request("/v1/chat/completions", chat({ model: "hermes", messages: [{ role: "system", content: "Be brief." }, { role: "user", content: "Plan a walk." }, { role: "assistant", content: "Tomorrow at 5?" }, { role: "user", content: "Make it 6." }] }));
+    assert.equal(sent.at(-1)?.ask, "Instructions: Be brief.\nMe: Plan a walk.\nYou: Tomorrow at 5?\n\nNow: Make it 6.");
+
+    const fallback = await (await app.request("/v1/chat/completions", chat({ models: ["down", "local"], messages: [{ role: "user", content: "hi" }] }))).json();
+    assert.equal(fallback.model, "local", "the one that answered");
+    assert.equal(fallback.choices[0].message.content, "Local model here.");
+    assert.deepEqual(fallback.huddle.skipped.map((skip: { id: string }) => skip.id), ["down"]);
+
+    const allDown = await app.request("/v1/chat/completions", chat({ model: "down", messages: [{ role: "user", content: "hi" }] }));
+    assert.equal(allDown.status, 502);
+    assert.match((await allDown.json()).error.message, /down is offline/);
+    const unknown = await app.request("/v1/chat/completions", chat({ model: "nobody", messages: [{ role: "user", content: "hi" }] }));
+    assert.equal(unknown.status, 404);
+    assert.equal((await unknown.json()).error.code, "model_not_found");
+    assert.equal((await app.request("/v1/chat/completions", chat({ model: "local", messages: [{ role: "assistant", content: "hello" }] }))).status, 400);
+  });
+
+  it('routes "auto" through the judge, and reports how', async () => {
+    const store = new Store();
+    const engine = new Engine(store, { mock });
+    store.saveAssistants([Assistant.parse({ id: "a", connector: "mock", replies: { "*": "A here." } }), Assistant.parse({ id: "b", connector: "mock", replies: { "*": "B here." } })]);
+    const judge = { name: "jev", rank: async () => ({ judge: "jev", order: ["b", "a"], probabilities: { b: 0.8, a: 0.2 }, confidence: 0.7, model: "jev-1.13.0" }) };
+    const app = createApp({ store, engine, version: "test", publicUrl: "http://huddle.test", router: new Router(store, engine, judge) });
+    const reply = await (await app.request("/v1/chat/completions", chat({ model: "auto", messages: [{ role: "user", content: "hi" }] }))).json();
+    assert.equal(reply.model, "b");
+    assert.deepEqual([reply.huddle.route.judge, reply.huddle.route.confidence, reply.huddle.route.probabilities], ["jev", 0.7, { b: 0.8, a: 0.2 }]);
+    const models = await (await app.request("/v1/models")).json();
+    assert.match(models.data[0].description, /judged by jev/);
+  });
+
+  it("streams like OpenAI when asked", async () => {
+    const { app, store } = routed();
+    store.saveAssistants(mine.map((one) => Assistant.parse(one)));
+    const response = await app.request("/v1/chat/completions", chat({ model: "local", stream: true, messages: [{ role: "user", content: "hi" }] }));
+    assert.match(response.headers.get("content-type") ?? "", /text\/event-stream/);
+    const events = (await response.text()).split("\n").filter((line) => line.startsWith("data: ")).map((line) => line.slice(6));
+    assert.equal(events.at(-1), "[DONE]");
+    const chunks = events.slice(0, -1).map((event) => JSON.parse(event));
+    assert.equal(chunks.map((chunk) => chunk.choices[0].delta.content ?? "").join(""), "Local model here.");
+    assert.equal(chunks.at(-1).choices[0].finish_reason, "stop");
+  });
+
+  it("wants the router key or the Huddle token when one is set", async () => {
+    const { app, store } = routed({ token: TOKEN, routerKey: "router-key-0123456789" });
+    store.saveAssistants(mine.map((one) => Assistant.parse(one)));
+    assert.equal((await app.request("/v1/models")).status, 401);
+    assert.equal((await (await app.request("/v1/models")).json()).error.code, "invalid_api_key");
+    assert.equal((await app.request("/v1/models", { headers: { authorization: "Bearer router-key-0123456789" } })).status, 200);
+    assert.equal((await app.request("/v1/models", { headers: auth })).status, 200);
   });
 });
 
