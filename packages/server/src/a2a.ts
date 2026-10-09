@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Change, Run, RunState, SavedFlow, Store } from "@huddle/core";
+import { askFirst, type Caller, callerDecision, type Change, type Run, type RunState, type SavedFlow, type Store } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import type { AppOptions } from "./app.ts";
 import { bearerOf, same } from "./auth.ts";
@@ -32,6 +32,10 @@ const INVALID_REQUEST = -32600;
 const METHOD_NOT_FOUND = -32601;
 const INVALID_PARAMS = -32602;
 const TASK_NOT_FOUND = -32001;
+/** A caller this flow doesn't take requests from (A2A's range for app errors). */
+const NOT_ALLOWED = -32007;
+
+const TIER_WORDS: Readonly<Record<string, string>> = { owner: "you", partner: "your partner", family: "family", friend: "friends", contact: "contacts" };
 
 interface Part {
   readonly text?: unknown;
@@ -72,11 +76,25 @@ export function a2aRoutes(options: AppOptions & { readonly a2aWaitMs?: number })
   const waitMs = options.a2aWaitMs ?? 100_000;
   // Which runs were started over A2A, and their A2A context: only these are tasks a caller may read.
   store.db.exec("CREATE TABLE IF NOT EXISTS a2a_tasks (run_id TEXT PRIMARY KEY, context_id TEXT NOT NULL, created_at TEXT NOT NULL)");
+  // Who started each task ("owner", a contact's id, or "stranger"): a contact reads only their own.
+  if (!(store.db.prepare("PRAGMA table_info(a2a_tasks)").all() as { name: string }[]).some((column) => column.name === "caller")) {
+    store.db.exec("ALTER TABLE a2a_tasks ADD COLUMN caller TEXT NOT NULL DEFAULT 'owner'");
+  }
+  /** You (Huddle's token, or anyone when Huddle has no token), a contact (their own token), or a stranger. */
+  const callerOf = (c: Context): Caller => {
+    const bearer = bearerOf(c.req.header("authorization"));
+    if (!token || (bearer && same(bearer, token))) return { tier: "owner", name: "You", contactId: null };
+    const contact = bearer ? store.contactByToken(bearer) : null;
+    return contact ? { tier: contact.tier, name: contact.name, contactId: contact.id } : { tier: "stranger", name: "Someone not in your contacts", contactId: null };
+  };
+  const callerKey = (caller: Caller) => (caller.tier === "owner" ? "owner" : (caller.contactId ?? "stranger"));
   const app = new Hono();
 
-  const contextOf = (runId: string): string | null => {
-    const row = store.db.prepare("SELECT context_id FROM a2a_tasks WHERE run_id = ?").get(runId) as { context_id: string } | undefined;
-    return row ? row.context_id : null;
+  /** The task's A2A context, if this caller may read it: you read every task, others only their own. */
+  const contextOf = (runId: string, caller: Caller): string | null => {
+    const row = store.db.prepare("SELECT context_id, caller FROM a2a_tasks WHERE run_id = ?").get(runId) as { context_id: string; caller: string } | undefined;
+    if (!row || (caller.tier !== "owner" && row.caller !== callerKey(caller))) return null;
+    return row.context_id;
   };
 
   const taskOf = (run: Run, contextId: string) => {
@@ -111,8 +129,8 @@ export function a2aRoutes(options: AppOptions & { readonly a2aWaitMs?: number })
     throw new RpcError(INVALID_PARAMS, flows.length ? `Say which flow in the message's metadata as "flow". Flows: ${flows.map((saved) => `${saved.id} (${saved.flow.name})`).join(", ")}.` : "This Huddle has no saved flows yet.");
   };
 
-  const methods: Readonly<Record<string, (params: Record<string, unknown>, fixed: SavedFlow | null) => Promise<unknown>>> = {
-    async SendMessage(params, fixed) {
+  const methods: Readonly<Record<string, (params: Record<string, unknown>, fixed: SavedFlow | null, caller: Caller) => Promise<unknown>>> = {
+    async SendMessage(params, fixed, caller) {
       const message = params.message as { parts?: Part[]; contextId?: unknown; taskId?: unknown; metadata?: Record<string, unknown> } | undefined;
       if (!message || !Array.isArray(message.parts)) throw new RpcError(INVALID_PARAMS, "SendMessage needs a message with parts.");
       if (message.taskId) throw new RpcError(INVALID_PARAMS, "Huddle's tasks don't take follow-up messages; send a new message to start a new run.");
@@ -121,16 +139,24 @@ export function a2aRoutes(options: AppOptions & { readonly a2aWaitMs?: number })
         .map((part) => (typeof part.text === "string" ? part.text : part.data !== undefined ? JSON.stringify(part.data) : ""))
         .filter(Boolean)
         .join("\n");
-      const runId = engine.launch(saved.flow, input.slice(0, 100_000), saved.id);
+      // Who may start this flow (its callers rule): closer tiers start it, the rest wait for your OK or are turned away.
+      const decision = callerDecision(saved.flow.callers, caller.tier);
+      if (decision === "refuse") {
+        const starts = saved.flow.callers?.starts ?? "owner";
+        throw new RpcError(NOT_ALLOWED, `"${saved.flow.name}" takes requests only from ${TIER_WORDS[starts] ?? starts}${starts === "owner" ? "" : " and closer"}.`);
+      }
+      const who = caller.tier === "owner" || caller.tier === "stranger" ? caller.name : `${caller.name} (${caller.tier})`;
+      const flow = decision === "ask" ? askFirst(saved.flow, who) : saved.flow;
+      const runId = engine.launch(flow, input.slice(0, 100_000), saved.id, { name: caller.name, tier: caller.tier, via: "a2a" });
       const contextId = typeof message.contextId === "string" && message.contextId ? message.contextId : randomUUID();
-      store.db.prepare("INSERT INTO a2a_tasks (run_id, context_id, created_at) VALUES (?, ?, ?)").run(runId, contextId, new Date().toISOString());
+      store.db.prepare("INSERT INTO a2a_tasks (run_id, context_id, created_at, caller) VALUES (?, ?, ?, ?)").run(runId, contextId, new Date().toISOString(), callerKey(caller));
       const configuration = params.configuration as { returnImmediately?: unknown } | undefined;
       if (configuration?.returnImmediately !== true) await settled(store, runId, waitMs);
       return { task: taskOf(store.run(runId)!, contextId) };
     },
-    async GetTask(params) {
+    async GetTask(params, _fixed, caller) {
       const id = typeof params.id === "string" ? params.id : "";
-      const contextId = id ? contextOf(id) : null;
+      const contextId = id ? contextOf(id, caller) : null;
       const run = contextId ? store.run(id) : null;
       if (!run || !contextId) throw new RpcError(TASK_NOT_FOUND, `There's no task ${id}.`);
       return taskOf(run, contextId);
@@ -150,8 +176,7 @@ export function a2aRoutes(options: AppOptions & { readonly a2aWaitMs?: number })
     skills,
     ...(token ? { securitySchemes: { bearer: { httpAuthSecurityScheme: { scheme: "Bearer" } } }, securityRequirements: [{ schemes: { bearer: { list: [] } } }] } : {}),
   });
-  const refused = (c: Context) => !!token && !same(bearerOf(c.req.header("authorization")), token);
-  const unauthorized = (c: Context) => c.json({ error: "Send Huddle's A2A token as Authorization: Bearer <token>." }, 401);
+  const unauthorized = (c: Context) => c.json({ error: "Send your Huddle token (or the one its owner gave you) as Authorization: Bearer <token>." }, 401);
 
   app.get("/.well-known/agent-card.json", (c) => {
     // With a token, the public card doesn't name the flows; a caller learns them from a SendMessage.
@@ -168,17 +193,22 @@ export function a2aRoutes(options: AppOptions & { readonly a2aWaitMs?: number })
   });
 
   app.post("/a2a/flows/:flowId", (c) => {
-    // The token first, so a caller without one can't learn which flow ids exist.
-    if (refused(c)) return unauthorized(c);
+    const caller = callerOf(c);
     const saved = store.flow(c.req.param("flowId"));
+    // A stranger gets the same answer whether or not the flow exists, unless it lets strangers ask.
+    if (caller.tier === "stranger" && (!saved || callerDecision(saved.flow.callers, "stranger") === "refuse")) return unauthorized(c);
     if (!saved) return c.json({ error: "There's no such flow." }, 404);
-    return rpc(c, saved);
+    return rpc(c, saved, caller);
   });
 
-  app.post("/a2a", (c) => (refused(c) ? unauthorized(c) : rpc(c, null)));
+  // The whole Huddle lists its flows, so it's for you and your contacts only.
+  app.post("/a2a", (c) => {
+    const caller = callerOf(c);
+    return caller.tier === "stranger" ? unauthorized(c) : rpc(c, null, caller);
+  });
 
   /** One JSON-RPC request, to the whole Huddle or (fixed) to one flow. */
-  async function rpc(c: Context, fixed: SavedFlow | null) {
+  async function rpc(c: Context, fixed: SavedFlow | null, caller: Caller) {
     const request = (await c.req.json().catch(() => null)) as { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown } | null;
     const id = request && (typeof request.id === "string" || typeof request.id === "number") ? request.id : null;
     const reply = (body: object) => c.json({ jsonrpc: "2.0", id, ...body });
@@ -186,7 +216,7 @@ export function a2aRoutes(options: AppOptions & { readonly a2aWaitMs?: number })
     const method = methods[request.method];
     if (!method) return reply({ error: { code: METHOD_NOT_FOUND, message: `Huddle doesn't do ${request.method}; it does ${Object.keys(methods).join(" and ")}.` } });
     try {
-      return reply({ result: await method((request.params ?? {}) as Record<string, unknown>, fixed) });
+      return reply({ result: await method((request.params ?? {}) as Record<string, unknown>, fixed, caller) });
     } catch (error) {
       const code = error instanceof RpcError ? error.code : -32603;
       return reply({ error: { code, message: error instanceof Error ? error.message : String(error) } });

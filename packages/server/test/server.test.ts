@@ -282,6 +282,90 @@ describe("Huddle over A2A", () => {
   });
 });
 
+describe("trust tiers: who may start a flow", () => {
+  const rpc = (method: string, params: unknown, token?: string) => ({
+    method: "POST",
+    headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  const message = (text: string) => ({ message: { messageId: "m1", role: "ROLE_USER", parts: [{ text }] } });
+  const OWNER = "a2a-token-0123456789";
+
+  it("starts the flow for close contacts and asks you first for the others, saying who it was", async () => {
+    const { app, store, engine } = setup({ a2aToken: OWNER });
+    const saved = store.saveFlow({ ...greeter, callers: { starts: "friend", others: "ask", strangers: "refuse" } });
+    const asha = store.addContact({ name: "Asha", tier: "friend" });
+    const ravi = store.addContact({ name: "Ravi", tier: "contact" });
+
+    const close = (await (await app.request(`/a2a/flows/${saved.id}`, rpc("SendMessage", message("Ada"), asha.token))).json()).result.task;
+    assert.equal(close.status.state, "TASK_STATE_COMPLETED");
+    assert.deepEqual(store.logOf(close.id)[0]?.detail, { name: "Asha", tier: "friend", via: "a2a" });
+
+    const further = (await (await app.request(`/a2a/flows/${saved.id}`, rpc("SendMessage", message("Ada"), ravi.token))).json()).result.task;
+    assert.equal(further.status.state, "TASK_STATE_WORKING");
+    assert.equal(further.status.message.parts[0].text, 'Waiting for the owner\'s approval: Ravi (contact) wants to run "Greeter" with: Ada');
+    const waiting = store.waitingApproval(further.id);
+    assert.ok(waiting);
+    await engine.decide(waiting.id, true);
+    assert.equal((await settle(store, further.id)).state, "done");
+
+    // Each contact reads only the tasks they started; you read them all.
+    const read = async (id: string, token: string) => (await (await app.request("/a2a", rpc("GetTask", { id }, token))).json()) as { result?: { status: { state: string } }; error?: { code: number } };
+    assert.equal((await read(further.id, ravi.token)).result?.status.state, "TASK_STATE_COMPLETED");
+    assert.equal((await read(further.id, asha.token)).error?.code, -32001);
+    assert.equal((await read(further.id, OWNER)).result?.status.state, "TASK_STATE_COMPLETED");
+    assert.ok(store.contact(asha.contact.id)?.lastSeenAt, "the contact was seen");
+  });
+
+  it("turns strangers away without saying whether the flow exists, unless the flow lets them ask", async () => {
+    const { app, store } = setup({ a2aToken: OWNER });
+    const closed = store.saveFlow(greeter);
+    const open = store.saveFlow({ ...greeter, name: "Front desk", callers: { starts: "owner", others: "ask", strangers: "ask" } });
+
+    for (const token of [undefined, "wrong-token", "hdl_c_made-up"]) {
+      assert.equal((await app.request(`/a2a/flows/${closed.id}`, rpc("SendMessage", message("Hi"), token))).status, 401);
+      assert.equal((await app.request("/a2a/flows/flow_missing", rpc("SendMessage", message("Hi"), token))).status, 401);
+      assert.equal((await app.request("/a2a", rpc("SendMessage", message("Hi"), token))).status, 401, "the whole Huddle lists flows: not for strangers");
+    }
+    const asked = (await (await app.request(`/a2a/flows/${open.id}`, rpc("SendMessage", message("Can we talk Tuesday?")))).json()).result.task;
+    assert.equal(asked.status.state, "TASK_STATE_WORKING");
+    assert.match(store.waitingApproval(asked.id)?.message ?? "", /^Someone not in your contacts wants to run "Front desk" with: Can we talk Tuesday\?$/);
+  });
+
+  it("refuses contacts a flow doesn't take, and forgets removed or replaced tokens", async () => {
+    const { app, store } = setup({ a2aToken: OWNER });
+    const saved = store.saveFlow({ ...greeter, callers: { starts: "family", others: "refuse", strangers: "refuse" } });
+    const friend = store.addContact({ name: "Asha", tier: "friend" });
+    const refused = await (await app.request(`/a2a/flows/${saved.id}`, rpc("SendMessage", message("Hi"), friend.token))).json();
+    assert.equal(refused.error.code, -32007);
+    assert.equal(refused.error.message, '"Greeter" takes requests only from family and closer.');
+
+    const mum = store.addContact({ name: "Mum", tier: "family" });
+    const replaced = store.newContactToken(mum.contact.id)!;
+    assert.equal((await app.request(`/a2a/flows/${saved.id}`, rpc("SendMessage", message("Hi"), mum.token))).status, 401, "the old token stopped working");
+    assert.equal((await (await app.request(`/a2a/flows/${saved.id}`, rpc("SendMessage", message("Hi"), replaced))).json()).result.task.status.state, "TASK_STATE_COMPLETED");
+    store.removeContact(mum.contact.id);
+    assert.equal((await app.request(`/a2a/flows/${saved.id}`, rpc("SendMessage", message("Hi"), replaced))).status, 401);
+  });
+
+  it("manages contacts from the canvas, showing each token only once", async () => {
+    const { app } = setup();
+    const call = (path: string, method = "GET", body?: unknown) => app.request(path, { method, headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    assert.equal((await call("/api/contacts", "POST", { name: "Asha", tier: "bestie" })).status, 400);
+    const created = await (await call("/api/contacts", "POST", { name: " Asha ", tier: "friend", emails: ["Asha@Example.com", "not-an-email"] })).json();
+    assert.match(created.token, /^hdl_c_/);
+    assert.equal(created.contact.name, "Asha");
+    assert.deepEqual(created.contact.emails, ["asha@example.com"]);
+    const listed = await (await call("/api/contacts")).json();
+    assert.equal(listed.length, 1);
+    assert.ok(!JSON.stringify(listed).includes(created.token) && !("tokenHash" in listed[0]), "the list never shows a token");
+    assert.equal((await (await call(`/api/contacts/${created.contact.id}`, "PATCH", { tier: "family" })).json()).tier, "family");
+    assert.match((await (await call(`/api/contacts/${created.contact.id}/token`, "POST")).json()).token, /^hdl_c_/);
+    assert.equal((await call(`/api/contacts/${created.contact.id}`, "DELETE")).status, 204);
+    assert.equal((await call(`/api/contacts/${created.contact.id}`, "DELETE")).status, 404);
+  });
+});
+
 describe("the router (OpenAI-compatible)", () => {
   /** A Huddle whose "http" assistants are a stand-in that records what it was sent, and fails for "down". */
   function routed(extra: Partial<Parameters<typeof createApp>[0]> = {}) {

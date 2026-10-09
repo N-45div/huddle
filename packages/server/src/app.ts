@@ -1,4 +1,4 @@
-import { Assistants, type Change, type Engine, Flow, type Note, ollamaModels, type PactIdentity, type Router, type SavedFlow, type Store } from "@huddle/core";
+import { Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type Note, ollamaModels, type PactIdentity, type Router, type SavedFlow, type Store } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { a2aRoutes } from "./a2a.ts";
@@ -103,6 +103,33 @@ export function createApp(options: AppOptions): Hono {
     store.saveAssistants(result.data);
     return c.json(store.assistants());
   });
+  // Contacts: people and their agents who may start your flows, each with a tier and their own token.
+  const contactFields = async (c: Context): Promise<{ name?: string; tier?: ContactTier; emails?: string[] } | string> => {
+    const { name, tier, emails } = await body(c);
+    if (name !== undefined && (typeof name !== "string" || !name.trim() || name.length > 80)) return "Give them a name (up to 80 characters).";
+    if (tier !== undefined && !CONTACT_TIERS.includes(tier as ContactTier)) return `Pick a tier: ${CONTACT_TIERS.join(", ")}.`;
+    if (emails !== undefined && (!Array.isArray(emails) || emails.some((email) => typeof email !== "string") || emails.length > 20)) return "Emails are a list of up to 20 addresses.";
+    return { ...(typeof name === "string" ? { name: name.trim() } : {}), ...(tier ? { tier: tier as ContactTier } : {}), ...(Array.isArray(emails) ? { emails: emails as string[] } : {}) };
+  };
+  app.get("/api/contacts", (c) => c.json(store.contacts()));
+  app.post("/api/contacts", async (c) => {
+    const fields = await contactFields(c);
+    if (typeof fields === "string") return bad(c, fields);
+    if (!fields.name || !fields.tier) return bad(c, "Give them a name and a tier.");
+    return c.json(store.addContact({ name: fields.name, tier: fields.tier, emails: fields.emails }), 201);
+  });
+  app.patch("/api/contacts/:id", async (c) => {
+    const fields = await contactFields(c);
+    if (typeof fields === "string") return bad(c, fields);
+    const updated = store.updateContact(c.req.param("id"), fields);
+    return updated ? c.json(updated) : bad(c, "There's no such contact.", 404);
+  });
+  app.post("/api/contacts/:id/token", (c) => {
+    const token = store.newContactToken(c.req.param("id"));
+    return token ? c.json({ token }) : bad(c, "There's no such contact.", 404);
+  });
+  app.delete("/api/contacts/:id", (c) => (store.removeContact(c.req.param("id")) ? c.body(null, 204) : bad(c, "There's no such contact.", 404)));
+
   app.get("/api/router", (c) => {
     const totals = new Map<string, { calls: number; failures: number; answeredMs: number; answered: number; lastAt: string | null }>();
     // The router's calls are runs of one-step flows named "Router: ..." with that one assistant.

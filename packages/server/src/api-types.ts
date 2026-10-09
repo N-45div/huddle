@@ -3,9 +3,9 @@
  * can't drift apart. All routes are under /api; when the server has a token, every call carries
  * `Authorization: Bearer <token>` (the event stream takes `?token=` instead).
  */
-import type { Assistant, Flow, LogLine, Note, RunState, RunView, Trigger } from "@huddle/core";
+import type { Assistant, Contact, ContactTier, Flow, LogLine, Note, RunState, RunView, Trigger } from "@huddle/core";
 
-export type { Assistant, Flow, LogLine, Note, RunState, RunView, Trigger };
+export type { Assistant, Contact, ContactTier, Flow, LogLine, Note, RunState, RunView, Trigger };
 
 /** GET /api/info: what this Huddle can do. */
 export interface Info {
@@ -115,7 +115,8 @@ export type ChangeEvent =
   | { readonly kind: "memory" }
   | { readonly kind: "flow"; readonly flowId: string }
   | { readonly kind: "sandbox" }
-  | { readonly kind: "assistants" };
+  | { readonly kind: "assistants" }
+  | { readonly kind: "contacts" };
 
 /** A network rule an OpenShell sandbox needs, drafted by OpenShell after it blocked a connection. */
 export interface SandboxRequestView {
@@ -151,6 +152,11 @@ export interface SandboxRequests {
  *   GET    /api/assistants                 -> Assistant[]          (your assistants, for the router)
  *   PUT    /api/assistants { assistants }  -> Assistant[]          (replaces the list; 400 ApiError with problems)
  *   GET    /api/router                     -> RouterView           (address, judge, usage per assistant)
+ *   GET    /api/contacts                   -> Contact[]
+ *   POST   /api/contacts { name, tier, emails? } -> { contact, token }   (the token is shown this once)
+ *   PATCH  /api/contacts/:id { name?, tier?, emails? } -> Contact
+ *   POST   /api/contacts/:id/token         -> { token }            (a new token; the old one stops working)
+ *   DELETE /api/contacts/:id               -> 204
  *   GET    /api/connectors/:id/models?url= -> { models: string[] }  (Ollama; 502 ApiError when it can't be reached)
  *   GET    /api/flows                      -> FlowView[]
  *   POST   /api/flows        { flow }      -> FlowView            (400 ApiError with problems)
