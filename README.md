@@ -69,6 +69,7 @@ teammate: you put them on a canvas, say who does what, and decide where you want
 | **`hermes`** | [Hermes Agent](https://github.com/NousResearch/hermes-agent), through its A2A gateway | ready |
 | **`a2a`** | any agent that speaks [A2A](https://a2a-protocol.org) 1.0 (Agent2Agent) | ready |
 | **`openai`** | anything with an OpenAI-style chat API: Open WebUI, AnythingLLM, LibreChat's Agents API, Letta, and the API servers of OpenClaw and Hermes | ready |
+| **`ollama`** | a model in [Ollama](https://ollama.com), on your machine or on ollama.com | ready |
 | **`sochen`** | [Sochen](https://sochen.dev)'s agent and its pets, through the Agent API | ready |
 | **`homeassistant`** | [Home Assistant](https://github.com/home-assistant/core)'s Assist, through its conversation API | ready |
 | **`agentzero`** | [Agent Zero](https://github.com/agent0ai/agent-zero), through its external API | ready |
@@ -76,9 +77,10 @@ teammate: you put them on a canvas, say who does what, and decide where you want
 | **`mock`** | a stand-in assistant for building and testing flows | ready |
 | `mcp` | assistants and tools exposed as Model Context Protocol servers | next |
 
-"Ready" means built and tested against each project's documented API. OpenClaw (2026.9.9) and Hermes
-Agent (0.21.6) are also tested against real installs: a flow where OpenClaw plans, you approve, and
-Hermes follows up, each reading only its own slice of memory. The others haven't been run against a
+"Ready" means built and tested against each project's documented API. OpenClaw (2026.9.9), Hermes
+Agent (0.21.6) and Ollama (0.40) are also tested against real installs: a flow where OpenClaw plans, you
+approve, and Hermes follows up, each reading only its own slice of memory, and a local model answering
+from the slice it was given. The others haven't been run against a
 live install yet, so reports of what breaks are very welcome. Assistants with no way in from outside
 (some consumer apps have none) can't be connected yet; reaching them by email or a messaging channel is
 on the roadmap.
@@ -132,6 +134,19 @@ and the same token as `HERMES_A2A_TOKEN` where Huddle runs. Then add it to a flo
 
 A message sent to Hermes in its first few seconds after starting can come back empty; Huddle stops the
 run with a message saying so, and running it again works.
+
+**Ollama.** A local model, so a flow can run with nothing leaving your machine. With Ollama running,
+add an assistant and pick one of the models it has (the canvas lists them), or in a flow file:
+
+```json
+{ "id": "local", "connector": "ollama", "model": "qwen3", "memory": ["home"] }
+```
+
+Huddle finds Ollama at `http://127.0.0.1:11434` unless you give a `url` (in Docker,
+`http://host.docker.internal:11434`, with Ollama listening beyond loopback via `OLLAMA_HOST`). For
+ollama.com's models, give `https://ollama.com` and put your key's variable in `keyEnv`
+(`OLLAMA_API_KEY`). Ollama's default context is small on most machines; for long asks, raise
+`OLLAMA_CONTEXT_LENGTH` where Ollama runs.
 
 **Anything with an OpenAI-style chat API.** Give its address, and the model or agent to ask for. If its
 chat path isn't `/v1/chat/completions`, give the whole chat URL instead:
