@@ -3,10 +3,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { a2a, Engine, type Flow, mock, parseFlow, type Run, Store } from "@huddle/core";
+import { a2a, Engine, type Flow, mock, type OpenShell, parseFlow, type Run, Store } from "@huddle/core";
 import { Hono } from "hono";
 import { createApp } from "../src/app.ts";
 import { describer } from "../src/describe.ts";
+import { SandboxWatcher } from "../src/sandbox-requests.ts";
 import { Scheduler } from "../src/scheduler.ts";
 import { webApp } from "../src/static.ts";
 
@@ -60,7 +61,7 @@ describe("the API", () => {
     assert.equal((await app.request("/api/flows", { headers: { authorization: "Bearer wrong-token-0123456789" } })).status, 401);
     assert.equal((await app.request("/api/flows", { headers: auth })).status, 200);
     const info = await (await app.request("/api/info")).json();
-    assert.deepEqual(info, { version: "test", auth: true, agentCard: "http://huddle.test/.well-known/agent-card.json", describe: false });
+    assert.deepEqual(info, { version: "test", auth: true, agentCard: "http://huddle.test/.well-known/agent-card.json", describe: false, openshell: false });
     assert.equal((await app.request("/.well-known/agent-card.json")).status, 200);
   });
 
@@ -278,6 +279,93 @@ describe("Huddle over A2A", () => {
     const view = await caller.start(flow, "");
     assert.equal(view.state, "done");
     assert.equal(view.context.steps.hello?.text, "Hello from Huddle.");
+  });
+});
+
+describe("OpenShell sandbox requests", () => {
+  const request = { sandbox: "agent", id: "chunk-1", rule: "allow_example_com_443", endpoints: ["example.com:443"], binary: "/usr/bin/bash", rationale: "Allow bash to connect to example.com:443 (HTTPS).", securityNotes: "", validation: "no new findings", hits: 1, firstSeen: null, reviewToken: "token-1" };
+
+  /** A gateway with one pending request; `failApprove` makes the next approval fail as a stale review would. */
+  function fakeShell() {
+    const decided: string[] = [];
+    let pending = [request];
+    let down = false;
+    let failApprove = false;
+    const shell = {
+      async sandboxes() {
+        if (down) throw new Error("OpenShell: connection refused");
+        return [{ name: "agent", phase: "ready" }, { name: "booting", phase: "provisioning" }];
+      },
+      async requests(sandbox: string) {
+        return sandbox === "agent" ? pending : [];
+      },
+      async approve(sandbox: string, id: string, token: string) {
+        if (failApprove) throw new Error("OpenShell: FAILED_PRECONDITION: review token no longer matches");
+        decided.push(`approve ${sandbox}/${id} ${token}`);
+        pending = [];
+      },
+      async reject(sandbox: string, id: string, reason: string) {
+        decided.push(`reject ${sandbox}/${id} ${reason}`);
+        pending = [];
+      },
+    };
+    return { shell: shell as unknown as OpenShell, decided, set down(value: boolean) { down = value; }, set failApprove(value: boolean) { failApprove = value; } };
+  }
+
+  it("says plainly when Huddle isn't connected to OpenShell", async () => {
+    const { app } = setup({ token: undefined });
+    assert.equal((await (await app.request("/api/info")).json()).openshell, false);
+    assert.deepEqual(await (await app.request("/api/sandbox-requests")).json(), { configured: false, connected: false, error: null, requests: [] });
+    assert.equal((await app.request("/api/sandbox-requests/agent/chunk-1", json({ yes: true }))).status, 409);
+  });
+
+  it("shows what sandboxes are asking for, without the review token, and tells the canvas when it changes", async () => {
+    const store = new Store();
+    const changes: string[] = [];
+    store.events.on("change", (change: { kind: string }) => changes.push(change.kind));
+    const fake = fakeShell();
+    const watcher = new SandboxWatcher(fake.shell, store);
+    await watcher.refresh();
+    const view = watcher.view();
+    assert.equal(view.connected, true);
+    assert.deepEqual(view.requests, [{ sandbox: "agent", id: "chunk-1", endpoints: ["example.com:443"], binary: "/usr/bin/bash", rationale: "Allow bash to connect to example.com:443 (HTTPS).", securityNotes: "", validation: "no new findings", hits: 1, firstSeen: null }]);
+    await watcher.refresh();
+    assert.deepEqual(changes, ["sandbox"], "nothing new the second time");
+    fake.down = true;
+    await watcher.refresh();
+    assert.deepEqual([watcher.view().connected, watcher.view().error, watcher.view().requests.length], [false, "OpenShell: connection refused", 0]);
+  });
+
+  it("lets a request through with the token that was reviewed, or turns it down with a reason", async () => {
+    const fake = fakeShell();
+    const store = new Store();
+    const watcher = new SandboxWatcher(fake.shell, store);
+    const { app } = setup({ store, sandboxes: watcher, token: undefined });
+    await watcher.refresh();
+    assert.equal((await (await app.request("/api/info")).json()).openshell, true);
+    assert.equal((await (await app.request("/api/sandbox-requests")).json()).requests.length, 1);
+    assert.equal((await app.request("/api/sandbox-requests/agent/chunk-1", json({ yes: "ok" }))).status, 400);
+    assert.equal((await app.request("/api/sandbox-requests/agent/chunk-1", json({ yes: true }))).status, 200);
+    assert.deepEqual(fake.decided, ["approve agent/chunk-1 token-1"]);
+    assert.equal((await (await app.request("/api/sandbox-requests")).json()).requests.length, 0);
+    assert.equal((await app.request("/api/sandbox-requests/agent/chunk-1", json({ yes: true }))).status, 409, "already decided");
+
+    const second = fakeShell();
+    const other = new SandboxWatcher(second.shell, new Store());
+    await other.refresh();
+    await other.decide("agent", "chunk-1", false, "Not for this task.");
+    assert.deepEqual(second.decided, ["reject agent/chunk-1 Not for this task."]);
+  });
+
+  it("asks the person to look again when the sandbox changed between showing and answering", async () => {
+    const fake = fakeShell();
+    const watcher = new SandboxWatcher(fake.shell, new Store());
+    const { app } = setup({ sandboxes: watcher, token: undefined });
+    await watcher.refresh();
+    fake.failApprove = true;
+    const answer = await app.request("/api/sandbox-requests/agent/chunk-1", json({ yes: true }));
+    assert.equal(answer.status, 409);
+    assert.match((await answer.json()).error, /It changed while you were looking/);
   });
 });
 

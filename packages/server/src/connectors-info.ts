@@ -50,6 +50,16 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
     ],
   },
   {
+    id: "openshell",
+    name: "Agent in an OpenShell sandbox",
+    description:
+      "Any agent with a one-shot command (Hermes, OpenCode, Claude Code, Codex…) running inside an NVIDIA OpenShell sandbox, whose policy decides what it may reach. Huddle passes the request on stdin, or where {{ask}} appears.",
+    fields: [
+      { key: "agentId", label: "Sandbox", required: true, placeholder: "my-agent" },
+      { key: "command", label: "Command that runs the agent", required: true, placeholder: "hermes chat --query-file /dev/stdin --oneshot -Q" },
+    ],
+  },
+  {
     id: "homeassistant",
     name: "Home Assistant",
     description: "Home Assistant's Assist. Takes plain commands; memory isn't sent to it.",

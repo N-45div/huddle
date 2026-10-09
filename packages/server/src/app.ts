@@ -5,6 +5,7 @@ import { a2aRoutes } from "./a2a.ts";
 import { bearerOf, same } from "./auth.ts";
 import type { ApiError, FlowView, Info, RunDetail, RunSummary, WaitingApproval } from "./api-types.ts";
 import { CONNECTORS } from "./connectors-info.ts";
+import { noSandboxes, type SandboxInbox, Stale } from "./sandbox-requests.ts";
 
 /**
  * Huddle's server: the API the canvas uses (/api), webhooks that start flows (/hooks), and an A2A
@@ -28,6 +29,8 @@ export interface AppOptions {
   readonly a2aWaitMs?: number;
   /** For reaching other servers (listing a connector's models); tests pass a stand-in. */
   readonly fetcher?: typeof fetch;
+  /** What OpenShell sandboxes are asking for, when an OpenShell gateway is set up. */
+  readonly sandboxes?: SandboxInbox;
 }
 
 /** A flow from a request body, or the problems with it, one line each. */
@@ -65,7 +68,24 @@ export function createApp(options: AppOptions): Hono {
     return bad(c, "Send the Huddle token as Authorization: Bearer <token>.", 401);
   });
 
-  app.get("/api/info", (c) => c.json<Info>({ version: options.version, auth: Boolean(options.token), agentCard: `${options.publicUrl}/.well-known/agent-card.json`, describe: Boolean(options.describe) }));
+  const sandboxes = options.sandboxes ?? noSandboxes;
+  app.get("/api/info", (c) =>
+    c.json<Info>({ version: options.version, auth: Boolean(options.token), agentCard: `${options.publicUrl}/.well-known/agent-card.json`, describe: Boolean(options.describe), openshell: Boolean(options.sandboxes) }),
+  );
+
+  // What OpenShell sandboxes are asking for -----------------------------------------------------------
+  app.get("/api/sandbox-requests", (c) => c.json(sandboxes.view()));
+  app.post("/api/sandbox-requests/:sandbox/:id", async (c) => {
+    const { yes, reason } = await body(c);
+    if (typeof yes !== "boolean") return bad(c, 'Send { "yes": true } or { "yes": false }.');
+    try {
+      await sandboxes.decide(c.req.param("sandbox"), c.req.param("id"), yes, typeof reason === "string" ? reason.slice(0, 500) : undefined);
+      return c.json({ ok: true });
+    } catch (error) {
+      if (error instanceof Stale) return bad(c, error.message, 409);
+      return bad(c, error instanceof Error ? error.message : String(error), 502);
+    }
+  });
   app.get("/api/connectors", (c) => c.json(CONNECTORS));
   app.get("/api/connectors/:id/models", async (c) => {
     if (c.req.param("id") !== "ollama") return bad(c, "This connector doesn't list models.", 404);

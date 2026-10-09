@@ -16,6 +16,8 @@ export interface Info {
   readonly agentCard: string;
   /** Whether "describe it" is set up (an AI model is configured). */
   readonly describe: boolean;
+  /** Whether an OpenShell gateway is set up, for sandboxed assistants and their requests. */
+  readonly openshell: boolean;
 }
 
 /** One saved flow, as the list and the editor see it. */
@@ -60,7 +62,7 @@ export interface WaitingApproval {
 
 /** A field an assistant of this connector needs, for the "add assistant" form. */
 export interface ConnectorField {
-  readonly key: "url" | "keyEnv" | "model" | "agentId" | "replies";
+  readonly key: "url" | "keyEnv" | "model" | "agentId" | "command" | "replies";
   readonly label: string;
   readonly required: boolean;
   readonly placeholder?: string;
@@ -83,7 +85,39 @@ export interface ApiError {
 }
 
 /** One event on GET /api/events (Server-Sent Events, event name "change"). */
-export type ChangeEvent = { readonly kind: "run"; readonly runId: string } | { readonly kind: "approval"; readonly runId: string } | { readonly kind: "memory" } | { readonly kind: "flow"; readonly flowId: string };
+export type ChangeEvent =
+  | { readonly kind: "run"; readonly runId: string }
+  | { readonly kind: "approval"; readonly runId: string }
+  | { readonly kind: "memory" }
+  | { readonly kind: "flow"; readonly flowId: string }
+  | { readonly kind: "sandbox" };
+
+/** A network rule an OpenShell sandbox needs, drafted by OpenShell after it blocked a connection. */
+export interface SandboxRequestView {
+  readonly sandbox: string;
+  readonly id: string;
+  /** host:port pairs it would allow. */
+  readonly endpoints: readonly string[];
+  /** The program in the sandbox that tried to connect. */
+  readonly binary: string;
+  readonly rationale: string;
+  /** OpenShell's risk notes; empty when it found nothing to flag. */
+  readonly securityNotes: string;
+  /** The policy prover's verdict, e.g. "no new findings". */
+  readonly validation: string;
+  readonly hits: number;
+  readonly firstSeen: string | null;
+}
+
+/** GET /api/sandbox-requests */
+export interface SandboxRequests {
+  /** Whether Huddle is set up with an OpenShell gateway (HUDDLE_OPENSHELL_GATEWAY). */
+  readonly configured: boolean;
+  /** Whether the last look at the gateway worked; `error` says why not. */
+  readonly connected: boolean;
+  readonly error: string | null;
+  readonly requests: readonly SandboxRequestView[];
+}
 
 /*
  * Routes:
@@ -107,6 +141,8 @@ export type ChangeEvent = { readonly kind: "run"; readonly runId: string } | { r
  *   POST   /api/memory/:id/keep            -> { ok: true }
  *   DELETE /api/memory/:id                 -> { ok: true }
  *   POST   /api/describe { text }          -> { flow }            (501 when no model is set up)
+ *   GET    /api/sandbox-requests           -> SandboxRequests
+ *   POST   /api/sandbox-requests/:sandbox/:id { yes, reason? } -> { ok: true }   (409 when it changed meanwhile)
  *   GET    /api/events?token=              -> SSE of ChangeEvent
  * Outside /api:
  *   POST   /hooks/:flowId/:secret          -> 202 { runId }       (body: text, or JSON { input })
