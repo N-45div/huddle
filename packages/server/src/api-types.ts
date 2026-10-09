@@ -91,7 +91,7 @@ export interface RouterView {
 
 /** A field an assistant of this connector needs, for the "add assistant" form. */
 export interface ConnectorField {
-  readonly key: "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies" | "scopes";
+  readonly key: "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies" | "scopes" | "to" | "from";
   readonly label: string;
   readonly required: boolean;
   readonly placeholder?: string;

@@ -223,4 +223,10 @@ describe("email in, through Resend", () => {
     assert.deepEqual((await (await app.request("/api/info")).json()).email, { hook: "http://huddle.test/hooks/email", receiving: false });
     assert.deepEqual((await (await setup({}).app.request("/api/info")).json()).email, { hook: "http://huddle.test/hooks/email", receiving: true });
   });
+
+  it("offers the email connector in the assistant form, asking who it goes to and who it's from", async () => {
+    const connectors = (await (await setup({}).app.request("/api/connectors", { headers: { authorization: `Bearer ${TOKEN}` } })).json()) as { id: string; fields: { key: string; required: boolean }[] }[];
+    const email = connectors.find((connector) => connector.id === "email");
+    assert.deepEqual(email?.fields.map((field) => [field.key, field.required]), [["to", true], ["from", true], ["keyEnv", false]]);
+  });
 });

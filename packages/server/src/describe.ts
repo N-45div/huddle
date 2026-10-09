@@ -22,12 +22,12 @@ A flow:
 {
   "name": "short name",
   "description": "one sentence",
-  "trigger": { "type": "manual" } | { "type": "schedule", "every": "15m" | "2h" | "1d", "input": "text the run starts with" } | { "type": "webhook" },
+  "trigger": { "type": "manual" } | { "type": "schedule", "every": "15m" | "2h" | "1d", "input": "text the run starts with" } | { "type": "webhook" } | { "type": "email", "address": "the address whose mail starts it" },
   "assistants": [ { "id": "lowercase-id", "name": "Display name", "connector": "...", "memory": ["slice", ...] } ],
   "steps": [ ... ]
 }
 
-Connectors: "openclaw" (OpenClaw), "hermes" (Hermes Agent), "sochen" (Sochen), "homeassistant" (Home Assistant, for lights, heating and devices), "agentzero" (Agent Zero, needs "url"), "a2a" (any A2A agent, needs "url"), "openai" (any OpenAI-style chat API, needs "url"), "http" (needs "url"), "mock" (a stand-in with "replies": {"keyword": "answer", "*": "otherwise"}).
+Connectors: "openclaw" (OpenClaw), "hermes" (Hermes Agent), "sochen" (Sochen), "homeassistant" (Home Assistant, for lights, heating and devices), "agentzero" (Agent Zero, needs "url"), "a2a" (any A2A agent, needs "url"), "openai" (any OpenAI-style chat API, needs "url"), "http" (needs "url"), "email" (sends the step's text as an email; needs "to": ["address", ...] and "from": "an address on the person's own domain"; a first line "Subject: ..." is the subject), "mock" (a stand-in with "replies": {"keyword": "answer", "*": "otherwise"}).
 Use the assistants the description names. If it names none for a job, use "mock" with sensible replies so the flow can be tried, and say so in the description.
 "memory" lists the slices of the person's shared memory the assistant may read, e.g. "home", "money", "work". Give each assistant only what its job needs.
 

@@ -106,6 +106,17 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
     fields: [{ key: "keyEnv", label: "Key variable", required: false, placeholder: "SOCHEN_API_KEY" }],
   },
   {
+    id: "email",
+    name: "Email (Resend)",
+    description:
+      'Sends the step\'s text as an email through Resend, always to these addresses. Start the text with "Subject: …" to give it a subject. Put an approval step before it, so nothing leaves without your OK. Memory isn\'t sent.',
+    fields: [
+      { key: "to", label: "To", required: true, placeholder: "you@example.com, asha@example.com" },
+      { key: "from", label: "From (on a domain you verified in Resend)", required: true, placeholder: "Huddle <huddle@yourdomain.com>" },
+      { key: "keyEnv", label: "Key variable", required: false, placeholder: "RESEND_API_KEY" },
+    ],
+  },
+  {
     id: "http",
     name: "Simple HTTP",
     description: "Anything that takes { ask, memory } and answers { text, data? }.",
