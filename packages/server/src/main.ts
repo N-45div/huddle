@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { defaultConnectors, Engine, Store } from "@huddle/core";
@@ -57,12 +58,16 @@ const app = createApp({
   a2aToken: env("HUDDLE_A2A_TOKEN"),
   describe: llmUrl && llmModel ? describer({ url: llmUrl, model: llmModel, key: env("HUDDLE_LLM_KEY") }) : undefined,
 });
-app.use("*", webApp(env("HUDDLE_WEB") ?? fileURLToPath(new URL("../../web/dist", import.meta.url))));
+const web = env("HUDDLE_WEB") ?? fileURLToPath(new URL("../../web/dist", import.meta.url));
+const built = existsSync(join(web, "index.html"));
+app.use("*", webApp(web));
+if (!built) app.get("/", (c) => c.text("Huddle is running, but the canvas isn't built yet: run npm run build, then restart.", 503));
 
 const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   scheduler.start();
   console.log(`Huddle ${version} is on ${publicUrl}${token ? " (token required)" : ""}`);
   console.log(`  A2A Agent Card: ${publicUrl}/.well-known/agent-card.json`);
+  if (!built) console.log(`  The canvas isn't built (no ${join(web, "index.html")}): run npm run build.`);
   if (!llmUrl || !llmModel) console.log('  "Describe it" is off: set HUDDLE_LLM_URL and HUDDLE_LLM_MODEL to turn it on.');
 });
 
