@@ -1,0 +1,26 @@
+{
+  "name": "Invoices",
+  "assistants": [
+    {
+      "id": "finance",
+      "name": "Finance",
+      "connector": "mock",
+      "memory": ["money"],
+      "replies": { "*": "{\"vendor\": \"Northwind Hosting\", \"amount\": 450, \"due\": \"2026-10-20\"}" }
+    },
+    {
+      "id": "calendar",
+      "name": "Calendar",
+      "connector": "mock",
+      "memory": ["calendar"],
+      "replies": { "*": "Added a reminder on 2026-10-20 to pay Northwind Hosting." }
+    }
+  ],
+  "steps": [
+    { "id": "read", "type": "agent", "agent": "finance", "ask": "Read this invoice and tell me the vendor, amount and due date as JSON: {{input}}" },
+    { "id": "big", "type": "condition", "if": "{{read.data.amount}} > 200", "then": "ask-me", "else": "remind" },
+    { "id": "ask-me", "type": "approval", "message": "Pay {{read.data.vendor}} ${{read.data.amount}} by {{read.data.due}}?", "next": "remind" },
+    { "id": "remind", "type": "agent", "agent": "calendar", "ask": "Add a reminder on {{read.data.due}} to pay {{read.data.vendor}}." },
+    { "id": "learn", "type": "memory", "slice": "money", "note": "{{read.data.vendor}} sends invoices; the last one was ${{read.data.amount}}." }
+  ]
+}
