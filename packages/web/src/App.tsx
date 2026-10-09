@@ -43,10 +43,10 @@ export function App() {
   const streamWithToken = info ? info.auth : readToken() !== "";
   useEffect(() => startEvents(streamWithToken), [streamWithToken, authVersion]);
 
-  // Everything waiting on the person: the flows' approvals and what OpenShell sandboxes are asking for.
+  // Everything waiting on the person: the flows' approvals, what OpenShell sandboxes are asking for, and PACT sign-ins.
   const refreshWaiting = useDebounced(() => {
-    Promise.all([api.approvals(), api.sandboxRequests().catch(() => null)])
-      .then(([approvals, sandboxes]) => setWaiting(approvals.length + (sandboxes?.requests.length ?? 0)))
+    Promise.all([api.approvals(), api.sandboxRequests().catch(() => null), api.signIns().catch(() => [])])
+      .then(([approvals, sandboxes, signIns]) => setWaiting(approvals.length + (sandboxes?.requests.length ?? 0) + signIns.length))
       .catch(() => {});
   }, 150);
 
@@ -55,7 +55,7 @@ export function App() {
   }, [refreshWaiting, authVersion]);
 
   useChanges((change) => {
-    if (change.kind === "approval" || change.kind === "run" || change.kind === "sandbox" || change.kind === "resync") refreshWaiting();
+    if (change.kind === "approval" || change.kind === "run" || change.kind === "sandbox" || change.kind === "signin" || change.kind === "resync") refreshWaiting();
     if (change.kind === "resync") void loadInfo();
   });
 

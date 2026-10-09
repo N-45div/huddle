@@ -12,6 +12,7 @@ import type {
   RouterView,
   RunSummary,
   SandboxRequests,
+  SignIn,
   WaitingApproval,
 } from "./types.ts";
 
@@ -160,6 +161,9 @@ export const api = {
   assistants: () => call<Assistant[]>("GET", "/assistants"),
   saveAssistants: (assistants: readonly Assistant[]) => call<Assistant[]>("PUT", "/assistants", { assistants }),
   router: () => call<RouterView>("GET", "/router"),
+  signIns: () => call<SignIn[]>("GET", "/signins"),
+  checkSignIn: (signInId: string) => call<{ ok: true }>("POST", `/signins/${id(signInId)}/check`),
+  cancelSignIn: (signInId: string) => call<{ ok: true }>("POST", `/signins/${id(signInId)}/cancel`),
   contacts: () => call<Contact[]>("GET", "/contacts"),
   /** Their token comes back this once. */
   addContact: (name: string, tier: ContactTier, emails: readonly string[]) => call<{ contact: Contact; token: string }>("POST", "/contacts", { name, tier, emails }),

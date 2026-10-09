@@ -39,8 +39,23 @@ function describe(line: LogLine): Described {
         body: text(detail, "ask"),
       };
     }
-    case "answered":
-      return { title: "Answered", body: text(detail, "text"), data: field(detail, "data") };
+    case "answered": {
+      // A business's signed receipt (PACT): say whether its signature checked out.
+      const data = field(detail, "data");
+      const receipt = field(data, "receipt");
+      const verified = field(receipt, "verified");
+      return {
+        title: (
+          <>
+            Answered
+            {receipt !== undefined && <span className={verified === true ? "receipt receipt-ok" : "receipt receipt-bad"}>{verified === true ? "signed receipt checked" : "receipt didn't check out"}</span>}
+          </>
+        ),
+        body: text(detail, "text"),
+        data,
+        ...(receipt !== undefined && verified !== true ? { tone: "warn" as const } : {}),
+      };
+    }
     case "started": {
       const tier = text(detail, "tier");
       const via = text(detail, "via");

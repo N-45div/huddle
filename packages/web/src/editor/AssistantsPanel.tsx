@@ -170,10 +170,12 @@ interface Draft {
   audience: string;
   /** A command line, split into the command's parts on save. */
   command: string;
+  /** PACT scope ids, split on spaces or commas on save. */
+  scopes: string;
   replies: { key: string; answer: string }[];
 }
 
-type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies", string>>;
+type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies" | "scopes", string>>;
 
 /** A command line's parts: split on spaces, with "double" or 'single' quotes keeping spaces in; null if a quote isn't closed. */
 function splitCommand(line: string): string[] | null {
@@ -219,6 +221,7 @@ function draftOf(assistant: Assistant | undefined): Draft {
     agentId: assistant?.agentId ?? "",
     audience: assistant?.audience ?? "",
     command: joinCommand(assistant?.command),
+    scopes: (assistant?.scopes ?? []).join(" "),
     replies: Object.entries(assistant?.replies ?? {}).map(([key, answer]) => ({ key, answer })),
   };
 }
@@ -304,6 +307,8 @@ function AssistantForm({
     }
     const command = shown.has("command") ? splitCommand(draft.command) : kept?.command;
     if (command?.length) assistant.command = command;
+    const scopes = shown.has("scopes") ? draft.scopes.split(/[\s,]+/).filter(Boolean) : kept?.scopes;
+    if (scopes?.length) assistant.scopes = scopes;
     if (shown.has("replies")) {
       const replies = Object.fromEntries(draft.replies.filter((reply) => reply.key.trim()).map((reply) => [reply.key.trim(), reply.answer]));
       if (Object.keys(replies).length) assistant.replies = replies;
@@ -466,7 +471,7 @@ function ConnectorFieldInput({
       <label htmlFor={id}>{label}</label>
       <input
         id={id}
-        className={key === "keyEnv" || key === "command" ? "mono" : undefined}
+        className={key === "keyEnv" || key === "command" || key === "scopes" ? "mono" : undefined}
         value={draft[key]}
         placeholder={field.placeholder}
         autoComplete="off"
