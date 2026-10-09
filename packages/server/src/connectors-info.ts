@@ -67,6 +67,7 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
     fields: [
       { key: "url", label: "Agent Card URL", required: true, placeholder: "https://shop.example/.well-known/agent-card.json" },
       { key: "audience", label: "Provider's audience", required: true, placeholder: "https://provider.example/a2a" },
+      { key: "scopes", label: "What it may do for you (optional)", required: false, placeholder: "orders:read orders:cancel" },
     ],
   },
   {

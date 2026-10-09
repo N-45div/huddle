@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { a2a, Assistant, type Connector, Engine, type Flow, mock, newKey, type OpenShell, PactIdentity, parseFlow, Router, type Run, Store } from "@huddle/core";
+import { a2a, Assistant, type Connector, Engine, type Flow, mock, newKey, type OpenShell, PactIdentity, parseFlow, Router, type Run, SignIns, Store } from "@huddle/core";
 import { Hono } from "hono";
 import { createApp } from "../src/app.ts";
 import { describer } from "../src/describe.ts";
@@ -363,6 +363,34 @@ describe("trust tiers: who may start a flow", () => {
     assert.match((await (await call(`/api/contacts/${created.contact.id}/token`, "POST")).json()).token, /^hdl_c_/);
     assert.equal((await call(`/api/contacts/${created.contact.id}`, "DELETE")).status, 204);
     assert.equal((await call(`/api/contacts/${created.contact.id}`, "DELETE")).status, 404);
+  });
+});
+
+describe("PACT sign-ins in Approvals", () => {
+  it("lists the sign-ins waiting for you, checks one now, and cancels one", async () => {
+    const signIns = new SignIns();
+    const { app } = setup({ signIns });
+    const call = (path: string, method = "GET") => app.request(path, { method, headers: { authorization: `Bearer ${TOKEN}` } });
+    let polls = 0;
+    const waiting = signIns.wait(
+      { business: "Shop", assistant: "shop", runId: "run_1", scopes: [{ id: "orders:read", description: "Look up your orders" }] },
+      { deviceCode: "dc", userCode: "CODE-1", link: "https://shop.example/login?code=CODE-1", expiresAt: Date.now() + 60_000, intervalSeconds: 30 },
+      async () => {
+        polls += 1;
+        return { status: "pending" };
+      },
+    );
+    const listed = await (await call("/api/signins")).json();
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].business, "Shop");
+    assert.equal(listed[0].link, "https://shop.example/login?code=CODE-1");
+    assert.equal((await call(`/api/signins/${listed[0].id}/check`, "POST")).status, 200);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(polls, 1, "checked with the business at once, not after 30 s");
+    assert.equal((await call(`/api/signins/${listed[0].id}/cancel`, "POST")).status, 200);
+    await assert.rejects(waiting, /You cancelled signing in to Shop/);
+    assert.deepEqual(await (await call("/api/signins")).json(), []);
+    assert.equal((await call(`/api/signins/${listed[0].id}/cancel`, "POST")).status, 404);
   });
 });
 

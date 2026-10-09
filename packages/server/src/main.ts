@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { defaultConnectors, Engine, jevJudge, type Judge, modelJudge, OpenShell, openshell, PactIdentity, pact, Router, Store } from "@huddle/core";
+import { defaultConnectors, Engine, jevJudge, type Judge, modelJudge, OpenShell, openshell, PactIdentity, pact, Router, SignIns, Store, storedGrants } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
 import { SandboxWatcher } from "./sandbox-requests.ts";
@@ -63,7 +63,9 @@ try {
   process.exit(1);
 }
 const identity = PactIdentity.load(store, env("HUDDLE_PACT_ISSUER") ?? publicUrl);
-const engine = new Engine(store, { ...defaultConnectors(), openshell: openshell(() => shell), pact: pact(() => identity) });
+// PACT sign-ins wait in Approvals while the step that needs them keeps running.
+const signIns = new SignIns();
+const engine = new Engine(store, { ...defaultConnectors(), openshell: openshell(() => shell), pact: pact(() => identity, undefined, { signIns, grants: storedGrants(store) }) });
 const sandboxes = shell ? new SandboxWatcher(shell, store) : undefined;
 const scheduler = new Scheduler(store, engine);
 
@@ -81,6 +83,7 @@ const app = createApp({
   a2aToken: env("HUDDLE_A2A_TOKEN"),
   describe: llmUrl && llmModel ? describer({ url: llmUrl, model: llmModel, key: env("HUDDLE_LLM_KEY") }) : undefined,
   sandboxes,
+  signIns,
   pact: identity,
   router: new Router(store, engine, judge),
   routerKey: env("HUDDLE_ROUTER_KEY"),

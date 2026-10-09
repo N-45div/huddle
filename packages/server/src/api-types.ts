@@ -3,9 +3,9 @@
  * can't drift apart. All routes are under /api; when the server has a token, every call carries
  * `Authorization: Bearer <token>` (the event stream takes `?token=` instead).
  */
-import type { Assistant, Contact, ContactTier, Flow, LogLine, Note, RunState, RunView, Trigger } from "@huddle/core";
+import type { Assistant, Contact, ContactTier, Flow, LogLine, Note, RunState, RunView, SignIn, Trigger } from "@huddle/core";
 
-export type { Assistant, Contact, ContactTier, Flow, LogLine, Note, RunState, RunView, Trigger };
+export type { Assistant, Contact, ContactTier, Flow, LogLine, Note, RunState, RunView, SignIn, Trigger };
 
 /** GET /api/info: what this Huddle can do. */
 export interface Info {
@@ -86,7 +86,7 @@ export interface RouterView {
 
 /** A field an assistant of this connector needs, for the "add assistant" form. */
 export interface ConnectorField {
-  readonly key: "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies";
+  readonly key: "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies" | "scopes";
   readonly label: string;
   readonly required: boolean;
   readonly placeholder?: string;
@@ -116,7 +116,8 @@ export type ChangeEvent =
   | { readonly kind: "flow"; readonly flowId: string }
   | { readonly kind: "sandbox" }
   | { readonly kind: "assistants" }
-  | { readonly kind: "contacts" };
+  | { readonly kind: "contacts" }
+  | { readonly kind: "signin" };
 
 /** A network rule an OpenShell sandbox needs, drafted by OpenShell after it blocked a connection. */
 export interface SandboxRequestView {
@@ -152,6 +153,9 @@ export interface SandboxRequests {
  *   GET    /api/assistants                 -> Assistant[]          (your assistants, for the router)
  *   PUT    /api/assistants { assistants }  -> Assistant[]          (replaces the list; 400 ApiError with problems)
  *   GET    /api/router                     -> RouterView           (address, judge, usage per assistant)
+ *   GET    /api/signins                    -> SignIn[]             (PACT sign-ins waiting for you)
+ *   POST   /api/signins/:id/check          -> { ok }               (you signed in: ask the business now)
+ *   POST   /api/signins/:id/cancel         -> { ok }               (the step that needed it fails)
  *   GET    /api/contacts                   -> Contact[]
  *   POST   /api/contacts { name, tier, emails? } -> { contact, token }   (the token is shown this once)
  *   PATCH  /api/contacts/:id { name?, tier?, emails? } -> Contact

@@ -1,4 +1,4 @@
-import { Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type Note, ollamaModels, type PactIdentity, type Router, type SavedFlow, type Store } from "@huddle/core";
+import { Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type Note, ollamaModels, type PactIdentity, type Router, type SavedFlow, type SignIns, type Store } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { a2aRoutes } from "./a2a.ts";
@@ -32,6 +32,8 @@ export interface AppOptions {
   readonly fetcher?: typeof fetch;
   /** What OpenShell sandboxes are asking for, when an OpenShell gateway is set up. */
   readonly sandboxes?: SandboxInbox;
+  /** PACT sign-ins waiting for the person (shown in Approvals). */
+  readonly signIns?: SignIns;
   /** Huddle's identity as a PACT personal agent: its key is published at /.well-known/jwks.json. */
   readonly pact?: PactIdentity;
   /** The router: your assistants by id behind an OpenAI-compatible /v1. */
@@ -103,6 +105,13 @@ export function createApp(options: AppOptions): Hono {
     store.saveAssistants(result.data);
     return c.json(store.assistants());
   });
+  // PACT sign-ins: a business's login link waiting for you; the step that needs it carries on once you approve.
+  const signIns = options.signIns;
+  signIns?.events.on("change", () => store.events.emit("change", { kind: "signin" } satisfies Change));
+  app.get("/api/signins", (c) => c.json(signIns?.pending() ?? []));
+  app.post("/api/signins/:id/check", (c) => (signIns?.checkNow(c.req.param("id")) ? c.json({ ok: true }) : bad(c, "That sign-in isn't waiting any more.", 404)));
+  app.post("/api/signins/:id/cancel", (c) => (signIns?.cancel(c.req.param("id")) ? c.json({ ok: true }) : bad(c, "That sign-in isn't waiting any more.", 404)));
+
   // Contacts: people and their agents who may start your flows, each with a tier and their own token.
   const contactFields = async (c: Context): Promise<{ name?: string; tier?: ContactTier; emails?: string[] } | string> => {
     const { name, tier, emails } = await body(c);
