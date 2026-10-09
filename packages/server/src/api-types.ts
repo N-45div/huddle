@@ -3,9 +3,9 @@
  * can't drift apart. All routes are under /api; when the server has a token, every call carries
  * `Authorization: Bearer <token>` (the event stream takes `?token=` instead).
  */
-import type { Flow, LogLine, Note, RunState, RunView, Trigger } from "@huddle/core";
+import type { Assistant, Flow, LogLine, Note, RunState, RunView, Trigger } from "@huddle/core";
 
-export type { Flow, LogLine, Note, RunState, RunView, Trigger };
+export type { Assistant, Flow, LogLine, Note, RunState, RunView, Trigger };
 
 /** GET /api/info: what this Huddle can do. */
 export interface Info {
@@ -62,6 +62,28 @@ export interface WaitingApproval {
   readonly createdAt: string;
 }
 
+/** How one assistant has done through the router lately (from its runs). */
+export interface RouterUsage {
+  readonly assistant: string;
+  readonly calls: number;
+  readonly failures: number;
+  /** Average time to answer, for the calls that answered. */
+  readonly averageMs: number | null;
+  readonly lastAt: string | null;
+}
+
+/** GET /api/router */
+export interface RouterView {
+  readonly on: boolean;
+  /** The OpenAI-compatible base URL. */
+  readonly baseUrl: string;
+  /** Who judges model "auto": "jev", "model", or null (your list's order). */
+  readonly judge: string | null;
+  /** Whether calls need a key (the Huddle token or HUDDLE_ROUTER_KEY). */
+  readonly keyRequired: boolean;
+  readonly usage: readonly RouterUsage[];
+}
+
 /** A field an assistant of this connector needs, for the "add assistant" form. */
 export interface ConnectorField {
   readonly key: "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies";
@@ -92,7 +114,8 @@ export type ChangeEvent =
   | { readonly kind: "approval"; readonly runId: string }
   | { readonly kind: "memory" }
   | { readonly kind: "flow"; readonly flowId: string }
-  | { readonly kind: "sandbox" };
+  | { readonly kind: "sandbox" }
+  | { readonly kind: "assistants" };
 
 /** A network rule an OpenShell sandbox needs, drafted by OpenShell after it blocked a connection. */
 export interface SandboxRequestView {
@@ -127,6 +150,7 @@ export interface SandboxRequests {
  *   GET    /api/connectors                 -> ConnectorInfo[]
  *   GET    /api/assistants                 -> Assistant[]          (your assistants, for the router)
  *   PUT    /api/assistants { assistants }  -> Assistant[]          (replaces the list; 400 ApiError with problems)
+ *   GET    /api/router                     -> RouterView           (address, judge, usage per assistant)
  *   GET    /api/connectors/:id/models?url= -> { models: string[] }  (Ollama; 502 ApiError when it can't be reached)
  *   GET    /api/flows                      -> FlowView[]
  *   POST   /api/flows        { flow }      -> FlowView            (400 ApiError with problems)

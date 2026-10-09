@@ -368,6 +368,21 @@ describe("the router (OpenAI-compatible)", () => {
     assert.match(models.data[0].description, /judged by jev/);
   });
 
+  it("counts each assistant's calls, failures and time to answer, for the Assistants page", async () => {
+    const { app, store } = routed({ token: TOKEN });
+    store.saveAssistants(mine.map((one) => Assistant.parse(one)));
+    const ask = (model: string) => app.request("/v1/chat/completions", chat({ model, messages: [{ role: "user", content: "hi" }] }, auth));
+    await ask("hermes");
+    await ask("hermes");
+    await ask("down");
+    const view = await (await app.request("/api/router", { headers: auth })).json();
+    assert.deepEqual([view.on, view.baseUrl, view.judge, view.keyRequired], [true, "http://huddle.test/v1", null, true]);
+    const byId = Object.fromEntries(view.usage.map((row: { assistant: string }) => [row.assistant, row]));
+    assert.deepEqual([byId.hermes.calls, byId.hermes.failures, typeof byId.hermes.averageMs], [2, 0, "number"]);
+    assert.deepEqual([byId.down.calls, byId.down.failures, byId.down.averageMs], [1, 1, null]);
+    assert.equal(byId.local, undefined, "never called");
+  });
+
   it("streams like OpenAI when asked", async () => {
     const { app, store } = routed();
     store.saveAssistants(mine.map((one) => Assistant.parse(one)));

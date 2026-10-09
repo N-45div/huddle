@@ -4,7 +4,7 @@ import { streamSSE } from "hono/streaming";
 import { a2aRoutes } from "./a2a.ts";
 import { routerRoutes } from "./router.ts";
 import { bearerOf, same } from "./auth.ts";
-import type { ApiError, FlowView, Info, RunDetail, RunSummary, WaitingApproval } from "./api-types.ts";
+import type { ApiError, FlowView, Info, RouterUsage, RouterView, RunDetail, RunSummary, WaitingApproval } from "./api-types.ts";
 import { CONNECTORS } from "./connectors-info.ts";
 import { noSandboxes, type SandboxInbox, Stale } from "./sandbox-requests.ts";
 
@@ -102,6 +102,25 @@ export function createApp(options: AppOptions): Hono {
     if (!result.success) return bad(c, "These assistants have problems.", 400, result.error.issues.map((issue) => (issue.path.length ? `${issue.path.join(".")}: ${issue.message}` : issue.message)));
     store.saveAssistants(result.data);
     return c.json(store.assistants());
+  });
+  app.get("/api/router", (c) => {
+    const totals = new Map<string, { calls: number; failures: number; answeredMs: number; answered: number; lastAt: string | null }>();
+    // The router's calls are runs of one-step flows named "Router: ..." with that one assistant.
+    for (const run of store.runs(1_000)) {
+      const id = run.flow.assistants[0]?.id;
+      if (run.flowId !== null || !id || !run.flow.name.startsWith("Router: ")) continue;
+      const total = totals.get(id) ?? { calls: 0, failures: 0, answeredMs: 0, answered: 0, lastAt: null };
+      total.calls += 1;
+      if (run.state === "failed") total.failures += 1;
+      if (run.state === "done") {
+        total.answered += 1;
+        total.answeredMs += Math.max(0, Date.parse(run.updatedAt) - Date.parse(run.createdAt));
+      }
+      if (!total.lastAt || run.createdAt > total.lastAt) total.lastAt = run.createdAt;
+      totals.set(id, total);
+    }
+    const usage: RouterUsage[] = [...totals].map(([assistant, total]) => ({ assistant, calls: total.calls, failures: total.failures, averageMs: total.answered ? Math.round(total.answeredMs / total.answered) : null, lastAt: total.lastAt }));
+    return c.json<RouterView>({ on: Boolean(options.router), baseUrl: `${options.publicUrl}/v1`, judge: options.router?.judge?.name ?? null, keyRequired: Boolean(options.token || options.routerKey), usage });
   });
   app.get("/api/connectors/:id/models", async (c) => {
     if (c.req.param("id") !== "ollama") return bad(c, "This connector doesn't list models.", 404);
