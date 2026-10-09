@@ -307,12 +307,15 @@ describe("the web app files", () => {
   app.get("/api/info", (c) => c.json({ ok: true }));
   app.use("*", webApp(dist));
 
-  it("serves files, falls back to the app for its own pages, and never leaves its folder", async () => {
+  it("serves files, sends the app's own pages to its hash routes, and never leaves its folder", async () => {
+    assert.match(await (await app.request("/")).text(), /<title>Huddle/);
     const script = await app.request("/assets/app-1234.js");
     assert.equal(await script.text(), "console.log(1)");
     assert.match(script.headers.get("cache-control") ?? "", /immutable/);
-    assert.match(await (await app.request("/flows/flow_1")).text(), /<title>Huddle/);
-    assert.match(await (await app.request("/..%2fsecret.txt")).text(), /<title>Huddle/);
+    const deep = await app.request("/flows/flow_1?describe");
+    assert.deepEqual([deep.status, deep.headers.get("location")], [302, "/#/flows/flow_1?describe"]);
+    assert.equal((await app.request("/assets/gone-9999.js")).status, 404, "a missing file, not the page in its place");
+    assert.equal((await app.request("/..%2fsecret.txt")).status, 404);
     assert.deepEqual(await (await app.request("/api/info")).json(), { ok: true });
     assert.equal((await app.request("/api/missing")).status, 404);
   });

@@ -2,7 +2,10 @@ import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, sep } from "node:path";
 import type { MiddlewareHandler } from "hono";
 
-/** Serves the built web app from `root`, and its index.html for any other page so the app's own routes work. */
+/**
+ * Serves the built web app from `root`. The app routes with the hash (/#/flows/...), so a path like
+ * /flows/abc is sent there instead; a file that isn't there is a 404, never the page in its place.
+ */
 
 const TYPES: Readonly<Record<string, string>> = {
   ".html": "text/html; charset=utf-8",
@@ -32,7 +35,13 @@ export function webApp(root: string): MiddlewareHandler {
     }
     const wanted = normalize(join(base, path));
     const inside = wanted.startsWith(base + sep);
-    const file = inside && (await stat(wanted).catch(() => null))?.isFile() ? wanted : join(base, "index.html");
+    const found = inside && (await stat(wanted).catch(() => null))?.isFile();
+    if (!found && path !== "/") {
+      if (extname(path) || !inside) return next();
+      const query = new URL(c.req.url).search;
+      return c.redirect(`/#${path}${query}`, 302);
+    }
+    const file = found ? wanted : join(base, "index.html");
     const body = await readFile(file).catch(() => null);
     if (!body) return next();
     const hashed = file.includes(`${sep}assets${sep}`);
