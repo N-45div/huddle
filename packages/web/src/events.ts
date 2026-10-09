@@ -28,7 +28,7 @@ function emit(change: Change): void {
 function isChange(value: unknown): value is ChangeEvent {
   if (!value || typeof value !== "object") return false;
   const kind = (value as { kind?: unknown }).kind;
-  return kind === "run" || kind === "approval" || kind === "memory" || kind === "flow" || kind === "sandbox";
+  return kind === "run" || kind === "approval" || kind === "memory" || kind === "flow" || kind === "sandbox" || kind === "assistants";
 }
 
 /** Opens the stream; returns a function that closes it. */

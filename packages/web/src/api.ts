@@ -1,11 +1,13 @@
 import type {
   ApiError,
+  Assistant,
   ConnectorInfo,
   Flow,
   FlowView,
   Info,
   Note,
   RunDetail,
+  RouterView,
   RunSummary,
   SandboxRequests,
   WaitingApproval,
@@ -106,9 +108,58 @@ async function call<T>(method: "GET" | "POST" | "PUT" | "DELETE", path: string, 
 
 const id = encodeURIComponent;
 
+/** What the router answered, as an OpenAI chat completion plus Huddle's own details. */
+export interface RouterReply {
+  readonly model: string;
+  readonly text: string;
+  readonly runId: string | null;
+  readonly skipped: readonly { readonly id: string; readonly error: string }[];
+  readonly route: {
+    readonly judge: string;
+    readonly order: readonly string[];
+    readonly probabilities: Readonly<Record<string, number>> | null;
+    readonly confidence: number | null;
+    readonly model: string | null;
+    readonly note: string | null;
+  } | null;
+}
+
+async function routerChat(model: string, text: string): Promise<RouterReply> {
+  const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "application/json" };
+  if (memoryToken) headers.Authorization = `Bearer ${memoryToken}`;
+  let response: Response;
+  try {
+    response = await fetch("v1/chat/completions", { method: "POST", headers, body: JSON.stringify({ model, messages: [{ role: "user", content: text }] }) });
+  } catch {
+    throw new ApiFailure(0, "Can't reach the Huddle server. Check that it's running.");
+  }
+  const body = (await response.json().catch(() => null)) as {
+    model?: string;
+    choices?: { message?: { content?: string } }[];
+    huddle?: { run?: string; skipped?: RouterReply["skipped"]; route?: RouterReply["route"] };
+    error?: { message?: string };
+  } | null;
+  if (!response.ok) {
+    if (response.status === 401) for (const listener of unauthorizedListeners) listener();
+    throw new ApiFailure(response.status, body?.error?.message ?? fallbackMessage(response.status));
+  }
+  return {
+    model: body?.model ?? model,
+    text: body?.choices?.[0]?.message?.content ?? "",
+    runId: body?.huddle?.run ?? null,
+    skipped: body?.huddle?.skipped ?? [],
+    route: body?.huddle?.route ?? null,
+  };
+}
+
 export const api = {
   info: () => call<Info>("GET", "/info"),
   connectors: () => call<ConnectorInfo[]>("GET", "/connectors"),
+  assistants: () => call<Assistant[]>("GET", "/assistants"),
+  saveAssistants: (assistants: readonly Assistant[]) => call<Assistant[]>("PUT", "/assistants", { assistants }),
+  router: () => call<RouterView>("GET", "/router"),
+  /** One chat through the router's OpenAI-compatible /v1, the way any app would call it. */
+  chat: (model: string, text: string) => routerChat(model, text),
   models: (connector: string, url: string) => call<{ models: string[] }>("GET", `/connectors/${id(connector)}/models` + (url ? `?url=${id(url)}` : "")),
 
   flows: () => call<FlowView[]>("GET", "/flows"),

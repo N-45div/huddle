@@ -17,6 +17,8 @@ export type {
   RunDetail,
   RunState,
   RunSummary,
+  RouterUsage,
+  RouterView,
   RunView,
   SandboxRequests,
   SandboxRequestView,

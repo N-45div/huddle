@@ -1028,6 +1028,150 @@ h1 .badge {
   gap: 14px;
 }
 
+/* ---------- Assistants and the router ---------- */
+
+.assistants-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.assistants-list,
+.router-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.assistants-list h2,
+.router-side h2 {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+/* The panel is shared with the flow editor's inspector, which pads it. */
+.assistants-list .inspector-section {
+  padding: 0;
+}
+
+.assistant-description {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.library-pick select {
+  flex: 1;
+  min-width: 0;
+}
+
+.try-it form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.try-it form > .btn {
+  align-self: flex-start;
+}
+
+.try-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.try-answer {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.try-reply > .btn {
+  align-self: flex-start;
+}
+
+.route {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.route-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.route-bars li {
+  display: grid;
+  grid-template-columns: minmax(0, 8em) minmax(0, 1fr) 3.2em;
+  gap: 8px;
+  align-items: center;
+}
+
+.route-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.route-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.route-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.route-p {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.code-block {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  white-space: pre;
+  word-break: normal;
+}
+
+.code-block code {
+  background: none;
+  padding: 0;
+  font-size: 12.5px;
+}
+
+.use-from-code .tab-panel {
+  gap: 8px;
+}
+
+.use-from-code .tab-panel > .btn {
+  align-self: flex-start;
+}
+
+@media (max-width: 960px) {
+  .assistants-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ---------- Memory ---------- */
 
 .add-note {
