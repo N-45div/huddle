@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { ConfirmDialog } from "../components/Dialog.tsx";
 import { Hint, Icon } from "../components/bits.tsx";
@@ -9,6 +9,7 @@ interface Props {
   readonly trigger: Trigger;
   readonly savedTrigger: Trigger | undefined;
   readonly webhookUrl: string;
+  readonly a2aUrl: string;
   readonly stepIds: readonly string[];
   readonly firstStep: string | undefined;
   readonly onChange: (trigger: Trigger) => void;
@@ -25,7 +26,7 @@ function absolute(address: string): string {
   }
 }
 
-export function TriggerPanel({ flowId, trigger, savedTrigger, webhookUrl, stepIds, firstStep, onChange, onFirstStep, onRotated }: Props) {
+export function TriggerPanel({ flowId, trigger, savedTrigger, webhookUrl, a2aUrl, stepIds, firstStep, onChange, onFirstStep, onRotated }: Props) {
   const [lastEvery, setLastEvery] = useState(trigger.type === "schedule" ? trigger.every : "1d");
   const changed = JSON.stringify(trigger) !== JSON.stringify(savedTrigger ?? { type: "manual" });
 
@@ -95,6 +96,42 @@ export function TriggerPanel({ flowId, trigger, savedTrigger, webhookUrl, stepId
         </select>
         <Hint>Or drag from the start marker on the canvas to a step.</Hint>
       </div>
+
+      <CopyAddress id="a2a-url" label="For your other assistants (A2A)" address={absolute(a2aUrl)}>
+        Give this address to OpenClaw, Hermes or any A2A assistant, with Huddle's A2A token, and it can start this flow
+        whatever its trigger. What it sends becomes the input.
+      </CopyAddress>
+    </div>
+  );
+}
+
+/** A read-only address with a Copy button that falls back to selecting it. */
+function CopyAddress({ id, label, address, children }: { readonly id: string; readonly label: string; readonly address: string; readonly children: ReactNode }) {
+  const [copied, setCopied] = useState<"yes" | "manual" | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied("yes");
+    } catch {
+      input.current?.select();
+      setCopied("manual");
+    }
+    window.setTimeout(() => setCopied(null), 2500);
+  };
+
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <div className="copy-row">
+        <input id={id} ref={input} className="mono" readOnly value={address} onFocus={(event) => event.target.select()} aria-describedby={`${id}-hint`} />
+        <button type="button" className="btn btn-sm" onClick={() => void copy()}>
+          <Icon name="copy" /> {copied === "yes" ? "Copied" : "Copy"}
+        </button>
+      </div>
+      {copied === "manual" && <p className="hint">Selected. Press Ctrl+C (or ⌘C) to copy.</p>}
+      <Hint id={`${id}-hint`}>{children}</Hint>
     </div>
   );
 }
@@ -110,35 +147,13 @@ function Radio({ name, value, checked, label, onPick }: { readonly name: string;
 }
 
 function WebhookAddress({ flowId, webhookUrl, onRotated }: { readonly flowId: string; readonly webhookUrl: string; readonly onRotated: (view: FlowView) => void }) {
-  const [copied, setCopied] = useState<"yes" | "manual" | null>(null);
   const [rotating, setRotating] = useState(false);
-  const input = useRef<HTMLInputElement>(null);
-  const address = absolute(webhookUrl);
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(address);
-      setCopied("yes");
-    } catch {
-      input.current?.select();
-      setCopied("manual");
-    }
-    window.setTimeout(() => setCopied(null), 2500);
-  };
 
   return (
     <div className="field">
-      <label htmlFor="webhook-url">Its address</label>
-      <div className="copy-row">
-        <input id="webhook-url" ref={input} className="mono" readOnly value={address} onFocus={(event) => event.target.select()} aria-describedby="webhook-hint" />
-        <button type="button" className="btn btn-sm" onClick={() => void copy()}>
-          <Icon name="copy" /> {copied === "yes" ? "Copied" : "Copy"}
-        </button>
-      </div>
-      {copied === "manual" && <p className="hint">Selected. Press Ctrl+C (or ⌘C) to copy.</p>}
-      <Hint id="webhook-hint">
+      <CopyAddress id="webhook-url" label="Its address" address={absolute(webhookUrl)}>
         Anything that POSTs here starts a run. The body becomes the input: plain text, or JSON <code>{'{ "input": "…" }'}</code>. Keep the address secret; it works like a password.
-      </Hint>
+      </CopyAddress>
       <button type="button" className="btn btn-sm btn-ghost" onClick={() => setRotating(true)}>
         New address
       </button>

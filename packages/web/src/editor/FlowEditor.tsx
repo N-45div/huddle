@@ -612,6 +612,7 @@ function Editor({ flowId, openDescribe }: { readonly flowId: string; readonly op
                 trigger={meta.trigger}
                 savedTrigger={view.flow.trigger}
                 webhookUrl={view.webhookUrl}
+                a2aUrl={view.a2aUrl}
                 stepIds={stepIds}
                 firstStep={firstStep}
                 onChange={(trigger) => setMeta((current) => ({ ...current, trigger }))}
