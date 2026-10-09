@@ -127,12 +127,13 @@ interface Draft {
   keyEnv: string;
   model: string;
   agentId: string;
+  audience: string;
   /** A command line, split into the command's parts on save. */
   command: string;
   replies: { key: string; answer: string }[];
 }
 
-type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "agentId" | "command" | "replies", string>>;
+type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies", string>>;
 
 /** A command line's parts: split on spaces, with "double" or 'single' quotes keeping spaces in; null if a quote isn't closed. */
 function splitCommand(line: string): string[] | null {
@@ -175,6 +176,7 @@ function draftOf(assistant: Assistant | undefined): Draft {
     keyEnv: assistant?.keyEnv ?? "",
     model: assistant?.model ?? "",
     agentId: assistant?.agentId ?? "",
+    audience: assistant?.audience ?? "",
     command: joinCommand(assistant?.command),
     replies: Object.entries(assistant?.replies ?? {}).map(([key, answer]) => ({ key, answer })),
   };
@@ -253,7 +255,7 @@ function AssistantForm({
     const assistant: Assistant = { id: draft.id.trim(), connector: draft.connector as ConnectorId, memory: draft.memory };
     const name = draft.name.trim();
     if (name) assistant.name = name;
-    for (const key of ["url", "keyEnv", "model", "agentId"] as const) {
+    for (const key of ["url", "keyEnv", "model", "agentId", "audience"] as const) {
       const value = shown.has(key) ? draft[key].trim() : (kept?.[key] ?? "");
       if (value) assistant[key] = value;
     }
