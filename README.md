@@ -83,6 +83,7 @@ teammate: you put them on a canvas, say who does what, and decide where you want
 | **`sochen`** | [Sochen](https://sochen.dev)'s agent and its pets, through the Agent API | ready |
 | **`homeassistant`** | [Home Assistant](https://github.com/home-assistant/core)'s Assist, through its conversation API | ready |
 | **`agentzero`** | [Agent Zero](https://github.com/agent0ai/agent-zero), through its external API | ready |
+| **`instinct`** | [Open Instinct](https://github.com/mariagorskikh/open-instinct), the personal agent you text, through its owner chat | ready |
 | **`http`** | anything with a simple `{ ask } → { text }` API | ready |
 | **`mock`** | a stand-in assistant for building and testing flows | ready |
 | `mcp` | assistants and tools exposed as Model Context Protocol servers | next |

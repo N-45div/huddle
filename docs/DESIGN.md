@@ -64,6 +64,7 @@ message or the command line can answer them.
 | `sochen` | Sochen's Agent API (`POST https://sochen.dev/api/v1/run`), with a key from the environment |
 | `homeassistant` | `POST <url>/api/conversation/process` with a long-lived token (`HASS_TOKEN`); no memory sent, since Assist matches plain commands; an "error" answer stops the flow |
 | `agentzero` | `POST <url>/api_message` with `X-API-KEY` (`AGENT_ZERO_API_KEY`); a synchronous `{ context_id, response }` |
+| `instinct` | open-instinct's owner chat, `POST <url>/chat` (default `http://127.0.0.1:8080`) with `{ message, source: "huddle", conversation_id }` and its `INSTINCT_CHAT_TOKEN` as a Bearer token when there is one; one `conversation_id` per (run, assistant). Past the agent's reply budget it answers "On it…" (state `working`), and the finished answer comes with the next step on that conversation, in its text or in `pending` (passed on as `data.pending`) |
 | `mcp` | next |
 
 ## Triggers
