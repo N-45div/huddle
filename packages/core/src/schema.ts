@@ -12,6 +12,8 @@ const target = z.string().min(1);
 export const Assistant = z.object({
   id,
   name: z.string().optional(),
+  /** What it's good at, in a sentence: what the router's judge reads to pick it. */
+  description: z.string().max(500).optional(),
   /** How to reach it: openclaw and hermes are A2A with their usual local address filled in. */
   connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "openshell", "pact", "homeassistant", "agentzero"]),
   /** The slices of shared memory this assistant may read. */
@@ -32,6 +34,28 @@ export const Assistant = z.object({
   replies: z.record(z.string(), z.string()).optional(),
 });
 export type Assistant = z.infer<typeof Assistant>;
+
+/** What a connector needs that the shape alone can't say, one line each. */
+export function assistantProblems(assistant: Assistant): string[] {
+  const problems: string[] = [];
+  if (assistant.connector === "openshell" && (!assistant.agentId || !assistant.command)) {
+    problems.push(`assistant "${assistant.id}" runs in OpenShell: give its sandbox's name (agentId) and the command that runs its agent (command)`);
+  }
+  if (assistant.connector === "pact" && (!assistant.url || !assistant.audience)) {
+    problems.push(`assistant "${assistant.id}" is a business's agent over PACT: give its Agent Card URL (url) and the Provider's audience (audience)`);
+  }
+  return problems;
+}
+
+/** Your assistants, set up once: the ones the router reaches by id. */
+export const Assistants = z.array(Assistant).superRefine((assistants, ctx) => {
+  const seen = new Set<string>();
+  for (const assistant of assistants) {
+    if (seen.has(assistant.id)) ctx.addIssue({ code: "custom", message: `two assistants are called "${assistant.id}"` });
+    seen.add(assistant.id);
+    for (const problem of assistantProblems(assistant)) ctx.addIssue({ code: "custom", message: problem });
+  }
+});
 
 const AgentStep = z.object({
   id,
@@ -106,14 +130,7 @@ export const Flow = z
       steps.add(step.id);
     }
     const assistants = new Set(flow.assistants.map((assistant) => assistant.id));
-    for (const assistant of flow.assistants) {
-      if (assistant.connector === "openshell" && (!assistant.agentId || !assistant.command)) {
-        ctx.addIssue({ code: "custom", message: `assistant "${assistant.id}" runs in OpenShell: give its sandbox's name (agentId) and the command that runs its agent (command)` });
-      }
-      if (assistant.connector === "pact" && (!assistant.url || !assistant.audience)) {
-        ctx.addIssue({ code: "custom", message: `assistant "${assistant.id}" is a business's agent over PACT: give its Agent Card URL (url) and the Provider's audience (audience)` });
-      }
-    }
+    for (const assistant of flow.assistants) for (const problem of assistantProblems(assistant)) ctx.addIssue({ code: "custom", message: problem });
     const check = (from: string, to: string | undefined) => {
       if (to !== undefined && to !== "end" && !steps.has(to)) ctx.addIssue({ code: "custom", message: `step "${from}" goes to "${to}", which isn't a step` });
     };

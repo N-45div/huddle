@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { DatabaseSync } from "node:sqlite";
-import type { Flow } from "./schema.ts";
+import type { Assistant, Flow } from "./schema.ts";
 import type { RunContext } from "./template.ts";
 
 /**
@@ -62,7 +62,9 @@ export type Change =
   | { readonly kind: "memory" }
   | { readonly kind: "flow"; readonly flowId: string }
   /** What an OpenShell sandbox is asking for changed (the server watches the gateway). */
-  | { readonly kind: "sandbox" };
+  | { readonly kind: "sandbox" }
+  /** The list of your assistants changed. */
+  | { readonly kind: "assistants" };
 
 export interface LogLine {
   readonly runId: string;
@@ -92,6 +94,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, slice TEXT NOT NULL, note TEXT NOT NULL, status TEXT NOT NULL, source TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS log (seq INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, step_id TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL, at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS assistants (id TEXT PRIMARY KEY, position INTEGER NOT NULL, assistant TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS approvals_run ON approvals (run_id);
       CREATE INDEX IF NOT EXISTS notes_slice ON notes (slice, status);
       CREATE INDEX IF NOT EXISTS log_run ON log (run_id, seq);
@@ -149,6 +152,32 @@ export class Store {
 
   close(): void {
     this.db.close();
+  }
+
+  // Your assistants: set up once, reached by id through the router --------------------------------
+
+  assistants(): Assistant[] {
+    return (this.db.prepare("SELECT assistant FROM assistants ORDER BY position").all() as Row[]).map((row) => JSON.parse(String(row.assistant)) as Assistant);
+  }
+
+  assistant(id: string): Assistant | null {
+    const row = this.db.prepare("SELECT assistant FROM assistants WHERE id = ?").get(id) as Row | undefined;
+    return row ? (JSON.parse(String(row.assistant)) as Assistant) : null;
+  }
+
+  /** Replaces the whole list, in order (the caller has checked it). */
+  saveAssistants(assistants: readonly Assistant[]): void {
+    this.db.exec("BEGIN");
+    try {
+      this.db.exec("DELETE FROM assistants");
+      const insert = this.db.prepare("INSERT INTO assistants (id, position, assistant, updated_at) VALUES (?, ?, ?, ?)");
+      assistants.forEach((assistant, position) => insert.run(assistant.id, position, JSON.stringify(assistant), now()));
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    this.changed({ kind: "assistants" });
   }
 
   // Settings: small things Huddle keeps about itself, like its PACT signing key ----------------------
