@@ -64,6 +64,8 @@ teammate: you put them on a canvas, say who does what, and decide where you want
 | **`a2a`** | any agent that speaks [A2A](https://a2a-protocol.org) 1.0 (Agent2Agent) | ready |
 | **`openai`** | anything with an OpenAI-style chat API: Open WebUI, AnythingLLM, LibreChat's Agents API, Letta, and the API servers of OpenClaw and Hermes | ready |
 | **`sochen`** | [Sochen](https://sochen.dev)'s agent and its pets, through the Agent API | ready |
+| **`homeassistant`** | [Home Assistant](https://github.com/home-assistant/core)'s Assist, through its conversation API | ready |
+| **`agentzero`** | [Agent Zero](https://github.com/agent0ai/agent-zero), through its external API | ready |
 | **`http`** | anything with a simple `{ ask } → { text }` API | ready |
 | **`mock`** | a stand-in assistant for building and testing flows | ready |
 | `mcp` | assistants and tools exposed as Model Context Protocol servers | next |
@@ -107,6 +109,36 @@ chat path isn't `/v1/chat/completions`, give the whole chat URL instead:
 ```
 
 **Sochen.** Set `SOCHEN_API_KEY` (a Pro plan's `sk_sochen_…` key) and add `{ "id": "sochen", "connector": "sochen" }`.
+
+**Home Assistant.** Make a long-lived access token (your profile → Security), set it as `HASS_TOKEN`
+where Huddle runs, and add Assist. `agentId` picks one of its conversation agents. Memory isn't sent to
+it: Assist expects plain commands like "turn off the kitchen lights".
+
+```json
+{ "id": "home", "connector": "homeassistant", "url": "http://homeassistant.local:8123" }
+```
+
+**Agent Zero.** Turn on its external API (Settings → External Services), set the key as
+`AGENT_ZERO_API_KEY`, and give its address. `agentId` picks an agent profile.
+
+```json
+{ "id": "zero", "connector": "agentzero", "url": "http://localhost:<its port>" }
+```
+
+### Also works with
+
+These speak a protocol Huddle already has, so they need no connector of their own (set up from each
+project's docs; tell us if one misbehaves):
+
+| Assistant | Use | Notes |
+|---|---|---|
+| [nanobot](https://github.com/HKUDS/nanobot) | `openai`, `url` `http://127.0.0.1:8900` | `nanobot plugins enable api`, then `nanobot serve`; a key is needed only off localhost |
+| [CowAgent](https://github.com/zhayujie/CowAgent) | `openai`, `url` `http://localhost:9899` | set `external_api_token` in its config, and the same value in your `keyEnv` |
+| [OpenHands](https://github.com/OpenHands/OpenHands) | `openai`, `model` `openhands_<profile>` | its agent server's OpenAI gateway; a coding agent rather than a personal one |
+| [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw) | `a2a`, `url` `http://<host>:42617/a2a/<alias>` | enable `[a2a.server]` and publish an alias; its pairing token goes in `keyEnv` |
+
+Not reachable yet: Goose and QwenPaw speak ACP (planned); NanoClaw and PicoClaw only through a
+messaging channel or a local socket.
 
 An assistant only ever sees the memory slices it lists in `memory`. Keys always come from environment
 variables, never from the flow file.

@@ -59,6 +59,8 @@ message or the command line can answer them.
 | `openclaw`, `hermes` | `a2a` with their usual local address (`127.0.0.1:18789`, `127.0.0.1:9900`) and token variable (`OPENCLAW_A2A_TOKEN`, `HERMES_A2A_TOKEN`) filled in |
 | `openai` | `POST <url>/v1/chat/completions` (or the full chat URL), memory as a system note; a plain reply with no task to follow |
 | `sochen` | Sochen's Agent API (`POST https://sochen.dev/api/v1/run`), with a key from the environment |
+| `homeassistant` | `POST <url>/api/conversation/process` with a long-lived token (`HASS_TOKEN`); no memory sent, since Assist matches plain commands; an "error" answer stops the flow |
+| `agentzero` | `POST <url>/api_message` with `X-API-KEY` (`AGENT_ZERO_API_KEY`); a synchronous `{ context_id, response }` |
 | `mcp` | next |
 
 ## Not yet
