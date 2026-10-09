@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { defaultConnectors, Engine, jevJudge, type Judge, modelJudge, OpenShell, openshell, PactIdentity, pact, Router, SignIns, Store, storedGrants } from "@huddle/core";
+import { defaultConnectors, embedder, Engine, jevJudge, type Judge, Memory, modelJudge, OpenShell, openshell, PactIdentity, pact, RECALL_BUDGET, reranker, Router, SignIns, Store, storedGrants } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
 import { SandboxWatcher } from "./sandbox-requests.ts";
@@ -20,6 +20,11 @@ import { webApp } from "./static.ts";
  *   HUDDLE_PUBLIC_URL  how others reach this Huddle, for webhook and A2A addresses
  *   HUDDLE_A2A_TOKEN   a separate token for assistants calling Huddle over A2A (default HUDDLE_TOKEN)
  *   HUDDLE_LLM_URL, HUDDLE_LLM_MODEL, HUDDLE_LLM_KEY   an OpenAI-compatible model for "describe it"
+ *   HUDDLE_MEMORY_BUDGET  characters of kept notes each request may carry (default 4000)
+ *   HUDDLE_EMBED_URL, HUDDLE_EMBED_MODEL, HUDDLE_EMBED_KEY   an OpenAI-compatible embeddings API, so
+ *                      memory finds notes by meaning as well as by their words
+ *   HUDDLE_RERANK_URL, HUDDLE_RERANK_MODEL, HUDDLE_RERANK_KEY   a rerank API (Voyage, Cohere, Jina) that
+ *                      orders the notes memory finds
  *   HUDDLE_WEB         the built canvas to serve (default packages/web/dist)
  *   HUDDLE_ROUTER_KEY  a key just for the router's OpenAI-compatible /v1 (HUDDLE_TOKEN works there too)
  *   TYPESAFE_API_KEY   Jev judges model "auto" (HUDDLE_JEV_MODEL, default jev-latest); without it the
@@ -36,8 +41,10 @@ const host = env("HUDDLE_HOST") ?? "127.0.0.1";
 const port = Number(env("HUDDLE_PORT") ?? 7700);
 const token = env("HUDDLE_TOKEN");
 const loopback = host === "127.0.0.1" || host === "::1" || host === "localhost";
+const budget = Number(env("HUDDLE_MEMORY_BUDGET") ?? RECALL_BUDGET);
 
 if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error(`HUDDLE_PORT must be a port number, not "${env("HUDDLE_PORT")}".`);
+if (!Number.isInteger(budget) || budget < 1) throw new Error(`HUDDLE_MEMORY_BUDGET must be a number of characters, not "${env("HUDDLE_MEMORY_BUDGET")}".`);
 if (!loopback && !token) {
   console.error(`Huddle won't listen on ${host} without a token: anyone who reaches it could run your assistants.\nSet HUDDLE_TOKEN to a long random string (e.g. openssl rand -hex 32), or listen on 127.0.0.1.`);
   process.exit(1);
@@ -63,9 +70,18 @@ try {
   process.exit(1);
 }
 const identity = PactIdentity.load(store, env("HUDDLE_PACT_ISSUER") ?? publicUrl);
+const embedUrl = env("HUDDLE_EMBED_URL");
+const embedModel = env("HUDDLE_EMBED_MODEL");
+const rerankUrl = env("HUDDLE_RERANK_URL");
+const rerankModel = env("HUDDLE_RERANK_MODEL");
+const memory = new Memory(store, {
+  budget,
+  embedder: embedUrl && embedModel ? embedder({ url: embedUrl, model: embedModel, key: env("HUDDLE_EMBED_KEY") }) : null,
+  reranker: rerankUrl && rerankModel ? reranker({ url: rerankUrl, model: rerankModel, key: env("HUDDLE_RERANK_KEY") }) : null,
+});
 // PACT sign-ins wait in Approvals while the step that needs them keeps running.
 const signIns = new SignIns();
-const engine = new Engine(store, { ...defaultConnectors(), openshell: openshell(() => shell), pact: pact(() => identity, undefined, { signIns, grants: storedGrants(store) }) });
+const engine = new Engine(store, { ...defaultConnectors(), openshell: openshell(() => shell), pact: pact(() => identity, undefined, { signIns, grants: storedGrants(store) }) }, { memory });
 const sandboxes = shell ? new SandboxWatcher(shell, store) : undefined;
 const scheduler = new Scheduler(store, engine);
 
@@ -101,6 +117,8 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   console.log(`  Router (OpenAI-compatible): ${publicUrl}/v1, model = one of your assistants' ids, or "auto" (${judge ? `judged by ${judge.name}` : "no judge: your list's order"})`);
   if (!built) console.log(`  The canvas isn't built (no ${join(web, "index.html")}): run npm run build.`);
   if (!llmUrl || !llmModel) console.log('  "Describe it" is off: set HUDDLE_LLM_URL and HUDDLE_LLM_MODEL to turn it on.');
+  const finds = [memory.embedder ? `words and meaning (${memory.embedder.model})` : "words", ...(memory.reranker ? [`reranked by ${memory.reranker.model}`] : [])];
+  console.log(`  Memory: up to ${budget} characters of kept notes per request, found by ${finds.join(", ")}`);
   if (shell) {
     shell.health().then(
       ({ version: gatewayVersion }) => console.log(`  OpenShell gateway ${gatewayVersion} at ${shell?.gateway}: sandbox requests show in Approvals.`),
