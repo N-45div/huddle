@@ -7,6 +7,7 @@ import type {
   Note,
   RunDetail,
   RunSummary,
+  SandboxRequests,
   WaitingApproval,
 } from "./types.ts";
 
@@ -133,6 +134,8 @@ export const api = {
   run: (runId: string) => call<RunDetail>("GET", `/runs/${id(runId)}`),
 
   approvals: () => call<WaitingApproval[]>("GET", "/approvals"),
+  sandboxRequests: () => call<SandboxRequests>("GET", "/sandbox-requests"),
+  answerSandboxRequest: (sandbox: string, requestId: string, yes: boolean, reason?: string) => call<{ ok: true }>("POST", `/sandbox-requests/${id(sandbox)}/${id(requestId)}`, { yes, ...(reason ? { reason } : {}) }),
   answer: (approvalId: string, yes: boolean) => call<{ runId: string }>("POST", `/approvals/${id(approvalId)}`, { yes }),
 
   memory: (status: Note["status"]) => call<Note[]>("GET", `/memory?status=${status}`),

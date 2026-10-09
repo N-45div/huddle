@@ -18,6 +18,8 @@ export type {
   RunState,
   RunSummary,
   RunView,
+  SandboxRequests,
+  SandboxRequestView,
   Trigger,
   WaitingApproval,
 } from "../../server/src/api-types.ts";
