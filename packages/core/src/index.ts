@@ -5,6 +5,7 @@ export { agentzero } from "./connectors/agentzero.ts";
 export { homeassistant } from "./connectors/homeassistant.ts";
 export { http } from "./connectors/http.ts";
 export { defaultConnectors } from "./connectors/index.ts";
+export { instinct } from "./connectors/instinct.ts";
 export { mock } from "./connectors/mock.ts";
 export { OLLAMA_URL, ollama, ollamaModels } from "./connectors/ollama.ts";
 export { openai } from "./connectors/openai.ts";

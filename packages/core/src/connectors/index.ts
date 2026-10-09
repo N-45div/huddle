@@ -3,6 +3,7 @@ import { a2a } from "./a2a.ts";
 import { agentzero } from "./agentzero.ts";
 import { homeassistant } from "./homeassistant.ts";
 import { http } from "./http.ts";
+import { instinct } from "./instinct.ts";
 import { mock } from "./mock.ts";
 import { ollama } from "./ollama.ts";
 import { openshell } from "./openshell.ts";
@@ -26,5 +27,6 @@ export function defaultConnectors(): Readonly<Record<string, Connector>> {
     pact: pact(() => null),
     homeassistant: homeassistant(),
     agentzero: agentzero(),
+    instinct: instinct(),
   };
 }
