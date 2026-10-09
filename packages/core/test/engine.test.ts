@@ -74,6 +74,23 @@ describe("a run", () => {
     await assert.rejects(engine.decide(id, true), /already answered/);
   });
 
+  it("shows the run as running again the moment an approval is answered, not once the next assistant is done", async () => {
+    const store = new Store();
+    let release = () => {};
+    const slow: Connector = {
+      async send(request) {
+        if (request.assistant.id === "calendar") await new Promise<void>((resolve) => (release = resolve));
+        return mock.send(request);
+      },
+    };
+    const engine = new Engine(store, { mock: slow });
+    const runId = engine.answer((await engine.start(invoiceFlow, "x")).waiting!.id, true);
+    assert.deepEqual([store.run(runId)?.state, store.run(runId)?.at], ["running", "remind"]);
+    release();
+    for (let tries = 0; store.run(runId)?.state === "running" && tries < 200; tries += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(store.run(runId)?.state, "done");
+  });
+
   it("fails with the reason when an assistant does, and stops a looping flow", async () => {
     const broken: Connector = { send: async () => { throw new Error("assistant offline"); } };
     const failed = await new Engine(new Store(), { mock: broken }).start(invoiceFlow, "x");
