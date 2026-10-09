@@ -18,6 +18,7 @@ export { DEFAULT_CERT_DIR, type ExecResult, OpenShell, type OpenShellOptions, ty
 export { sochen } from "./connectors/sochen.ts";
 export { Engine, MAX_STEPS, type RunView, type StartedBy } from "./engine.ts";
 export { type Embedder, embedder, type EmbedderOptions } from "./memory/embeddings.ts";
+export { Memory, type MemoryHit, type MemoryOptions, NOTE_CLIP, RECALL_BUDGET } from "./memory/memory.ts";
 export { type Reranker, reranker, type RerankerOptions } from "./memory/rerank.ts";
 export { findSecret, redactSecrets, SensitiveNote } from "./memory/sensitive.ts";
 export { askFrom, AUTO, type ChatMessage, NoAnswer, type RouteInfo, type Routed, Router } from "./router.ts";
