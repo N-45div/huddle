@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { api, describeError } from "../api.ts";
 import { ChipsInput } from "../components/ChipsInput.tsx";
 import { ConfirmDialog } from "../components/Dialog.tsx";
@@ -16,13 +16,24 @@ interface Props {
   readonly slices: readonly string[];
   /** `renamed` is set when an assistant's id changed, so its steps can follow. */
   readonly onChange: (assistants: Assistant[], renamed?: { readonly from: string; readonly to: string }) => void;
+  /** Replaces the opening line. */
+  readonly note?: ReactNode;
+  /** Replaces "asked in N steps" on each card. */
+  readonly useLine?: (assistant: Assistant) => string;
+  /** Your assistants (from the Assistants page), offered to add as they are. */
+  readonly library?: readonly Assistant[];
+  /** Shown when the list is empty. */
+  readonly emptyHint?: string;
 }
 
 type Editing = { readonly mode: "add" } | { readonly mode: "edit"; readonly index: number };
 
-export function AssistantsPanel({ assistants, connectors, usage, slices, onChange }: Props) {
+export function AssistantsPanel({ assistants, connectors, usage, slices, onChange, note, useLine, library, emptyHint }: Props) {
   const [editing, setEditing] = useState<Editing | null>(null);
   const [removing, setRemoving] = useState<Assistant | null>(null);
+  const [pick, setPick] = useState("");
+  const taken = new Set(assistants.map((assistant) => assistant.id));
+  const available = (library ?? []).filter((assistant) => !taken.has(assistant.id));
 
   const connectorName = (id: string) => connectors.data?.find((connector) => connector.id === id)?.name ?? id;
 
@@ -49,11 +60,11 @@ export function AssistantsPanel({ assistants, connectors, usage, slices, onChang
 
   return (
     <div className="inspector-section">
-      <Hint>Each assistant is reached through a connector, and only reads the memory slices you give it.</Hint>
+      {note ?? <Hint>Each assistant is reached through a connector, and only reads the memory slices you give it.</Hint>}
       {assistants.length === 0 ? (
         <div className="empty empty-small">
           <p className="empty-title">No assistants yet.</p>
-          <p className="hint">Add the assistants this flow hands work to.</p>
+          <p className="hint">{emptyHint ?? "Add the assistants this flow hands work to."}</p>
         </div>
       ) : (
         <ul className="assistant-list">
@@ -65,8 +76,9 @@ export function AssistantsPanel({ assistants, connectors, usage, slices, onChang
                   <div>
                     <p className="assistant-name">{assistant.name || assistant.id}</p>
                     <p className="hint">
-                      <code>{assistant.id}</code> · {connectorName(assistant.connector)} · {used ? `asked in ${plural(used, "step")}` : "not used yet"}
+                      <code>{assistant.id}</code> · {connectorName(assistant.connector)} · {useLine ? useLine(assistant) : used ? `asked in ${plural(used, "step")}` : "not used yet"}
                     </p>
+                    {assistant.description && <p className="assistant-description">{assistant.description}</p>}
                   </div>
                   <div className="assistant-actions">
                     <button type="button" className="btn btn-sm" onClick={() => setEditing({ mode: "edit", index })} aria-label={`Edit ${assistant.name || assistant.id}`}>
@@ -93,8 +105,35 @@ export function AssistantsPanel({ assistants, connectors, usage, slices, onChang
           })}
         </ul>
       )}
+      {available.length > 0 && (
+        <div className="field library-pick">
+          <label htmlFor="assistant-library">Add one of your assistants</label>
+          <div className="copy-row">
+            <select id="assistant-library" value={pick} onChange={(event) => setPick(event.target.value)}>
+              <option value="">Choose one…</option>
+              {available.map((assistant) => (
+                <option key={assistant.id} value={assistant.id}>
+                  {assistant.name ? `${assistant.name} (${assistant.id})` : assistant.id}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={!pick}
+              onClick={() => {
+                const chosen = available.find((assistant) => assistant.id === pick);
+                if (chosen) onChange([...assistants, chosen]);
+                setPick("");
+              }}
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      )}
       <button type="button" className="btn" onClick={() => setEditing({ mode: "add" })}>
-        <Icon name="plus" /> Add assistant
+        <Icon name="plus" /> {available.length > 0 ? "Set up a new one" : "Add assistant"}
       </button>
 
       <ConfirmDialog
@@ -121,6 +160,7 @@ export function AssistantsPanel({ assistants, connectors, usage, slices, onChang
 interface Draft {
   id: string;
   name: string;
+  description: string;
   connector: string;
   memory: string[];
   url: string;
@@ -170,6 +210,7 @@ function draftOf(assistant: Assistant | undefined): Draft {
   return {
     id: assistant?.id ?? "",
     name: assistant?.name ?? "",
+    description: assistant?.description ?? "",
     connector: assistant?.connector ?? "",
     memory: [...(assistant?.memory ?? [])],
     url: assistant?.url ?? "",
@@ -255,6 +296,8 @@ function AssistantForm({
     const assistant: Assistant = { id: draft.id.trim(), connector: draft.connector as ConnectorId, memory: draft.memory };
     const name = draft.name.trim();
     if (name) assistant.name = name;
+    const description = draft.description.trim();
+    if (description) assistant.description = description.slice(0, 500);
     for (const key of ["url", "keyEnv", "model", "agentId", "audience"] as const) {
       const value = shown.has(key) ? draft[key].trim() : (kept?.[key] ?? "");
       if (value) assistant[key] = value;
@@ -295,6 +338,12 @@ function AssistantForm({
             setDraft((current) => ({ ...current, name, id: idTouched ? current.id : slug(name) }));
           }}
         />
+      </div>
+
+      <div className="field">
+        <label htmlFor="assistant-description">What it's good at (optional)</label>
+        <textarea id="assistant-description" rows={2} maxLength={500} value={draft.description} aria-describedby="assistant-description-hint" onChange={(event) => set("description", event.target.value)} />
+        <Hint id="assistant-description-hint">One sentence, like "My work: meetings, calendar and docs". The router reads it when it picks an assistant for you.</Hint>
       </div>
 
       <div className="field">

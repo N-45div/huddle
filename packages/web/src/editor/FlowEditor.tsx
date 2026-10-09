@@ -102,6 +102,7 @@ function Editor({ flowId, openDescribe }: { readonly flowId: string; readonly op
   const [runDetail, setRunDetail] = useState<RunDetail | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const connectors = useResource(() => api.connectors(), [authVersion]);
+  const library = useResource(() => api.assistants(), [authVersion]);
   const { fitView, screenToFlowPosition } = useReactFlow<EditorNode, Edge>();
   const canvasRef = useRef<HTMLDivElement>(null);
   const loaded = useRef(false);
@@ -605,7 +606,7 @@ function Editor({ flowId, openDescribe }: { readonly flowId: string; readonly op
                 onDescribed={(described) => (dirty ? setConfirming({ kind: "describe", flow: described }) : loadDescribed(described))}
               />
             )}
-            {tab === "assistants" && <AssistantsPanel assistants={meta.assistants} connectors={connectors} usage={usage} slices={slices} onChange={changeAssistants} />}
+            {tab === "assistants" && <AssistantsPanel assistants={meta.assistants} connectors={connectors} usage={usage} slices={slices} onChange={changeAssistants} library={library.data ?? []} />}
             {tab === "trigger" && (
               <TriggerPanel
                 flowId={flowId}
