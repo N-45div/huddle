@@ -14,6 +14,8 @@ export { newKey, PactIdentity, type PrivateJwk, type PublicJwk, thumbprint } fro
 export { DEFAULT_CERT_DIR, type ExecResult, OpenShell, type OpenShellOptions, type SandboxRequest } from "./openshell/client.ts";
 export { sochen } from "./connectors/sochen.ts";
 export { Engine, MAX_STEPS, type RunView } from "./engine.ts";
-export { Assistant, everyMs, Flow, parseFlow, Step, Trigger } from "./schema.ts";
+export { askFrom, AUTO, type ChatMessage, NoAnswer, type RouteInfo, type Routed, Router } from "./router.ts";
+export { type Candidate, jevJudge, type JevOptions, type Judge, modelJudge, type ModelJudgeOptions, type Ranking } from "./judge.ts";
+export { Assistant, assistantProblems, Assistants, everyMs, Flow, parseFlow, Step, Trigger } from "./schema.ts";
 export { type Approval, type Change, type LogLine, type Note, type Run, type RunState, type SavedFlow, Store } from "./store.ts";
 export { lookup, render, type RunContext, type StepAnswer } from "./template.ts";
