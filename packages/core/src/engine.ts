@@ -157,7 +157,7 @@ export class Engine {
       case "memory": {
         const note = render(step.note, context);
         const suggested = this.store.suggest(step.slice, note, `run ${run.id}, step ${step.id}`);
-        this.store.log(run.id, step.id, "suggested", { note: suggested.id, slice: step.slice, text: note });
+        this.store.log(run.id, step.id, "suggested", { note: suggested.id, slice: step.slice, text: suggested.note });
         return { wait: false, context: keep(note), next: step.next ?? following(run.flow, step) };
       }
     }

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { DatabaseSync } from "node:sqlite";
+import { findSecret, redactSecrets, SensitiveNote } from "./memory/sensitive.ts";
 import type { Assistant, ContactTier, Flow } from "./schema.ts";
 import type { RunContext } from "./template.ts";
 
@@ -358,16 +359,23 @@ export class Store {
 
   // Memory -----------------------------------------------------------------------------------------
 
+  /** A suggestion from a flow or an assistant, with any password, card number, code or key masked. */
   suggest(slice: string, note: string, source: string): Note {
-    return this.addNote(slice, note, source, "suggested");
+    return this.addNote(slice, redactSecrets(note), source, "suggested");
   }
 
-  /** A note a person writes themselves: kept straight away. */
+  /** A note a person writes themselves: kept straight away. One holding a secret is refused (SensitiveNote). */
   remember(slice: string, note: string): Note {
+    const secret = findSecret(note);
+    if (secret) throw new SensitiveNote(secret);
     return this.addNote(slice, note, "you", "kept");
   }
 
   keep(id: string): boolean {
+    // Suggestions are masked when made; this catches any from before that.
+    const waiting = this.db.prepare("SELECT note FROM notes WHERE id = ? AND status = 'suggested'").get(id) as Row | undefined;
+    const secret = waiting ? findSecret(String(waiting.note)) : null;
+    if (secret) throw new SensitiveNote(secret, "kept");
     const kept = Number(this.db.prepare("UPDATE notes SET status = 'kept' WHERE id = ? AND status = 'suggested'").run(id).changes) === 1;
     if (kept) this.changed({ kind: "memory" });
     return kept;
