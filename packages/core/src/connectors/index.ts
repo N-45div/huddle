@@ -6,6 +6,7 @@ import { http } from "./http.ts";
 import { mock } from "./mock.ts";
 import { ollama } from "./ollama.ts";
 import { openshell } from "./openshell.ts";
+import { pact } from "./pact.ts";
 import { openai } from "./openai.ts";
 import { sochen } from "./sochen.ts";
 
@@ -22,6 +23,7 @@ export function defaultConnectors(): Readonly<Record<string, Connector>> {
     openai: openai(),
     ollama: ollama(),
     openshell: openshell(),
+    pact: pact(() => null),
     homeassistant: homeassistant(),
     agentzero: agentzero(),
   };

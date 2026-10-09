@@ -13,7 +13,7 @@ export const Assistant = z.object({
   id,
   name: z.string().optional(),
   /** How to reach it: openclaw and hermes are A2A with their usual local address filled in. */
-  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "openshell", "homeassistant", "agentzero"]),
+  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "openshell", "pact", "homeassistant", "agentzero"]),
   /** The slices of shared memory this assistant may read. */
   memory: z.array(z.string().min(1)).default([]),
   /** http: where to POST. a2a: the agent's base address or its card. openai: the API base. sochen: if not https://sochen.dev. */
@@ -24,6 +24,8 @@ export const Assistant = z.object({
   agentId: z.string().min(1).optional(),
   /** openai, ollama: the model to ask for (e.g. "openclaw/main" for an OpenClaw agent). */
   model: z.string().min(1).optional(),
+  /** pact: the audience the business's Provider gave Huddle when it registered (goes in each token's aud). */
+  audience: z.string().min(1).optional(),
   /** openshell: the command that runs the agent in its sandbox; the request goes in on stdin, or where "{{ask}}" is. */
   command: z.array(z.string().min(1)).min(1).max(64).optional(),
   /** mock: fixed answers; the first key found in the request (ignoring case) wins, then "*". */
@@ -107,6 +109,9 @@ export const Flow = z
     for (const assistant of flow.assistants) {
       if (assistant.connector === "openshell" && (!assistant.agentId || !assistant.command)) {
         ctx.addIssue({ code: "custom", message: `assistant "${assistant.id}" runs in OpenShell: give its sandbox's name (agentId) and the command that runs its agent (command)` });
+      }
+      if (assistant.connector === "pact" && (!assistant.url || !assistant.audience)) {
+        ctx.addIssue({ code: "custom", message: `assistant "${assistant.id}" is a business's agent over PACT: give its Agent Card URL (url) and the Provider's audience (audience)` });
       }
     }
     const check = (from: string, to: string | undefined) => {

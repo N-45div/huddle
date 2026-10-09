@@ -9,6 +9,8 @@ export { mock } from "./connectors/mock.ts";
 export { OLLAMA_URL, ollama, ollamaModels } from "./connectors/ollama.ts";
 export { openai } from "./connectors/openai.ts";
 export { openshell } from "./connectors/openshell.ts";
+export { pact } from "./connectors/pact.ts";
+export { newKey, PactIdentity, type PrivateJwk, type PublicJwk, thumbprint } from "./pact/identity.ts";
 export { DEFAULT_CERT_DIR, type ExecResult, OpenShell, type OpenShellOptions, type SandboxRequest } from "./openshell/client.ts";
 export { sochen } from "./connectors/sochen.ts";
 export { Engine, MAX_STEPS, type RunView } from "./engine.ts";

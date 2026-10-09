@@ -129,7 +129,7 @@ export class Engine {
         const ask = render(step.ask, context);
         const memory = this.store.keptNotes(assistant.memory);
         this.store.log(run.id, step.id, "asked", { assistant: assistant.id, ask, memory: memory.map((note) => note.id) });
-        const answer = await connector.send({ assistant, ask, memory });
+        const answer = await connector.send({ assistant, ask, memory, runId: run.id });
         this.store.log(run.id, step.id, "answered", answer);
         return { wait: false, context: keep(answer.text, answer.data), next: step.next ?? following(run.flow, step) };
       }

@@ -12,6 +12,8 @@ export interface ConnectorRequest {
   /** Kept notes from the slices this assistant may read; nothing else. */
   readonly memory: readonly Note[];
   readonly signal?: AbortSignal;
+  /** The run this request belongs to, so a connector can keep one conversation going across its steps. */
+  readonly runId?: string;
 }
 
 export interface Connector {
