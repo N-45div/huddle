@@ -36,6 +36,7 @@ export function clockTime(iso: string | null | undefined): string {
 export function triggerSummary(trigger: Trigger | undefined): string {
   if (!trigger || trigger.type === "manual") return "Manual";
   if (trigger.type === "schedule") return `Every ${trigger.every}`;
+  if (trigger.type === "email") return `Email to ${trigger.address}`;
   return "Webhook";
 }
 

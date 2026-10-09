@@ -44,3 +44,10 @@ export const ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 export const ENV_PATTERN = /^[A-Z][A-Z0-9_]*$/;
 /** A schedule's "every": a number and m, h or d. */
 export const EVERY_PATTERN = /^[1-9]\d*(m|h|d)$/;
+/** A plain email address, as the flow format checks it. */
+export const EMAIL_PATTERN = /^[^\s@<>,;"]+@[^\s@<>,;".]+(?:\.[^\s@<>,;".]+)+$/;
+
+/** Whether this is an address, or "Name <address>". */
+export function isSender(value: string): boolean {
+  return EMAIL_PATTERN.test(value) || EMAIL_PATTERN.test(/^[^<>]*<([^<>]+)>$/.exec(value)?.[1] ?? "");
+}

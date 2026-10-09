@@ -5,7 +5,7 @@ import { ConfirmDialog } from "../components/Dialog.tsx";
 import { ErrorNote, Hint, Icon, Loading } from "../components/bits.tsx";
 import { plural } from "../format.ts";
 import type { Resource } from "../hooks.ts";
-import { type Assistant, type ConnectorField, type ConnectorId, type ConnectorInfo, ENV_PATTERN, ID_PATTERN } from "../types.ts";
+import { type Assistant, type ConnectorField, type ConnectorId, type ConnectorInfo, EMAIL_PATTERN, ENV_PATTERN, ID_PATTERN, isSender } from "../types.ts";
 
 interface Props {
   readonly assistants: readonly Assistant[];
@@ -172,10 +172,16 @@ interface Draft {
   command: string;
   /** PACT scope ids, split on spaces or commas on save. */
   scopes: string;
+  /** Email addresses, split on commas or spaces on save. */
+  to: string;
+  from: string;
   replies: { key: string; answer: string }[];
 }
 
-type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies" | "scopes", string>>;
+type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies" | "scopes" | "to" | "from", string>>;
+
+/** The addresses in a "to" field: split on commas, semicolons or spaces. */
+const addresses = (text: string) => text.split(/[\s,;]+/).filter(Boolean);
 
 /** A command line's parts: split on spaces, with "double" or 'single' quotes keeping spaces in; null if a quote isn't closed. */
 function splitCommand(line: string): string[] | null {
@@ -222,6 +228,8 @@ function draftOf(assistant: Assistant | undefined): Draft {
     audience: assistant?.audience ?? "",
     command: joinCommand(assistant?.command),
     scopes: (assistant?.scopes ?? []).join(" "),
+    to: (assistant?.to ?? []).join(", "),
+    from: assistant?.from ?? "",
     replies: Object.entries(assistant?.replies ?? {}).map(([key, answer]) => ({ key, answer })),
   };
 }
@@ -286,6 +294,13 @@ function AssistantForm({
     if (fields.some((field) => field.key === "command") && draft.command.trim() && splitCommand(draft.command) === null) found.command = "A quote isn't closed.";
     const keyEnv = draft.keyEnv.trim();
     if (fields.some((field) => field.key === "keyEnv") && keyEnv && !ENV_PATTERN.test(keyEnv)) found.keyEnv = "Use the variable's name in capitals, like SOCHEN_API_KEY. Never paste the key itself here.";
+    if (fields.some((field) => field.key === "to")) {
+      const wrong = addresses(draft.to).find((address) => !EMAIL_PATTERN.test(address));
+      if (wrong) found.to = `"${wrong}" isn't an email address.`;
+      else if (addresses(draft.to).length > 50) found.to = "Up to 50 addresses.";
+    }
+    const from = draft.from.trim();
+    if (fields.some((field) => field.key === "from") && from && !isSender(from)) found.from = 'Give an address, like huddle@yourdomain.com, or "Huddle <huddle@yourdomain.com>".';
     return found;
   };
 
@@ -301,7 +316,7 @@ function AssistantForm({
     if (name) assistant.name = name;
     const description = draft.description.trim();
     if (description) assistant.description = description.slice(0, 500);
-    for (const key of ["url", "keyEnv", "model", "agentId", "audience"] as const) {
+    for (const key of ["url", "keyEnv", "model", "agentId", "audience", "from"] as const) {
       const value = shown.has(key) ? draft[key].trim() : (kept?.[key] ?? "");
       if (value) assistant[key] = value;
     }
@@ -309,6 +324,8 @@ function AssistantForm({
     if (command?.length) assistant.command = command;
     const scopes = shown.has("scopes") ? draft.scopes.split(/[\s,]+/).filter(Boolean) : kept?.scopes;
     if (scopes?.length) assistant.scopes = scopes;
+    const to = shown.has("to") ? addresses(draft.to) : kept?.to;
+    if (to?.length) assistant.to = to;
     if (shown.has("replies")) {
       const replies = Object.fromEntries(draft.replies.filter((reply) => reply.key.trim()).map((reply) => [reply.key.trim(), reply.answer]));
       if (Object.keys(replies).length) assistant.replies = replies;
@@ -486,6 +503,8 @@ function ConnectorFieldInput({
         </p>
       ) : key === "keyEnv" ? (
         <Hint id={hintId}>The NAME of an environment variable on the server that holds the key, never the key itself. Set the variable where Huddle runs.</Hint>
+      ) : key === "to" ? (
+        <Hint id={hintId}>Separate addresses with commas. Every email from this assistant goes to all of them, and nobody else.</Hint>
       ) : (
         <span id={hintId} hidden />
       )}

@@ -4,7 +4,7 @@ import { ConfirmDialog } from "../components/Dialog.tsx";
 import { Hint, Icon } from "../components/bits.tsx";
 import { href } from "../router.ts";
 import { TIER_LABELS, TIER_ORDER } from "../screens/ContactsScreen.tsx";
-import { type Callers, EVERY_PATTERN, type FlowView, type Trigger } from "../types.ts";
+import { type Callers, EMAIL_PATTERN, EVERY_PATTERN, type FlowView, type Info, type Trigger } from "../types.ts";
 
 interface Props {
   readonly flowId: string;
@@ -12,6 +12,8 @@ interface Props {
   readonly savedTrigger: Trigger | undefined;
   readonly webhookUrl: string;
   readonly a2aUrl: string;
+  /** Where Resend's inbound webhook posts, and whether this Huddle can take mail (from /api/info). */
+  readonly email: Info["email"] | undefined;
   readonly stepIds: readonly string[];
   readonly firstStep: string | undefined;
   readonly onChange: (trigger: Trigger) => void;
@@ -30,14 +32,17 @@ function absolute(address: string): string {
   }
 }
 
-export function TriggerPanel({ flowId, trigger, savedTrigger, webhookUrl, a2aUrl, stepIds, firstStep, onChange, callers, onCallers, onFirstStep, onRotated }: Props) {
+export function TriggerPanel({ flowId, trigger, savedTrigger, webhookUrl, a2aUrl, email, stepIds, firstStep, onChange, callers, onCallers, onFirstStep, onRotated }: Props) {
   const [lastEvery, setLastEvery] = useState(trigger.type === "schedule" ? trigger.every : "1d");
+  const [lastAddress, setLastAddress] = useState(trigger.type === "email" ? trigger.address : "");
   const changed = JSON.stringify(trigger) !== JSON.stringify(savedTrigger ?? { type: "manual" });
 
   const pick = (type: Trigger["type"]) => {
     if (type === trigger.type) return;
     if (trigger.type === "schedule") setLastEvery(trigger.every);
+    if (trigger.type === "email") setLastAddress(trigger.address);
     if (type === "schedule") onChange({ type, every: lastEvery, input: "" });
+    else if (type === "email") onChange({ type, address: lastAddress });
     else onChange({ type });
   };
 
@@ -49,6 +54,7 @@ export function TriggerPanel({ flowId, trigger, savedTrigger, webhookUrl, a2aUrl
           <Radio name="trigger" value="manual" checked={trigger.type === "manual"} onPick={pick} label="When I press Run" />
           <Radio name="trigger" value="schedule" checked={trigger.type === "schedule"} onPick={pick} label="On a schedule" />
           <Radio name="trigger" value="webhook" checked={trigger.type === "webhook"} onPick={pick} label="When something posts to its address" />
+          <Radio name="trigger" value="email" checked={trigger.type === "email"} onPick={pick} label="When an email arrives" />
         </div>
       </fieldset>
 
@@ -85,6 +91,42 @@ export function TriggerPanel({ flowId, trigger, savedTrigger, webhookUrl, a2aUrl
       )}
 
       {trigger.type === "webhook" && <WebhookAddress flowId={flowId} webhookUrl={webhookUrl} onRotated={onRotated} />}
+
+      {trigger.type === "email" && (
+        <>
+          <div className="field">
+            <label htmlFor="trigger-address">Mail to</label>
+            <input
+              id="trigger-address"
+              className="mono"
+              type="email"
+              value={trigger.address}
+              placeholder="inbox@yourdomain.com"
+              autoComplete="off"
+              spellCheck={false}
+              aria-invalid={EMAIL_PATTERN.test(trigger.address) ? undefined : true}
+              aria-describedby="trigger-address-hint"
+              onChange={(event) => onChange({ ...trigger, address: event.target.value.trim() })}
+            />
+            {EMAIL_PATTERN.test(trigger.address) || !trigger.address ? (
+              <Hint id="trigger-address-hint">
+                An address Resend receives mail for: one at your own domain, or at the <code>{"<id>.resend.app"}</code> domain Resend gives you. The email (from,
+                to, subject and message) becomes the input.
+              </Hint>
+            ) : (
+              <p className="error-text" id="trigger-address-hint">
+                That isn't an email address.
+              </p>
+            )}
+          </div>
+          <CopyAddress id="email-hook" label="Resend's inbound webhook" address={absolute(email?.hook ?? "/hooks/email")}>
+            In Resend, add a webhook for <code>email.received</code> pointing here, then set its signing secret as <code>RESEND_WEBHOOK_SECRET</code> and a
+            full-access key as <code>RESEND_API_KEY</code> where Huddle runs. Mail from you counts as you once your addresses are in{" "}
+            <code>HUDDLE_OWNER_EMAILS</code>; other senders follow "Who can start it from outside" below.
+          </CopyAddress>
+          {email && !email.receiving && <p className="note note-warn">This Huddle can't take mail yet: set RESEND_WEBHOOK_SECRET and RESEND_API_KEY, then restart it.</p>}
+        </>
+      )}
 
       {changed && <p className="note note-soft">Save the flow to put this into effect.</p>}
 
