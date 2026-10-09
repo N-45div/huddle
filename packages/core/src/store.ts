@@ -1,7 +1,7 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { DatabaseSync } from "node:sqlite";
-import type { Assistant, Flow } from "./schema.ts";
+import type { Assistant, ContactTier, Flow } from "./schema.ts";
 import type { RunContext } from "./template.ts";
 
 /**
@@ -64,7 +64,20 @@ export type Change =
   /** What an OpenShell sandbox is asking for changed (the server watches the gateway). */
   | { readonly kind: "sandbox" }
   /** The list of your assistants changed. */
-  | { readonly kind: "assistants" };
+  | { readonly kind: "assistants" }
+  | { readonly kind: "contacts" };
+
+/** Someone you know, who reaches Huddle with their own token (or, later, from their email address). */
+export interface Contact {
+  readonly id: string;
+  readonly name: string;
+  readonly tier: ContactTier;
+  /** Addresses that count as them. */
+  readonly emails: readonly string[];
+  readonly createdAt: string;
+  /** When their token last reached Huddle. */
+  readonly lastSeenAt: string | null;
+}
 
 export interface LogLine {
   readonly runId: string;
@@ -95,6 +108,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS log (seq INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, step_id TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL, at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS assistants (id TEXT PRIMARY KEY, position INTEGER NOT NULL, assistant TEXT NOT NULL, updated_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS contacts (id TEXT PRIMARY KEY, name TEXT NOT NULL, tier TEXT NOT NULL, emails TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, last_seen_at TEXT);
       CREATE INDEX IF NOT EXISTS approvals_run ON approvals (run_id);
       CREATE INDEX IF NOT EXISTS notes_slice ON notes (slice, status);
       CREATE INDEX IF NOT EXISTS log_run ON log (run_id, seq);
@@ -178,6 +192,68 @@ export class Store {
       throw error;
     }
     this.changed({ kind: "assistants" });
+  }
+
+  // Contacts: people (and their agents) who may reach Huddle, each with a tier and their own token -----
+
+  contacts(): Contact[] {
+    return (this.db.prepare("SELECT * FROM contacts ORDER BY created_at").all() as Row[]).map(toContact);
+  }
+
+  contact(id: string): Contact | null {
+    const row = this.db.prepare("SELECT * FROM contacts WHERE id = ?").get(id) as Row | undefined;
+    return row ? toContact(row) : null;
+  }
+
+  /** Adds someone; their token is returned this once and only its hash is kept. */
+  addContact(input: { readonly name: string; readonly tier: ContactTier; readonly emails?: readonly string[] }): { readonly contact: Contact; readonly token: string } {
+    const id = newId("contact");
+    const token = contactToken();
+    this.db
+      .prepare("INSERT INTO contacts (id, name, tier, emails, token_hash, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, NULL)")
+      .run(id, input.name, input.tier, JSON.stringify(cleanEmails(input.emails)), hashToken(token), now());
+    this.changed({ kind: "contacts" });
+    return { contact: this.contact(id)!, token };
+  }
+
+  updateContact(id: string, change: { readonly name?: string; readonly tier?: ContactTier; readonly emails?: readonly string[] }): Contact | null {
+    const existing = this.contact(id);
+    if (!existing) return null;
+    this.db
+      .prepare("UPDATE contacts SET name = ?, tier = ?, emails = ? WHERE id = ?")
+      .run(change.name ?? existing.name, change.tier ?? existing.tier, JSON.stringify(change.emails ? cleanEmails(change.emails) : existing.emails), id);
+    this.changed({ kind: "contacts" });
+    return this.contact(id);
+  }
+
+  /** A new token for them; the old one stops working at once. */
+  newContactToken(id: string): string | null {
+    if (!this.contact(id)) return null;
+    const token = contactToken();
+    this.db.prepare("UPDATE contacts SET token_hash = ? WHERE id = ?").run(hashToken(token), id);
+    this.changed({ kind: "contacts" });
+    return token;
+  }
+
+  removeContact(id: string): boolean {
+    const removed = Number(this.db.prepare("DELETE FROM contacts WHERE id = ?").run(id).changes) > 0;
+    if (removed) this.changed({ kind: "contacts" });
+    return removed;
+  }
+
+  /** The contact a token belongs to (noting that they were seen), or null. */
+  contactByToken(token: string): Contact | null {
+    if (!token.startsWith(TOKEN_PREFIX)) return null;
+    const row = this.db.prepare("SELECT * FROM contacts WHERE token_hash = ?").get(hashToken(token)) as Row | undefined;
+    if (!row) return null;
+    this.db.prepare("UPDATE contacts SET last_seen_at = ? WHERE id = ?").run(now(), row.id as string);
+    return toContact({ ...row, last_seen_at: now() });
+  }
+
+  /** The contact an email address belongs to, or null. */
+  contactByEmail(email: string): Contact | null {
+    const wanted = email.trim().toLowerCase();
+    return this.contacts().find((contact) => contact.emails.includes(wanted)) ?? null;
   }
 
   // Settings: small things Huddle keeps about itself, like its PACT signing key ----------------------
@@ -376,5 +452,32 @@ function toNote(row: Row): Note {
     status: String(row.status) as Note["status"],
     source: String(row.source),
     createdAt: String(row.created_at),
+  };
+}
+
+/** Contact tokens start with this, so one can't be mistaken for Huddle's own token. */
+const TOKEN_PREFIX = "hdl_c_";
+
+function contactToken(): string {
+  return `${TOKEN_PREFIX}${randomBytes(24).toString("base64url")}`;
+}
+
+/** A contact token is long and random, so a plain SHA-256 is enough to keep it from being read back. */
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function cleanEmails(emails: readonly string[] | undefined): string[] {
+  return [...new Set((emails ?? []).map((email) => email.trim().toLowerCase()).filter((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)))];
+}
+
+function toContact(row: Row): Contact {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    tier: String(row.tier) as ContactTier,
+    emails: JSON.parse(String(row.emails)) as string[],
+    createdAt: String(row.created_at),
+    lastSeenAt: row.last_seen_at == null ? null : String(row.last_seen_at),
   };
 }

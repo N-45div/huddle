@@ -106,6 +106,57 @@ export const Trigger = z.discriminatedUnion("type", [
 ]);
 export type Trigger = z.infer<typeof Trigger>;
 
+/**
+ * How close someone is, after open-instinct's trust tiers: you ("owner"), then the people you name in
+ * Contacts. Anyone else who reaches Huddle is a stranger.
+ */
+export const TIERS = ["owner", "partner", "family", "friend", "contact"] as const;
+export type Tier = (typeof TIERS)[number];
+/** The tiers a contact can have (owner is you). */
+export const CONTACT_TIERS = ["partner", "family", "friend", "contact"] as const;
+export type ContactTier = (typeof CONTACT_TIERS)[number];
+
+/** Who reached Huddle: you, one of your contacts, or a stranger. */
+export interface Caller {
+  readonly tier: Tier | "stranger";
+  readonly name: string;
+  readonly contactId: string | null;
+}
+
+/** Who may start a flow from outside Huddle (another agent over A2A, an email). */
+export const Callers = z.object({
+  /** This tier and closer start the flow at once. */
+  starts: z.enum(TIERS).default("owner"),
+  /** Contacts further away: their run waits for your OK ("ask"), or they're turned away ("refuse"). */
+  others: z.enum(["ask", "refuse"]).default("ask"),
+  /** People who aren't in your contacts: turned away unless you let them ask. */
+  strangers: z.enum(["ask", "refuse"]).default("refuse"),
+});
+export type Callers = z.infer<typeof Callers>;
+
+/** Whether a caller may start the flow now, has to wait for your OK first, or is turned away. */
+export function callerDecision(callers: Callers | undefined, tier: Tier | "stranger"): "start" | "ask" | "refuse" {
+  const rules = Callers.parse(callers ?? {});
+  if (tier === "stranger") return rules.strangers;
+  return TIERS.indexOf(tier) <= TIERS.indexOf(rules.starts) ? "start" : rules.others;
+}
+
+/**
+ * The flow with an approval in front: "<who> wants to run <flow> with: <input>". The run waits there
+ * until you answer; a no ends it as declined. The input goes in as {{input}}, which is filled in once
+ * and never read as a template itself.
+ */
+export function askFirst(flow: Flow, who: string): Flow {
+  let id = "caller-check";
+  while (flow.steps.some((step) => step.id === id)) id = `${id}-1`;
+  const name = who.replace(/[{}]/g, "").trim() || "Someone";
+  const first = flow.steps[0]?.id;
+  return {
+    ...flow,
+    steps: [{ id, type: "approval", message: `${name} wants to run "${flow.name.replace(/[{}]/g, "")}" with: {{input}}`, ...(first ? { next: first } : {}) }, ...flow.steps],
+  };
+}
+
 /** The milliseconds a schedule's "every" stands for. */
 export function everyMs(value: string): number {
   const amount = Number.parseInt(value, 10);
@@ -118,6 +169,8 @@ export const Flow = z
     name: z.string().min(1),
     description: z.string().optional(),
     trigger: Trigger.default({ type: "manual" }),
+    /** Who may start it from outside Huddle; without it, only you. */
+    callers: Callers.optional(),
     assistants: z.array(Assistant).default([]),
     steps: z.array(Step).min(1),
     /** Where each step sits on the canvas; ignored by the engine. */

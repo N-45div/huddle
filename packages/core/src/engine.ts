@@ -25,6 +25,14 @@ export interface RunView {
   readonly updatedAt: string;
 }
 
+/** Who started a run from outside, and how: the first line of its log. */
+export interface StartedBy {
+  readonly name: string;
+  readonly tier: string;
+  /** "a2a", "email", ... */
+  readonly via: string;
+}
+
 export class Engine {
   readonly store: Store;
   readonly connectors: Readonly<Record<string, Connector>>;
@@ -34,14 +42,16 @@ export class Engine {
     this.connectors = connectors;
   }
 
-  async start(flow: Flow, input: string, flowId: string | null = null): Promise<RunView> {
+  async start(flow: Flow, input: string, flowId: string | null = null, startedBy?: StartedBy): Promise<RunView> {
     const run = this.store.createRun(flow, input, flowId);
+    if (startedBy) this.store.log(run.id, "trigger", "started", startedBy);
     return this.advance(run, flow.steps[0]?.id ?? "end");
   }
 
   /** Starts a run and returns its id at once; the run carries on in the background (for the server). */
-  launch(flow: Flow, input: string, flowId: string | null = null): string {
+  launch(flow: Flow, input: string, flowId: string | null = null, startedBy?: StartedBy): string {
     const run = this.store.createRun(flow, input, flowId);
+    if (startedBy) this.store.log(run.id, "trigger", "started", startedBy);
     void this.advance(run, flow.steps[0]?.id ?? "end").catch((error: unknown) => console.error(`[huddle] run ${run.id} stopped:`, error));
     return run.id;
   }
