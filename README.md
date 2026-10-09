@@ -76,6 +76,7 @@ teammate: you put them on a canvas, say who does what, and decide where you want
 | **`openai`** | anything with an OpenAI-style chat API: Open WebUI, AnythingLLM, LibreChat's Agents API, Letta, and the API servers of OpenClaw and Hermes | ready |
 | **`ollama`** | a model in [Ollama](https://ollama.com), on your machine or on ollama.com | ready |
 | **`openshell`** | any agent with a one-shot command (Hermes, OpenCode, Claude Code, Codex…) inside an [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandbox | ready |
+| **`pact`** | a business's support agent over [PACT](https://github.com/openpactprotocol/openpactprotocol), with Huddle as your personal agent | identity ready; sign-in next |
 | **`sochen`** | [Sochen](https://sochen.dev)'s agent and its pets, through the Agent API | ready |
 | **`homeassistant`** | [Home Assistant](https://github.com/home-assistant/core)'s Assist, through its conversation API | ready |
 | **`agentzero`** | [Agent Zero](https://github.com/agent0ai/agent-zero), through its external API | ready |
@@ -287,6 +288,34 @@ A sandbox image needs a few things OpenShell checks: a non-root user, a working 
 can write, and a single-platform image (on Docker Desktop, a one-line `FROM` build gives you one). The
 policy has to let the sandbox read the agent's install: sandboxes start with only system paths.
 
+## Talk to businesses as your personal agent (PACT)
+
+[PACT](https://github.com/openpactprotocol/openpactprotocol), the Personal Agent Consent & Trust
+Protocol, is how a personal agent talks to a company's support agent with the person's permission. It's
+built on A2A 1.0 and OAuth. Huddle speaks it as your personal agent:
+
+- **Huddle has its own identity.** On first start it makes an ES256 key and keeps it in its database;
+  the public half is at `{your Huddle}/.well-known/jwks.json`. Every message to a business carries a
+  short-lived token Huddle signs, so the business knows which agent is asking and for whom (an opaque
+  id, never your name or email).
+- **A business's agent is a flow's assistant.** Give it the business's Agent Card URL and its
+  Provider's audience. Steps in one run carry on the same conversation, so when the agent asks "what's
+  the order number?" the next step can answer.
+- **Register once per Provider.** For Providers with self-service registration like PACT's reference
+  one: `POST /api/pact/register { "provider": "https://provider.example", "name": "my-huddle" }`.
+  Others take your issuer and `jwks.json` address by hand.
+
+```json
+{ "id": "loom", "connector": "pact",
+  "url": "https://provider.example/a2a/<brand>/.well-known/agent-card.json",
+  "audience": "https://provider.example/a2a" }
+```
+
+Businesses must reach your Huddle's `jwks.json` over the internet, so set `HUDDLE_PUBLIC_URL` (or
+`HUDDLE_PACT_ISSUER`) to a public HTTPS address, e.g. through a tunnel. When a business needs you to
+sign in with it (PACT's delegated authority), the step comes back with state `auth_required` and the
+sign-in link for now; signing in from Approvals is next. Tested against PACT's reference Provider.
+
 ## Run it
 
 Requires Node.js 24 or later.
@@ -342,8 +371,10 @@ npm run huddle -- runs                   # recent runs
 3. The canvas: drag assistants in, draw the hand-offs, watch runs live (done)
 4. Schedules, webhooks, Huddle as an A2A agent, and "describe it" (done)
 5. Ollama, and sandboxed assistants with NVIDIA OpenShell, their requests in your approvals (done)
-6. Approvals on your phone, and email and Telegram triggers
-7. The hosted version, for people who'd rather not run anything
+6. PACT: Huddle as your personal agent with businesses (identity done; signing in from Approvals next),
+   and Sierra and Meta's Personal Agent Protocol when its v0.1 spec is out
+7. Approvals on your phone, and email and Telegram triggers
+8. The hosted version, for people who'd rather not run anything
 
 ## License
 
