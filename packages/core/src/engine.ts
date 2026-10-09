@@ -14,6 +14,7 @@ export const MAX_STEPS = 100;
 
 export interface RunView {
   readonly id: string;
+  readonly flowId: string | null;
   readonly state: Run["state"];
   readonly at: string | null;
   readonly error: string | null;
@@ -31,9 +32,25 @@ export class Engine {
     this.connectors = connectors;
   }
 
-  async start(flow: Flow, input: string): Promise<RunView> {
-    const run = this.store.createRun(flow, input);
+  async start(flow: Flow, input: string, flowId: string | null = null): Promise<RunView> {
+    const run = this.store.createRun(flow, input, flowId);
     return this.advance(run, flow.steps[0]?.id ?? "end");
+  }
+
+  /** Starts a run and returns its id at once; the run carries on in the background (for the server). */
+  launch(flow: Flow, input: string, flowId: string | null = null): string {
+    const run = this.store.createRun(flow, input, flowId);
+    void this.advance(run, flow.steps[0]?.id ?? "end").catch((error: unknown) => console.error(`[huddle] run ${run.id} stopped:`, error));
+    return run.id;
+  }
+
+  /** Answers an approval and returns at once; the run carries on in the background. Throws straight away if it can't be answered. */
+  answer(approvalId: string, yes: boolean): string {
+    const approval = this.store.approval(approvalId);
+    if (!approval) throw new Error(`There's no approval ${approvalId}.`);
+    if (approval.status !== "waiting") throw new Error(`Approval ${approvalId} was already answered (${approval.status}).`);
+    void this.decide(approvalId, yes).catch((error: unknown) => console.error(`[huddle] approval ${approvalId}:`, error));
+    return approval.runId;
   }
 
   /** Answers an approval and carries its run on: yes goes to `next`, no to `onNo` or ends the run as declined. */
@@ -57,7 +74,7 @@ export class Engine {
     const run = this.store.run(runId);
     if (!run) throw new Error(`There's no run ${runId}.`);
     const waiting = run.state === "waiting" ? this.store.waitingApproval(run.id) : null;
-    return { id: run.id, state: run.state, at: run.at, error: run.error, waiting: waiting ? { id: waiting.id, message: waiting.message } : null, context: run.context };
+    return { id: run.id, flowId: run.flowId, state: run.state, at: run.at, error: run.error, waiting: waiting ? { id: waiting.id, message: waiting.message } : null, context: run.context };
   }
 
   private async advance(run: Run, from: string): Promise<RunView> {

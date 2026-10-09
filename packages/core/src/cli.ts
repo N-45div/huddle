@@ -1,12 +1,5 @@
 import { readFileSync } from "node:fs";
-import type { Connector } from "./connector.ts";
-import { a2a } from "./connectors/a2a.ts";
-import { agentzero } from "./connectors/agentzero.ts";
-import { homeassistant } from "./connectors/homeassistant.ts";
-import { http } from "./connectors/http.ts";
-import { mock } from "./connectors/mock.ts";
-import { openai } from "./connectors/openai.ts";
-import { sochen } from "./connectors/sochen.ts";
+import { defaultConnectors } from "./connectors/index.ts";
 import { Engine, type RunView } from "./engine.ts";
 import { parseFlow } from "./schema.ts";
 import { Store } from "./store.ts";
@@ -23,11 +16,9 @@ import { Store } from "./store.ts";
  *   huddle memory add <slice> <note…> | keep <note-id> | forget <note-id>
  */
 
-const agentToAgent = a2a();
-const CONNECTORS: Readonly<Record<string, Connector>> = { mock, http: http(), sochen: sochen(), a2a: agentToAgent, openclaw: agentToAgent, hermes: agentToAgent, openai: openai(), homeassistant: homeassistant(), agentzero: agentzero() };
 
 const store = new Store(process.env.HUDDLE_DB ?? "huddle.db");
-const engine = new Engine(store, CONNECTORS);
+const engine = new Engine(store, defaultConnectors());
 const [command, ...args] = process.argv.slice(2);
 
 function option(name: string): string | undefined {
