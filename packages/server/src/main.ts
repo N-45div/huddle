@@ -10,15 +10,15 @@ import { Scheduler } from "./scheduler.ts";
 import { webApp } from "./static.ts";
 
 /**
- * Starts Huddle: the canvas, the API, webhooks, schedules and the A2A endpoint, from one process and
- * one SQLite file. Everything is set with environment variables:
+ * Starts Huddle: the canvas, the API, webhooks, schedules, and the A2A and MCP endpoints, from one
+ * process and one SQLite file. Everything is set with environment variables:
  *
  *   HUDDLE_DB          where to keep everything (default huddle.db)
  *   HUDDLE_HOST        the address to listen on (default 127.0.0.1, this machine only)
  *   HUDDLE_PORT        default 7700
  *   HUDDLE_TOKEN       the token for the canvas and API; required unless listening on this machine only
  *   HUDDLE_PUBLIC_URL  how others reach this Huddle, for webhook and A2A addresses
- *   HUDDLE_A2A_TOKEN   a separate token for assistants calling Huddle over A2A (default HUDDLE_TOKEN)
+ *   HUDDLE_A2A_TOKEN   a separate token for assistants calling Huddle over A2A or MCP (default HUDDLE_TOKEN)
  *   HUDDLE_LLM_URL, HUDDLE_LLM_MODEL, HUDDLE_LLM_KEY   an OpenAI-compatible model for "describe it"
  *   HUDDLE_MEMORY_BUDGET  characters of kept notes each request may carry (default 4000)
  *   HUDDLE_EMBED_URL, HUDDLE_EMBED_MODEL, HUDDLE_EMBED_KEY   an OpenAI-compatible embeddings API, so
@@ -133,6 +133,7 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   sandboxes?.start();
   console.log(`Huddle ${version} is on ${publicUrl}${token ? " (token required)" : ""}`);
   console.log(`  A2A Agent Card: ${publicUrl}/.well-known/agent-card.json`);
+  console.log(`  MCP server (Claude, Cursor, any MCP client): ${publicUrl}/mcp`);
   console.log(`  Router (OpenAI-compatible): ${publicUrl}/v1, model = one of your assistants' ids, or "auto" (${judge ? `judged by ${judge.name}` : "no judge: your list's order"})`);
   if (spendCap) console.log(`  Budget: ${dollars(spendCap.usd)} a ${spendCap.period} for priced assistants; ${dollars(engine.spent())} spent so far`);
   if (!built) console.log(`  The canvas isn't built (no ${join(web, "index.html")}): run npm run build.`);

@@ -3,6 +3,7 @@ import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { a2aRoutes } from "./a2a.ts";
 import { type EmailOptions, emailRoutes } from "./email.ts";
+import { mcpRoutes, toolNames } from "./mcp.ts";
 import { routerRoutes } from "./router.ts";
 import { bearerOf, same } from "./auth.ts";
 import type { ApiError, FlowView, Info, RouterUsage, RouterView, RunDetail, RunSummary, SpendView, WaitingApproval } from "./api-types.ts";
@@ -11,9 +12,10 @@ import { noSandboxes, type SandboxInbox, Stale } from "./sandbox-requests.ts";
 
 /**
  * Huddle's server: the API the canvas uses (/api), webhooks that start flows (/hooks, and
- * /hooks/email for mail through Resend), and an A2A endpoint so other assistants can hand work to a
- * flow (/a2a). One token, when set, guards it all (the A2A endpoint can have its own). Static files
- * for the web app are added by main.ts.
+ * /hooks/email for mail through Resend), an A2A endpoint so other assistants can hand work to a
+ * flow (/a2a), and an MCP server so Claude, Cursor and other MCP clients can too (/mcp). One token,
+ * when set, guards it all (A2A and MCP can have their own). Static files for the web app are added
+ * by main.ts.
  */
 
 export interface AppOptions {
@@ -24,12 +26,14 @@ export interface AppOptions {
   readonly publicUrl: string;
   /** When set, every /api call needs it as a Bearer token. */
   readonly token?: string;
-  /** The token other assistants use on /a2a; defaults to `token`. */
+  /** The token other assistants use on /a2a and /mcp; defaults to `token`. */
   readonly a2aToken?: string;
   /** Drafts a flow from a sentence, when an AI model is set up. */
   readonly describe?: (text: string) => Promise<Flow>;
   /** How long an A2A message waits for its run before answering "still working" (default 100 s). */
   readonly a2aWaitMs?: number;
+  /** How long an MCP tool call waits for its run before answering "still running" (default 50 s). */
+  readonly mcpWaitMs?: number;
   /** For reaching other servers (listing a connector's models); tests pass a stand-in. */
   readonly fetcher?: typeof fetch;
   /** What OpenShell sandboxes are asking for, when an OpenShell gateway is set up. */
@@ -62,11 +66,13 @@ async function body(c: Context): Promise<Record<string, unknown>> {
 export function createApp(options: AppOptions): Hono {
   const { store, engine } = options;
   const app = new Hono();
-  const view = (saved: SavedFlow): FlowView => ({
+  // A flow's MCP tool name depends on the other flows' names, so a list works them out once.
+  const view = (saved: SavedFlow, names = toolNames(store.flows())): FlowView => ({
     id: saved.id,
     flow: saved.flow,
     webhookUrl: `${options.publicUrl}/hooks/${saved.id}/${saved.webhookSecret}`,
     a2aUrl: `${options.publicUrl}/a2a/flows/${saved.id}`,
+    mcpTool: names.get(saved.id) ?? saved.id,
     createdAt: saved.createdAt,
     updatedAt: saved.updatedAt,
   });
@@ -90,6 +96,8 @@ export function createApp(options: AppOptions): Hono {
       describe: Boolean(options.describe),
       openshell: Boolean(options.sandboxes),
       router: options.router ? `${options.publicUrl}/v1` : null,
+      // main.ts reads the A2A token from HUDDLE_A2A_TOKEN; the canvas names the variable to put in a client's config.
+      mcp: { url: `${options.publicUrl}/mcp`, token: options.a2aToken ? "HUDDLE_A2A_TOKEN" : options.token ? "HUDDLE_TOKEN" : null },
       email: { hook: `${options.publicUrl}/hooks/email`, receiving: Boolean(options.email?.webhookSecret && options.email.apiKey) },
       guard: options.engine.guard?.name ?? null,
     }),
@@ -212,7 +220,11 @@ export function createApp(options: AppOptions): Hono {
   });
 
   // Flows -----------------------------------------------------------------------------------------
-  app.get("/api/flows", (c) => c.json(store.flows().map(view)));
+  app.get("/api/flows", (c) => {
+    const flows = store.flows();
+    const names = toolNames(flows);
+    return c.json(flows.map((saved) => view(saved, names)));
+  });
   app.post("/api/flows/check", async (c) => {
     const checked = checkFlow((await body(c)).flow);
     return "problems" in checked ? bad(c, "This flow has problems.", 400, checked.problems) : c.json({ ok: true });
@@ -382,5 +394,6 @@ export function createApp(options: AppOptions): Hono {
   app.route("/", emailRoutes(options));
   if (options.router) app.route("/", routerRoutes({ store, router: options.router, keys: [options.routerKey, options.token].filter((key): key is string => Boolean(key)) }));
   app.route("/", a2aRoutes(options));
+  app.route("/", mcpRoutes(options));
   return app;
 }

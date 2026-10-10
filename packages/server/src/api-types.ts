@@ -21,6 +21,11 @@ export interface Info {
   /** The router's OpenAI-compatible base URL (model = an assistant's id), when it's on. */
   readonly router: string | null;
   /**
+   * Huddle as an MCP server: its address, and the environment variable holding the token a client
+   * sends to act as you (null when this Huddle has no token, on this machine only).
+   */
+  readonly mcp: { readonly url: string; readonly token: "HUDDLE_A2A_TOKEN" | "HUDDLE_TOKEN" | null };
+  /**
    * Email in: where Resend's inbound webhook posts (one address for every flow), and whether Huddle
    * can take it (RESEND_WEBHOOK_SECRET and RESEND_API_KEY are set).
    */
@@ -37,6 +42,8 @@ export interface FlowView {
   readonly webhookUrl: string;
   /** Where another assistant starts it over A2A (with the A2A token), whatever its trigger. */
   readonly a2aUrl: string;
+  /** The tool that starts it over MCP (flow_ and its name), for whoever its callers rule lets in. */
+  readonly mcpTool: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -228,4 +235,7 @@ export interface SandboxRequests {
  *   GET    /v1/models, POST /v1/chat/completions   -> the router, OpenAI-compatible (model = assistant id;
  *                                                     `models: [...]` for fallbacks; stream supported)
  *   GET    /a2a/flows/:id/.well-known/agent-card.json, POST /a2a/flows/:id   -> one flow as its own A2A agent
+ *   POST   /mcp                            -> MCP over Streamable HTTP, no sessions (2026-07-28, and
+ *                                                     2025-11-25 / 2025-06-18 through initialize): a tool per flow,
+ *                                                     get_run, and for the owner ask_assistant and list_assistants
  */

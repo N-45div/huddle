@@ -21,7 +21,7 @@ const TYPES: Readonly<Record<string, string>> = {
 };
 
 /** Paths that belong to the server, never the app. */
-const SERVER = /^\/(api|hooks|a2a|v1|\.well-known)(\/|$)/;
+const SERVER = /^\/(api|hooks|a2a|mcp|v1|\.well-known)(\/|$)/;
 
 export function webApp(root: string): MiddlewareHandler {
   const base = normalize(root);

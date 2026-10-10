@@ -68,6 +68,7 @@ describe("the API", () => {
       describe: false,
       openshell: false,
       router: null,
+      mcp: { url: "http://huddle.test/mcp", token: "HUDDLE_TOKEN" },
       email: { hook: "http://huddle.test/hooks/email", receiving: false },
       guard: null,
     });
