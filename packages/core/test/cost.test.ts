@@ -56,6 +56,13 @@ describe("what a hand-off costs", () => {
     assert.deepEqual(sent.options, { num_predict: 64 });
   });
 
+  it("says when a capped answer ran out of tokens before it got to the answer, as thinking models can", async () => {
+    const thinking = (async () => Response.json({ message: { content: "", thinking: "Okay, the user asked me to" }, done_reason: "length", prompt_eval_count: 20, eval_count: 40 })) as unknown as typeof fetch;
+    await assert.rejects(ollama(thinking).send({ assistant: assistant({ id: "qwen", connector: "ollama", model: "qwen3:0.6b", maxTokens: 40 }), ask: "hi", memory: [] }), /qwen \(qwen3:0\.6b\) ran out of tokens before it answered \(its cap is 40, all of it thinking\)\. Raise its longest answer/);
+    const capped = (async () => Response.json({ choices: [{ message: { content: "" }, finish_reason: "length" }] })) as unknown as typeof fetch;
+    await assert.rejects(openai(capped).send({ assistant: assistant({ id: "o1", connector: "openai", url: "http://x.test", maxTokens: 50 }), ask: "hi", memory: [] }), /o1 ran out of tokens before it answered \(its cap is 50/);
+  });
+
   it('reads a budget as "20/month", "5/day" or a bare number of dollars a month', () => {
     assert.deepEqual(parseBudget("20/month"), { usd: 20, period: "month" });
     assert.deepEqual(parseBudget("$5 / day"), { usd: 5, period: "day" });

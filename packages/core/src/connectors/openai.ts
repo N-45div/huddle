@@ -28,7 +28,7 @@ export function openai(fetcher: typeof fetch = globalThis.fetch): Connector {
         signal: signal ?? AbortSignal.timeout(TIMEOUT_MS),
       });
       const body = (await response.json().catch(() => null)) as {
-        choices?: { message?: { content?: string | { type?: string; text?: string }[] } }[];
+        choices?: { message?: { content?: string | { type?: string; text?: string }[] }; finish_reason?: string }[];
         error?: { message?: string } | string;
         usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; cost?: unknown; prompt_tokens_details?: { cached_tokens?: unknown } };
       } | null;
@@ -38,6 +38,9 @@ export function openai(fetcher: typeof fetch = globalThis.fetch): Connector {
       }
       const content = body?.choices?.[0]?.message?.content;
       const text = typeof content === "string" ? content : (content ?? []).map((part) => part.text ?? "").join("");
+      if (!text && body?.choices?.[0]?.finish_reason === "length") {
+        throw new Error(`${assistant.id} ran out of tokens before it answered (its cap is ${assistant.maxTokens ?? "the API's default"}; reasoning models spend some thinking). Raise its longest answer, or leave it empty.`);
+      }
       if (!text) throw new Error(`${assistant.id} answered without any text.`);
       const data = dataIn(text);
       const usage = usageOf(body?.usage);

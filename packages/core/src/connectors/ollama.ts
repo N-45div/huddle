@@ -38,7 +38,7 @@ export function ollama(fetcher: typeof fetch = globalThis.fetch): Connector {
         if (error instanceof Error && error.name === "TimeoutError") throw new Error(`${assistant.id} (${assistant.model}) didn't answer within ${TIMEOUT_MS / 60_000} minutes.`);
         throw new Error(`${assistant.id}: ${unreachable(root)}`);
       }
-      const body = (await response.json().catch(() => null)) as { message?: { content?: unknown }; error?: unknown; prompt_eval_count?: unknown; eval_count?: unknown } | null;
+      const body = (await response.json().catch(() => null)) as { message?: { content?: unknown; thinking?: unknown }; error?: unknown; done_reason?: unknown; prompt_eval_count?: unknown; eval_count?: unknown } | null;
       if (!response.ok || body?.error) {
         const said = typeof body?.error === "string" ? body.error : `HTTP ${response.status}`;
         const hint =
@@ -48,6 +48,11 @@ export function ollama(fetcher: typeof fetch = globalThis.fetch): Connector {
         throw new Error(`${assistant.id} said: ${key ? said.replaceAll(key, "[key]") : said}.${hint}`);
       }
       const text = typeof body?.message?.content === "string" ? body.message.content.trim() : "";
+      if (!text && body?.done_reason === "length") {
+        // A thinking model can spend the whole cap thinking and never get to the answer.
+        const thought = typeof body.message?.thinking === "string" && body.message.thinking.trim() ? ", all of it thinking" : "";
+        throw new Error(`${assistant.id} (${assistant.model}) ran out of tokens before it answered (its cap is ${assistant.maxTokens ?? "Ollama's default"}${thought}). Raise its longest answer, or leave it empty.`);
+      }
       if (!text) throw new Error(`${assistant.id} (${assistant.model}) answered without any text.`);
       const data = dataIn(text);
       // Ollama counts tokens in and out on its own API.
