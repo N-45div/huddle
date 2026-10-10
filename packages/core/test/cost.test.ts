@@ -152,15 +152,19 @@ describe("the router's costs", () => {
   it("keeps a conversation with the same assistant for ten minutes, without asking the judge again", async () => {
     const { router, judged, tick } = setup({ pricey: 0.5, cheap: 0.4, local: 0.1 });
     const first = await router.answer({ model: "auto", ask: "Plan a trip", conversation: "c1" });
-    const second = await router.answer({ model: "auto", ask: "Plan a trip\n\nNow: make it shorter", conversation: "c1" });
-    assert.equal(second.assistant.id, first.assistant.id);
+    assert.equal(first.assistant.id, "cheap");
+    const again = await router.answer({ model: "auto", ask: "Plan a trip", conversation: "c1", prefer: "quality" });
+    assert.equal(judged(), 2, "the same first message again is a new conversation, judged afresh");
+    assert.equal(again.assistant.id, "pricey");
+    const second = await router.answer({ model: "auto", ask: "Plan a trip\n\nNow: make it shorter", conversation: "c1", followUp: true });
+    assert.equal(second.assistant.id, "pricey", "a later turn goes where the last one went");
     assert.equal(second.route?.judge, "sticky");
-    assert.equal(judged(), 1);
-    await router.answer({ model: "auto", ask: "Something else", conversation: "c2" });
-    assert.equal(judged(), 2, "another conversation is judged");
+    assert.equal(judged(), 2);
+    await router.answer({ model: "auto", ask: "Something else", conversation: "c2", followUp: true });
+    assert.equal(judged(), 3, "another conversation is judged");
     tick(STICKY_MS + 1);
-    await router.answer({ model: "auto", ask: "Back again", conversation: "c1" });
-    assert.equal(judged(), 3, "ten quiet minutes later, judged afresh");
+    await router.answer({ model: "auto", ask: "Back again", conversation: "c1", followUp: true });
+    assert.equal(judged(), 4, "ten quiet minutes later, judged afresh");
   });
 
   it("answers the very same ask again from a kept answer, only for assistants that allow it, until memory changes", async () => {

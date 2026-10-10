@@ -459,6 +459,8 @@ export class Store {
     this.db
       .prepare("INSERT INTO spend (run_id, step_id, flow_id, flow_name, assistant, input_tokens, output_tokens, cached_tokens, cost_usd, estimated, saved_usd, saved_by, at) VALUES (?, 'reply', NULL, ?, ?, 0, 0, 0, 0, 0, ?, 'reuse', ?)")
       .run(runId, `Router: ${assistant}`, assistant, savedUsd, now());
+    // No new run, so say the old one was used again: the Assistants page counts it.
+    this.changed({ kind: "run", runId });
   }
 
   /** Spend since a time, per assistant: everything, or the router's calls only. */

@@ -59,6 +59,8 @@ export interface RouteRequest {
   readonly prefer?: Prefer;
   /** Names the conversation, so its next turns stay with the same assistant. */
   readonly conversation?: string;
+  /** This is a later turn of that conversation (the assistant has answered in it before). */
+  readonly followUp?: boolean;
   /** false: don't answer from a kept answer, ask again. */
   readonly reuse?: boolean;
 }
@@ -161,7 +163,7 @@ export class Router {
     if (pool.length === 0) throw new NoAnswer([{ id: AUTO, error: "There's no assistant to choose from yet: add some first." }]);
 
     // The same conversation goes back to the same assistant: no judge call, and its prompt cache stays warm.
-    const stuck = request.conversation ? this.sticky.get(request.conversation) : undefined;
+    const stuck = request.conversation && request.followUp ? this.sticky.get(request.conversation) : undefined;
     if (stuck && this.now() - stuck.at < STICKY_MS && pool.some((assistant) => assistant.id === stuck.id)) {
       try {
         const routed = await this.ask([stuck.id], request.ask, request.reuse);

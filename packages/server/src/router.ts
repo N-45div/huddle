@@ -75,10 +75,12 @@ export function routerRoutes(options: RouterOptions): Hono {
     if (prefer !== undefined && !PREFER.includes(prefer as Prefer)) return fail(c, 400, `huddle.prefer is one of ${PREFER.join(", ")}.`, "invalid_prefer");
     const reuse = body.huddle?.reuse !== false && !/no-cache|no-store/i.test(c.req.header("cache-control") ?? "");
     const conversation = conversationOf(body.messages as ChatMessage[], bearerOf(c.req.header("authorization")));
+    // A later turn: an assistant has answered in this conversation before, so it stays with that one.
+    const followUp = (body.messages as ChatMessage[]).some((message) => message.role === "assistant");
 
     let routed;
     try {
-      routed = await router.answer({ model, models, ask, reuse, conversation, ...(prefer ? { prefer: prefer as Prefer } : {}) });
+      routed = await router.answer({ model, models, ask, reuse, conversation, followUp, ...(prefer ? { prefer: prefer as Prefer } : {}) });
     } catch (error) {
       if (error instanceof NoAnswer) {
         const unknown = error.tried.every((attempt) => attempt.error.startsWith("There's no assistant"));
