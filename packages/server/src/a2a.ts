@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { askFirst, type Caller, callerDecision, type Change, type Run, type RunState, type SavedFlow, type Store } from "@huddle/core";
+import { type Caller, callerDecision, type Run, type RunState, type SavedFlow } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import type { AppOptions } from "./app.ts";
-import { bearerOf, same } from "./auth.ts";
+import { answerOf, callerKey, callerOf, mayRead, refusal, settled, startFor } from "./callers.ts";
 
 /**
  * Huddle as an A2A 1.0 agent (https://a2a-protocol.org), so OpenClaw, Hermes or any other assistant
@@ -35,8 +35,6 @@ const TASK_NOT_FOUND = -32001;
 /** A caller this flow doesn't take requests from (A2A's range for app errors). */
 const NOT_ALLOWED = -32007;
 
-const TIER_WORDS: Readonly<Record<string, string>> = { owner: "you", partner: "your partner", family: "family", friend: "friends", contact: "contacts" };
-
 interface Part {
   readonly text?: unknown;
   readonly data?: unknown;
@@ -50,26 +48,6 @@ class RpcError extends Error {
   }
 }
 
-/** Waits until a run is no longer running (done, failed, declined, or waiting on a person), or `ms` passes. */
-function settled(store: Store, runId: string, ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    const onChange = (change: Change) => {
-      if (change.kind === "run" && change.runId === runId) check();
-    };
-    const timer = setTimeout(finish, ms);
-    function finish() {
-      clearTimeout(timer);
-      store.events.off("change", onChange);
-      resolve();
-    }
-    function check() {
-      if (store.run(runId)?.state !== "running") finish();
-    }
-    store.events.on("change", onChange);
-    check();
-  });
-}
-
 export function a2aRoutes(options: AppOptions & { readonly a2aWaitMs?: number }): Hono {
   const { store, engine } = options;
   const token = options.a2aToken ?? options.token;
@@ -80,29 +58,19 @@ export function a2aRoutes(options: AppOptions & { readonly a2aWaitMs?: number })
   if (!(store.db.prepare("PRAGMA table_info(a2a_tasks)").all() as { name: string }[]).some((column) => column.name === "caller")) {
     store.db.exec("ALTER TABLE a2a_tasks ADD COLUMN caller TEXT NOT NULL DEFAULT 'owner'");
   }
-  /** You (Huddle's token, or anyone when Huddle has no token), a contact (their own token), or a stranger. */
-  const callerOf = (c: Context): Caller => {
-    const bearer = bearerOf(c.req.header("authorization"));
-    if (!token || (bearer && same(bearer, token))) return { tier: "owner", name: "You", contactId: null };
-    const contact = bearer ? store.contactByToken(bearer) : null;
-    return contact ? { tier: contact.tier, name: contact.name, contactId: contact.id } : { tier: "stranger", name: "Someone not in your contacts", contactId: null };
-  };
-  const callerKey = (caller: Caller) => (caller.tier === "owner" ? "owner" : (caller.contactId ?? "stranger"));
   const app = new Hono();
 
   /** The task's A2A context, if this caller may read it: you read every task, others only their own. */
   const contextOf = (runId: string, caller: Caller): string | null => {
     const row = store.db.prepare("SELECT context_id, caller FROM a2a_tasks WHERE run_id = ?").get(runId) as { context_id: string; caller: string } | undefined;
-    if (!row || (caller.tier !== "owner" && row.caller !== callerKey(caller))) return null;
+    if (!row || !mayRead(row.caller, caller)) return null;
     return row.context_id;
   };
 
   const taskOf = (run: Run, contextId: string) => {
     const waiting = run.state === "waiting" ? store.waitingApproval(run.id) : null;
     const said = run.state === "failed" ? run.error : run.state === "declined" ? "The owner declined this." : waiting ? `Waiting for the owner's approval: ${waiting.message}` : null;
-    const answered = run.state === "done" ? store.logOf(run.id).findLast((line) => line.kind === "answered" || line.kind === "suggested") : undefined;
-    const detail = (answered?.detail ?? null) as { text?: unknown; data?: unknown } | null;
-    const text = typeof detail?.text === "string" ? detail.text : run.state === "done" ? "Done." : "";
+    const answer = run.state === "done" ? answerOf(store, run) : null;
     return {
       id: run.id,
       contextId,
@@ -111,7 +79,7 @@ export function a2aRoutes(options: AppOptions & { readonly a2aWaitMs?: number })
         ...(said ? { message: { messageId: randomUUID(), role: "ROLE_AGENT", parts: [{ text: said }] } } : {}),
         timestamp: run.updatedAt,
       },
-      ...(run.state === "done" ? { artifacts: [{ artifactId: "result", name: "result", parts: [{ text }, ...(detail?.data === undefined ? [] : [{ data: detail.data }])] }] } : {}),
+      ...(answer ? { artifacts: [{ artifactId: "result", name: "result", parts: [{ text: answer.text }, ...(answer.data === undefined ? [] : [{ data: answer.data }])] }] } : {}),
       metadata: { flow: run.flowId, flowName: run.flow.name },
     };
   };
@@ -140,14 +108,8 @@ export function a2aRoutes(options: AppOptions & { readonly a2aWaitMs?: number })
         .filter(Boolean)
         .join("\n");
       // Who may start this flow (its callers rule): closer tiers start it, the rest wait for your OK or are turned away.
-      const decision = callerDecision(saved.flow.callers, caller.tier);
-      if (decision === "refuse") {
-        const starts = saved.flow.callers?.starts ?? "owner";
-        throw new RpcError(NOT_ALLOWED, `"${saved.flow.name}" takes requests only from ${TIER_WORDS[starts] ?? starts}${starts === "owner" ? "" : " and closer"}.`);
-      }
-      const who = caller.tier === "owner" || caller.tier === "stranger" ? caller.name : `${caller.name} (${caller.tier})`;
-      const flow = decision === "ask" ? askFirst(saved.flow, who) : saved.flow;
-      const runId = engine.launch(flow, input.slice(0, 100_000), saved.id, { name: caller.name, tier: caller.tier, via: "a2a" });
+      const runId = startFor(engine, saved, input, caller, "a2a");
+      if (!runId) throw new RpcError(NOT_ALLOWED, refusal(saved));
       const contextId = typeof message.contextId === "string" && message.contextId ? message.contextId : randomUUID();
       store.db.prepare("INSERT INTO a2a_tasks (run_id, context_id, created_at, caller) VALUES (?, ?, ?, ?)").run(runId, contextId, new Date().toISOString(), callerKey(caller));
       const configuration = params.configuration as { returnImmediately?: unknown } | undefined;
@@ -193,7 +155,7 @@ export function a2aRoutes(options: AppOptions & { readonly a2aWaitMs?: number })
   });
 
   app.post("/a2a/flows/:flowId", (c) => {
-    const caller = callerOf(c);
+    const caller = callerOf(store, token, c.req.header("authorization"));
     const saved = store.flow(c.req.param("flowId"));
     // A stranger gets the same answer whether or not the flow exists, unless it lets strangers ask.
     if (caller.tier === "stranger" && (!saved || callerDecision(saved.flow.callers, "stranger") === "refuse")) return unauthorized(c);
@@ -203,7 +165,7 @@ export function a2aRoutes(options: AppOptions & { readonly a2aWaitMs?: number })
 
   // The whole Huddle lists its flows, so it's for you and your contacts only.
   app.post("/a2a", (c) => {
-    const caller = callerOf(c);
+    const caller = callerOf(store, token, c.req.header("authorization"));
     return caller.tier === "stranger" ? unauthorized(c) : rpc(c, null, caller);
   });
 
