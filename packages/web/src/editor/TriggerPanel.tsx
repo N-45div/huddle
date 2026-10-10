@@ -12,6 +12,9 @@ interface Props {
   readonly savedTrigger: Trigger | undefined;
   readonly webhookUrl: string;
   readonly a2aUrl: string;
+  /** Huddle's MCP address and token (from /api/info), and the tool that starts this flow there. */
+  readonly mcp: Info["mcp"] | undefined;
+  readonly mcpTool: string;
   /** Where Resend's inbound webhook posts, and whether this Huddle can take mail (from /api/info). */
   readonly email: Info["email"] | undefined;
   readonly stepIds: readonly string[];
@@ -32,7 +35,7 @@ function absolute(address: string): string {
   }
 }
 
-export function TriggerPanel({ flowId, trigger, savedTrigger, webhookUrl, a2aUrl, email, stepIds, firstStep, onChange, callers, onCallers, onFirstStep, onRotated }: Props) {
+export function TriggerPanel({ flowId, trigger, savedTrigger, webhookUrl, a2aUrl, mcp, mcpTool, email, stepIds, firstStep, onChange, callers, onCallers, onFirstStep, onRotated }: Props) {
   const [lastEvery, setLastEvery] = useState(trigger.type === "schedule" ? trigger.every : "1d");
   const [lastAddress, setLastAddress] = useState(trigger.type === "email" ? trigger.address : "");
   const changed = JSON.stringify(trigger) !== JSON.stringify(savedTrigger ?? { type: "manual" });
@@ -147,6 +150,14 @@ export function TriggerPanel({ flowId, trigger, savedTrigger, webhookUrl, a2aUrl
         Give this address to OpenClaw, Hermes or any A2A assistant, with Huddle's A2A token or a contact's own token, and it
         can start this flow whatever its trigger. What it sends becomes the input.
       </CopyAddress>
+
+      {mcp && (
+        <CopyAddress id="mcp-url" label="For Claude, Cursor and other MCP clients" address={absolute(mcp.url)}>
+          Add this address as an MCP server{mcp.token ? <>, with <code>{mcp.token}</code> or a contact's own token,</> : ""} and this flow is its tool{" "}
+          <code>{mcpTool}</code>, whatever its trigger. What the tool is given becomes the input. How to add it to each app is on the{" "}
+          <a href={href.assistants()}>Assistants</a> page.
+        </CopyAddress>
+      )}
 
       <CallersFields callers={callers} onChange={onCallers} />
     </div>

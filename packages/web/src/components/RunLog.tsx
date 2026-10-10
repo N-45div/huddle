@@ -16,6 +16,9 @@ function text(detail: unknown, key: string): string {
   return typeof value === "string" ? value : value === undefined || value === null ? "" : pretty(value);
 }
 
+/** How a run started from outside came in, as people say it. */
+const VIA: Readonly<Record<string, string>> = { a2a: "A2A", mcp: "MCP" };
+
 interface Described {
   readonly title: ReactNode;
   readonly body?: string;
@@ -64,7 +67,7 @@ function describe(line: LogLine): Described {
           <>
             Started by <strong>{text(detail, "name") || "someone"}</strong>
             {tier && tier !== "owner" && <span className="muted"> ({tier === "stranger" ? "not in your contacts" : tier})</span>}
-            {via && <span className="muted"> over {via === "a2a" ? "A2A" : via}</span>}
+            {via && <span className="muted"> over {VIA[via] ?? via}</span>}
           </>
         ),
       };

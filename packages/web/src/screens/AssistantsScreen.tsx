@@ -8,7 +8,7 @@ import { useChanges } from "../events.ts";
 import { ago, plural } from "../format.ts";
 import { useDebounced, useResource } from "../hooks.ts";
 import { href } from "../router.ts";
-import type { Assistant, RouterUsage } from "../types.ts";
+import type { Assistant, Info, RouterUsage } from "../types.ts";
 
 /**
  * Your assistants, set up once: flows add them from here, and the router reaches them by id through an
@@ -16,7 +16,7 @@ import type { Assistant, RouterUsage } from "../types.ts";
  * you try a message, and gives the code to call it from anything else.
  */
 export function AssistantsScreen() {
-  const { authVersion } = useApp();
+  const { info, authVersion } = useApp();
   const assistants = useResource(() => api.assistants(), [authVersion]);
   const connectors = useResource(() => api.connectors(), [authVersion]);
   const router = useResource(() => api.router(), [authVersion]);
@@ -77,7 +77,7 @@ export function AssistantsScreen() {
 
         <aside className="router-side">
           <TryIt assistants={list} />
-          {router.data && <UseFromCode baseUrl={router.data.baseUrl} judge={router.data.judge} keyRequired={router.data.keyRequired} ids={list.map((assistant) => assistant.id)} />}
+          {router.data && <UseFromCode baseUrl={router.data.baseUrl} judge={router.data.judge} keyRequired={router.data.keyRequired} ids={list.map((assistant) => assistant.id)} mcp={info?.mcp ?? null} />}
         </aside>
       </div>
     </div>
@@ -218,14 +218,13 @@ function TryIt({ assistants }: { readonly assistants: readonly Assistant[] }) {
   );
 }
 
-type Lang = "curl" | "js" | "python";
+type Lang = "curl" | "js" | "python" | "mcp";
 
-function UseFromCode({ baseUrl, judge, keyRequired, ids }: { readonly baseUrl: string; readonly judge: string | null; readonly keyRequired: boolean; readonly ids: readonly string[] }) {
+function UseFromCode({ baseUrl, judge, keyRequired, ids, mcp }: { readonly baseUrl: string; readonly judge: string | null; readonly keyRequired: boolean; readonly ids: readonly string[]; readonly mcp: Info["mcp"] | null }) {
   const [lang, setLang] = useState<Lang>("js");
-  const [copied, setCopied] = useState(false);
   const model = ids[0] ?? "auto";
   const key = keyRequired ? "$HUDDLE_ROUTER_KEY" : "local";
-  const code: Record<Lang, string> = {
+  const code: Record<Exclude<Lang, "mcp">, string> = {
     curl: `curl ${baseUrl}/chat/completions \\\n  -H "Authorization: Bearer ${key}" -H "Content-Type: application/json" \\\n  -d '{"model": "auto", "messages": [{"role": "user", "content": "What's my cat called?"}]}'`,
     js: `import OpenAI from "openai";\n\nconst huddle = new OpenAI({ baseURL: "${baseUrl}", apiKey: ${keyRequired ? "process.env.HUDDLE_ROUTER_KEY" : '"local"'} });\n\nconst reply = await huddle.chat.completions.create({\n  model: "auto", // or "${model}", or models: ["${model}", ...] for fallbacks\n  messages: [{ role: "user", content: "What's my cat called?" }],\n});\nconsole.log(reply.model, reply.choices[0].message.content);`,
     python: `from openai import OpenAI\nimport os\n\nhuddle = OpenAI(base_url="${baseUrl}", api_key=${keyRequired ? 'os.environ["HUDDLE_ROUTER_KEY"]' : '"local"'})\n\nreply = huddle.chat.completions.create(\n    model="auto",  # or "${model}"\n    messages=[{"role": "user", "content": "What's my cat called?"}],\n)\nprint(reply.model, reply.choices[0].message.content)`,
@@ -234,11 +233,19 @@ function UseFromCode({ baseUrl, judge, keyRequired, ids }: { readonly baseUrl: s
   return (
     <section className="card use-from-code" aria-labelledby="use-from-code-title">
       <h2 id="use-from-code-title">Use it from any app</h2>
-      <p className="hint">
-        OpenAI-compatible: the model is an assistant's id, or <code>auto</code>.{" "}
-        {judge === "jev" ? "Jev picks for auto." : judge === "model" ? "Your judging model (HUDDLE_LLM_MODEL) picks for auto; set TYPESAFE_API_KEY to have Jev pick." : "Set TYPESAFE_API_KEY to have Jev pick for auto; until then it's your list's order."}{" "}
-        {keyRequired ? "Send your Huddle token or HUDDLE_ROUTER_KEY as the key." : "No key is needed on this machine."}
-      </p>
+      {lang === "mcp" ? (
+        <p className="hint">
+          Claude Code, Claude Desktop, Cursor and other MCP clients get a tool for each flow, <code>get_run</code> to follow one, and <code>ask_assistant</code> for
+          these assistants. Approvals still come to you in Huddle.{" "}
+          {mcp?.token ? `Send ${mcp.token} to act as you, or give someone their own token from Contacts: they see only the flows they may start.` : "No token is needed on this machine."}
+        </p>
+      ) : (
+        <p className="hint">
+          OpenAI-compatible: the model is an assistant's id, or <code>auto</code>.{" "}
+          {judge === "jev" ? "Jev picks for auto." : judge === "model" ? "Your judging model (HUDDLE_LLM_MODEL) picks for auto; set TYPESAFE_API_KEY to have Jev pick." : "Set TYPESAFE_API_KEY to have Jev pick for auto; until then it's your list's order."}{" "}
+          {keyRequired ? "Send your Huddle token or HUDDLE_ROUTER_KEY as the key." : "No key is needed on this machine."}
+        </p>
+      )}
       <Tabs
         idPrefix="code"
         label="Language"
@@ -248,28 +255,66 @@ function UseFromCode({ baseUrl, judge, keyRequired, ids }: { readonly baseUrl: s
           { id: "js", label: "JavaScript" },
           { id: "python", label: "Python" },
           { id: "curl", label: "curl" },
+          ...(mcp ? [{ id: "mcp" as const, label: "MCP" }] : []),
         ]}
       />
       <TabPanel idPrefix="code" id={lang} className="tab-panel">
-        <pre className="code-block">
-          <code>{code[lang]}</code>
-        </pre>
-        <button
-          type="button"
-          className="btn btn-sm"
-          onClick={() => {
-            void navigator.clipboard?.writeText(code[lang]).then(() => {
-              setCopied(true);
-              window.setTimeout(() => setCopied(false), 2000);
-            });
-          }}
-        >
-          <Icon name="copy" /> {copied ? "Copied" : "Copy"}
-        </button>
+        {lang === "mcp" && mcp ? <McpSetup mcp={mcp} /> : <Snippet code={code[lang === "mcp" ? "js" : lang]} />}
       </TabPanel>
-      <p className="hint">
-        Base URL <code>{baseUrl}</code>
-      </p>
+      {lang === "mcp" && mcp ? (
+        <p className="hint">
+          MCP address <code>{mcp.url}</code>
+        </p>
+      ) : (
+        <p className="hint">
+          Base URL <code>{baseUrl}</code>
+        </p>
+      )}
     </section>
+  );
+}
+
+/** Adding Huddle to Claude Code, and to Claude Desktop or Cursor (through mcp-remote, which sends the token). */
+function McpSetup({ mcp }: { readonly mcp: Info["mcp"] }) {
+  const claude = `claude mcp add --transport http huddle ${mcp.url}${mcp.token ? ` \\\n  --header "Authorization: Bearer $${mcp.token}"` : ""}`;
+  // mcp-remote reads ${HUDDLE_AUTH} itself: a space inside args breaks npx on Windows, so the token goes in env.
+  const args = ["-y", "mcp-remote", mcp.url, ...(mcp.token ? ["--header", "Authorization:${HUDDLE_AUTH}"] : [])];
+  const fields = [`"command": "npx"`, `"args": [${args.map((arg) => JSON.stringify(arg)).join(", ")}]`, ...(mcp.token ? [`"env": { "HUDDLE_AUTH": "Bearer <your ${mcp.token}>" }`] : [])];
+  const desktop = `{\n  "mcpServers": {\n    "huddle": {\n      ${fields.join(",\n      ")}\n    }\n  }\n}`;
+  return (
+    <>
+      <p className="eyebrow">Claude Code</p>
+      <Snippet code={claude} />
+      <p className="eyebrow">Claude Desktop, Cursor</p>
+      <Snippet code={desktop} />
+      <p className="hint">
+        In <code>claude_desktop_config.json</code> or <code>.cursor/mcp.json</code>. Cursor can also take the address and an <code>Authorization</code> header
+        directly, as <code>url</code> and <code>headers</code>.
+      </p>
+    </>
+  );
+}
+
+/** A block of code with a Copy button. */
+function Snippet({ code }: { readonly code: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <>
+      <pre className="code-block">
+        <code>{code}</code>
+      </pre>
+      <button
+        type="button"
+        className="btn btn-sm"
+        onClick={() => {
+          void navigator.clipboard?.writeText(code).then(() => {
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 2000);
+          });
+        }}
+      >
+        <Icon name="copy" /> {copied ? "Copied" : "Copy"}
+      </button>
+    </>
   );
 }
