@@ -1,5 +1,5 @@
 export { evaluate } from "./condition.ts";
-export { type Connector, type ConnectorRequest, dataIn } from "./connector.ts";
+export { type Connector, type ConnectorRequest, dataIn, type Reply } from "./connector.ts";
 export { a2a, type A2AOptions } from "./connectors/a2a.ts";
 export { agentzero } from "./connectors/agentzero.ts";
 export { email, type ReceivedEmail, receivedEmail, RESEND_API, resendProblem, subjectAndBody, USER_AGENT } from "./connectors/email.ts";
@@ -17,15 +17,16 @@ export { type GrantStore, type SignIn, SignIns, storedGrants } from "./pact/sign
 export { newKey, PactIdentity, type PrivateJwk, type PublicJwk, thumbprint } from "./pact/identity.ts";
 export { DEFAULT_CERT_DIR, type ExecResult, OpenShell, type OpenShellOptions, type SandboxRequest } from "./openshell/client.ts";
 export { sochen } from "./connectors/sochen.ts";
-export { Engine, type EngineOptions, MAX_STEPS, type RunView, type StartedBy } from "./engine.ts";
+export { Engine, type EngineOptions, MAX_STEPS, OverBudget, type RunView, type StartedBy } from "./engine.ts";
 export { type AgentStep, type Guard, type HandOff, type Outcome, type Verdict } from "./guard.ts";
 export { ARMORIQ_API, armoriq, type ArmorIQOptions, armoriqPlan, type ArmorIQRegistration, type ArmorIQSdk, armoriqTool, registerWithArmorIQ, type RegisterResult } from "./guards/armoriq.ts";
 export { type Embedder, embedder, type EmbedderOptions } from "./memory/embeddings.ts";
 export { Memory, type MemoryHit, type MemoryOptions, NOTE_CLIP, RECALL_BUDGET } from "./memory/memory.ts";
 export { type Reranker, reranker, type RerankerOptions } from "./memory/rerank.ts";
 export { findSecret, redactSecrets, SensitiveNote } from "./memory/sensitive.ts";
-export { askFrom, AUTO, type ChatMessage, NoAnswer, type RouteInfo, type Routed, Router } from "./router.ts";
+export { askFrom, type Attempt, AUTO, type ChatMessage, type CostRoute, FIT, NoAnswer, PREFER, type Prefer, type RouteInfo, type RouteRequest, type Routed, Router, STICKY_MS } from "./router.ts";
+export { type Budget, CHARS_PER_TOKEN, costOf, dollars, estimateTokens, parseBudget, periodStart, type Price, priceOf, type Spend, spendOf, type Usage } from "./cost.ts";
 export { type Candidate, jevJudge, type JevOptions, type Judge, modelJudge, type ModelJudgeOptions, type Ranking } from "./judge.ts";
 export { askFirst, Assistant, assistantProblems, Assistants, type Caller, callerDecision, Callers, CONTACT_TIERS, type ContactTier, EMAIL_PATTERN, everyMs, Flow, parseFlow, Step, TIERS, type Tier, Trigger } from "./schema.ts";
-export { type Approval, type Change, type Contact, type LogLine, type Note, type Run, type RunState, type SavedFlow, Store } from "./store.ts";
+export { type Approval, type Change, type Contact, type KeptAnswer, type LogLine, type Note, type Run, type RunState, type SavedFlow, type SpendTotal, Store } from "./store.ts";
 export { lookup, render, type RunContext, type StepAnswer } from "./template.ts";
