@@ -2623,3 +2623,429 @@ h1 .badge {
   background: var(--warn-soft);
   color: var(--warn);
 }
+
+/* ---------- Answers as views ---------- */
+
+:root {
+  --chart-1: #4f5bd5;
+  --chart-2: #1f9d8b;
+  --chart-3: #e07a3f;
+  --chart-4: #c2457f;
+  --chart-5: #8a8a83;
+  --chart-6: #b79a1c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --chart-1: #8d96f2;
+    --chart-2: #4cc7b4;
+    --chart-3: #f0a06e;
+    --chart-4: #e47aab;
+    --chart-5: #b3b3ab;
+    --chart-6: #d9bf4f;
+  }
+}
+
+.series-0 { --series: var(--chart-1); }
+.series-1 { --series: var(--chart-2); }
+.series-2 { --series: var(--chart-3); }
+.series-3 { --series: var(--chart-4); }
+.series-4 { --series: var(--chart-5); }
+.series-5 { --series: var(--chart-6); }
+
+.answer-view {
+  margin: 4px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.answer-view figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.view-bar,
+.view-foot,
+.view-actions,
+.chart-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.view-foot {
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.view-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.view-pick select {
+  font-size: 12.5px;
+  padding: 3px 6px;
+  width: auto;
+}
+
+.view-busy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.view-busy .spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: view-spin 0.8s linear infinite;
+}
+
+@keyframes view-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.view-table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.view-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  min-width: 100%;
+}
+
+.view-table th,
+.view-table td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.view-table thead th {
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.view-table tbody th {
+  font-weight: 550;
+}
+
+.view-table tr.best {
+  background: var(--ok-soft);
+}
+
+.view-table .badge {
+  margin-left: 8px;
+  background: var(--ok);
+  color: var(--surface);
+}
+
+.option-note {
+  display: block;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Charts */
+
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chart-svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.chart-grid line {
+  stroke: var(--border);
+}
+
+.chart-grid text,
+.chart-label {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.chart-bar {
+  fill: var(--series);
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--series);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+
+.chart-dot {
+  fill: var(--surface);
+  stroke: var(--series);
+  stroke-width: 2.5;
+}
+
+.chart-bar:focus,
+.chart-dot:focus,
+.donut-part:focus {
+  outline: none;
+}
+
+.chart-bar.active,
+.donut-part.active {
+  filter: brightness(1.12);
+  stroke: var(--text);
+  stroke-width: 1.5;
+}
+
+.chart-dot.active {
+  fill: var(--series);
+}
+
+.chart-tip rect {
+  fill: var(--text);
+}
+
+.chart-tip text {
+  fill: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.legend-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.legend-key[aria-pressed="false"] {
+  opacity: 0.45;
+}
+
+.legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--series);
+  flex: none;
+}
+
+.donut {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.donut-svg {
+  width: min(240px, 100%);
+  height: auto;
+}
+
+.donut-part {
+  fill: var(--series);
+  cursor: default;
+}
+
+.donut-total {
+  fill: var(--text);
+  font-size: 26px;
+  font-weight: 650;
+}
+
+.donut-caption {
+  fill: var(--muted);
+  font-size: 13px;
+}
+
+.donut-legend {
+  min-width: min(220px, 100%);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  min-width: 0;
+  flex: 1;
+}
+
+.donut-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.donut-legend li.active .donut-name {
+  font-weight: 650;
+}
+
+.donut-value {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Flowcharts */
+
+.flowchart-canvas {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.flowchart-canvas .react-flow__node.flow-node {
+  width: 170px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.flowchart-canvas .react-flow__node.flow-node-start,
+.flowchart-canvas .react-flow__node.flow-node-end {
+  border-radius: 999px;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.flowchart-canvas .react-flow__node.flow-node-decision {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+  border-style: dashed;
+}
+
+.flowchart-canvas .react-flow__handle {
+  visibility: hidden;
+}
+
+.flowchart-canvas .react-flow__edge-text {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.flowchart-canvas .react-flow__edge-textbg {
+  fill: var(--bg);
+}
+
+/* Calculators */
+
+.calc-inputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px 14px;
+}
+
+.calc-field .input-suffix input {
+  max-width: none;
+}
+
+.calc-outputs {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px 14px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.calc-output dt {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.calc-output dd {
+  margin: 2px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.calc-output strong {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.calc-formula {
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* Comparisons */
+
+.weights {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px 16px;
+}
+
+.weights legend {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.weight {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(80px, 1.4fr) 2ch;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.weight output {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-busy .spinner {
+    animation: none;
+  }
+}
