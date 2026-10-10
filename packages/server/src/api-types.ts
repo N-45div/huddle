@@ -77,6 +77,31 @@ export interface RouterUsage {
   /** Average time to answer, for the calls that answered. */
   readonly averageMs: number | null;
   readonly lastAt: string | null;
+  /** Dollars its router calls cost this period, for the calls with a known cost. */
+  readonly spentUsd: number;
+  /** Calls whose cost is unknown: no price given and none reported. */
+  readonly unpriced: number;
+  /** Calls whose tokens were guessed from the text. */
+  readonly estimated: number;
+  /** Calls answered from a kept answer this period. */
+  readonly reused: number;
+}
+
+/** What hand-offs cost this period (a month, or the budget's period), and what the router saved. */
+export interface SpendView {
+  readonly period: "day" | "month";
+  readonly since: string;
+  /** Every hand-off with a known cost, flows and router alike: what the budget counts. */
+  readonly spentUsd: number;
+  readonly budgetUsd: number | null;
+  /** Of that, through the router. */
+  readonly routerUsd: number;
+  /** Router calls answered from a kept answer, and what they'd have cost. */
+  readonly reused: number;
+  readonly savedByReuseUsd: number;
+  /** Router calls that went to a cheaper assistant than the judge's first choice, and what that saved. */
+  readonly cheaper: number;
+  readonly savedByCheaperUsd: number;
 }
 
 /** GET /api/router */
@@ -89,6 +114,7 @@ export interface RouterView {
   /** Whether calls need a key (the Huddle token or HUDDLE_ROUTER_KEY). */
   readonly keyRequired: boolean;
   readonly usage: readonly RouterUsage[];
+  readonly spend: SpendView;
 }
 
 /** A field an assistant of this connector needs, for the "add assistant" form. */

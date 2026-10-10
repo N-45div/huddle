@@ -1,11 +1,11 @@
-import { Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type MemoryHit, type Note, ollamaModels, type PactIdentity, type Router, type SavedFlow, SensitiveNote, type SignIns, type Store } from "@huddle/core";
+import { Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type MemoryHit, type Note, ollamaModels, type PactIdentity, periodStart, type Router, type SavedFlow, SensitiveNote, type SignIns, type Store } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { a2aRoutes } from "./a2a.ts";
 import { type EmailOptions, emailRoutes } from "./email.ts";
 import { routerRoutes } from "./router.ts";
 import { bearerOf, same } from "./auth.ts";
-import type { ApiError, FlowView, Info, RouterUsage, RouterView, RunDetail, RunSummary, WaitingApproval } from "./api-types.ts";
+import type { ApiError, FlowView, Info, RouterUsage, RouterView, RunDetail, RunSummary, SpendView, WaitingApproval } from "./api-types.ts";
 import { CONNECTORS } from "./connectors-info.ts";
 import { noSandboxes, type SandboxInbox, Stale } from "./sandbox-requests.ts";
 
@@ -168,8 +168,37 @@ export function createApp(options: AppOptions): Hono {
       if (!total.lastAt || run.createdAt > total.lastAt) total.lastAt = run.createdAt;
       totals.set(id, total);
     }
-    const usage: RouterUsage[] = [...totals].map(([assistant, total]) => ({ assistant, calls: total.calls, failures: total.failures, averageMs: total.answered ? Math.round(total.answeredMs / total.answered) : null, lastAt: total.lastAt }));
-    return c.json<RouterView>({ on: Boolean(options.router), baseUrl: `${options.publicUrl}/v1`, judge: options.router?.judge?.name ?? null, keyRequired: Boolean(options.token || options.routerKey), usage });
+    const budget = engine.budget;
+    const period = budget?.period ?? "month";
+    const since = periodStart(period).toISOString();
+    const routerSpend = new Map(store.spendSince(since, true).map((total) => [total.assistant, total]));
+    const usage: RouterUsage[] = [...totals].map(([assistant, total]) => {
+      const spent = routerSpend.get(assistant);
+      return {
+        assistant,
+        calls: total.calls,
+        failures: total.failures,
+        averageMs: total.answered ? Math.round(total.answeredMs / total.answered) : null,
+        lastAt: total.lastAt,
+        spentUsd: spent?.usd ?? 0,
+        unpriced: spent?.unpriced ?? 0,
+        estimated: spent?.estimated ?? 0,
+        reused: spent?.reused ?? 0,
+      };
+    });
+    const sum = (key: "usd" | "reused" | "savedByReuse" | "cheaper" | "savedByCheaper") => [...routerSpend.values()].reduce((total, row) => total + row[key], 0);
+    const spend: SpendView = {
+      period,
+      since,
+      spentUsd: engine.spent(),
+      budgetUsd: budget?.usd ?? null,
+      routerUsd: sum("usd"),
+      reused: sum("reused"),
+      savedByReuseUsd: sum("savedByReuse"),
+      cheaper: sum("cheaper"),
+      savedByCheaperUsd: sum("savedByCheaper"),
+    };
+    return c.json<RouterView>({ on: Boolean(options.router), baseUrl: `${options.publicUrl}/v1`, judge: options.router?.judge?.name ?? null, keyRequired: Boolean(options.token || options.routerKey), usage, spend });
   });
   app.get("/api/connectors/:id/models", async (c) => {
     if (c.req.param("id") !== "ollama") return bad(c, "This connector doesn't list models.", 404);

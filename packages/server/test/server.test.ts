@@ -540,6 +540,57 @@ describe("the router (OpenAI-compatible)", () => {
     assert.equal(byId.local, undefined, "never called");
   });
 
+  it("answers with the real token counts and cost, keeps answers when allowed, and says what was spent and saved", async () => {
+    const store = new Store();
+    const paid: Connector = { send: async ({ assistant }) => ({ text: `${assistant.id} here.`, usage: { inputTokens: 1_000, outputTokens: 200 } }) };
+    const engine = new Engine(store, { mock, openai: paid }, { budget: { usd: 10, period: "month" } });
+    store.saveAssistants([
+      Assistant.parse({ id: "claude", connector: "openai", url: "http://claude.test", price: { input: 3, output: 15 }, reuseMinutes: 30 }),
+      Assistant.parse({ id: "local", connector: "mock", replies: { "*": "Local here." } }),
+    ]);
+    const app = createApp({ store, engine, version: "test", publicUrl: "http://huddle.test", router: new Router(store, engine) });
+    const ask = (body: object, headers: Record<string, string> = {}) => app.request("/v1/chat/completions", chat({ messages: [{ role: "user", content: "What's on today?" }], ...body }, headers));
+
+    const first = await (await ask({ model: "claude" })).json();
+    assert.deepEqual(first.usage, { prompt_tokens: 1_000, completion_tokens: 200, total_tokens: 1_200 });
+    assert.deepEqual(first.huddle.cost, { usd: 0.006, estimated: false, cachedTokens: 0 });
+    assert.equal(first.huddle.reused, false);
+    const again = await (await ask({ model: "claude" })).json();
+    assert.deepEqual([again.huddle.reused, again.huddle.run, again.usage.total_tokens], [true, first.huddle.run, 0]);
+    const fresh = await (await ask({ model: "claude" }, { "cache-control": "no-cache" })).json();
+    assert.equal(fresh.huddle.reused, false, "Cache-Control: no-cache asks afresh");
+    assert.equal((await (await ask({ model: "claude", huddle: { reuse: false } })).json()).huddle.reused, false);
+
+    const local = await (await ask({ model: "local" })).json();
+    assert.deepEqual([local.huddle.cost.usd, local.huddle.cost.estimated], [0, true], "a stand-in counts no tokens: guessed, and free");
+
+    const bad = await ask({ model: "auto", huddle: { prefer: "fastest" } });
+    assert.equal(bad.status, 400);
+    assert.equal((await bad.json()).error.code, "invalid_prefer");
+
+    const view = await (await app.request("/api/router")).json();
+    assert.deepEqual([view.spend.period, view.spend.budgetUsd, view.spend.reused], ["month", 10, 1]);
+    assert.equal(Math.round(view.spend.spentUsd * 1e6), 18_000, "three paid calls at $0.006");
+    assert.equal(Math.round(view.spend.savedByReuseUsd * 1e6), 6_000);
+    const claude = view.usage.find((row: { assistant: string }) => row.assistant === "claude");
+    assert.deepEqual([claude.calls, claude.reused, claude.unpriced, Math.round(claude.spentUsd * 1e6)], [3, 1, 0, 18_000]);
+  });
+
+  it("says the budget is spent with a 429, the way OpenAI says a quota is", async () => {
+    const store = new Store();
+    const paid: Connector = { send: async () => ({ text: "Done.", usage: { inputTokens: 1_000_000, outputTokens: 0 } }) };
+    const engine = new Engine(store, { mock, openai: paid }, { budget: { usd: 1, period: "day" } });
+    store.saveAssistants([Assistant.parse({ id: "claude", connector: "openai", url: "http://claude.test", price: { input: 3, output: 15 } })]);
+    const app = createApp({ store, engine, version: "test", publicUrl: "http://huddle.test", router: new Router(store, engine) });
+    const ask = () => app.request("/v1/chat/completions", chat({ model: "claude", messages: [{ role: "user", content: "hi" }] }));
+    assert.equal((await ask()).status, 200, "the first call takes it over");
+    const over = await ask();
+    assert.equal(over.status, 429);
+    const error = (await over.json()).error;
+    assert.deepEqual([error.code, error.type], ["budget_exceeded", "insufficient_quota"]);
+    assert.match(error.message, /The budget \(\$1\.00 a day\) is spent/);
+  });
+
   it("streams like OpenAI when asked", async () => {
     const { app, store } = routed();
     store.saveAssistants(mine.map((one) => Assistant.parse(one)));
