@@ -4,7 +4,7 @@ import type { LogLine } from "../types.ts";
 
 /**
  * A run's log, one line per thing that happened, in plain words. The engine writes:
- * asked, answered, checked, waiting, approved, declined, suggested and failed.
+ * started, guarded, asked, answered, checked, waiting, approved, declined, suggested and failed.
  */
 
 function field(detail: unknown, key: string): unknown {
@@ -67,6 +67,23 @@ function describe(line: LogLine): Described {
             {via && <span className="muted"> over {via === "a2a" ? "A2A" : via}</span>}
           </>
         ),
+      };
+    }
+    case "guarded": {
+      // ArmorIQ (or another guard) looked at the hand-off first.
+      const action = text(detail, "action");
+      const by = text(detail, "by") || "The guard";
+      const policy = text(detail, "policy");
+      const said = action === "allow" ? "let it through" : action === "hold" ? "held it for your yes" : "stopped it";
+      return {
+        title: (
+          <>
+            <strong>{by}</strong> {said}
+            {policy && <span className="muted"> (policy {policy})</span>}
+          </>
+        ),
+        body: action === "allow" ? undefined : text(detail, "reason"),
+        ...(action === "block" ? { tone: "danger" as const } : action === "hold" ? { tone: "warn" as const } : {}),
       };
     }
     case "checked": {
