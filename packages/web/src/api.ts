@@ -125,22 +125,31 @@ export interface RouterReply {
     readonly confidence: number | null;
     readonly model: string | null;
     readonly note: string | null;
+    /** How cost changed the order: the judge's first choice, and what each was expected to cost. */
+    readonly cost: { readonly prefer: Prefer; readonly top: string; readonly estimates: Readonly<Record<string, number | null>>; readonly reordered: boolean } | null;
   } | null;
+  /** Given again from a kept answer: nothing spent. */
+  readonly reused: boolean;
+  /** What it cost in dollars (null when the assistant has no price), and whether the tokens were guessed. */
+  readonly cost: { readonly usd: number | null; readonly estimated: boolean } | null;
 }
 
-async function routerChat(model: string, text: string): Promise<RouterReply> {
+/** How much fit "auto" may trade for cost. */
+export type Prefer = "quality" | "balanced" | "cheapest";
+
+async function routerChat(model: string, text: string, prefer?: Prefer): Promise<RouterReply> {
   const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "application/json" };
   if (memoryToken) headers.Authorization = `Bearer ${memoryToken}`;
   let response: Response;
   try {
-    response = await fetch("v1/chat/completions", { method: "POST", headers, body: JSON.stringify({ model, messages: [{ role: "user", content: text }] }) });
+    response = await fetch("v1/chat/completions", { method: "POST", headers, body: JSON.stringify({ model, messages: [{ role: "user", content: text }], ...(prefer ? { huddle: { prefer } } : {}) }) });
   } catch {
     throw new ApiFailure(0, "Can't reach the Huddle server. Check that it's running.");
   }
   const body = (await response.json().catch(() => null)) as {
     model?: string;
     choices?: { message?: { content?: string } }[];
-    huddle?: { run?: string; skipped?: RouterReply["skipped"]; route?: RouterReply["route"] };
+    huddle?: { run?: string; skipped?: RouterReply["skipped"]; route?: RouterReply["route"]; reused?: boolean; cost?: RouterReply["cost"] };
     error?: { message?: string };
   } | null;
   if (!response.ok) {
@@ -153,6 +162,8 @@ async function routerChat(model: string, text: string): Promise<RouterReply> {
     runId: body?.huddle?.run ?? null,
     skipped: body?.huddle?.skipped ?? [],
     route: body?.huddle?.route ?? null,
+    reused: body?.huddle?.reused === true,
+    cost: body?.huddle?.cost ?? null,
   };
 }
 
@@ -172,7 +183,7 @@ export const api = {
   newContactToken: (contactId: string) => call<{ token: string }>("POST", `/contacts/${id(contactId)}/token`),
   removeContact: (contactId: string) => call<null>("DELETE", `/contacts/${id(contactId)}`),
   /** One chat through the router's OpenAI-compatible /v1, the way any app would call it. */
-  chat: (model: string, text: string) => routerChat(model, text),
+  chat: (model: string, text: string, prefer?: Prefer) => routerChat(model, text, prefer),
   models: (connector: string, url: string) => call<{ models: string[] }>("GET", `/connectors/${id(connector)}/models` + (url ? `?url=${id(url)}` : "")),
 
   flows: () => call<FlowView[]>("GET", "/flows"),

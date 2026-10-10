@@ -1166,6 +1166,117 @@ h1 .badge {
   align-self: flex-start;
 }
 
+.spend-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+  margin-bottom: 20px;
+}
+
+.spend-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.spend-amount {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.spend-amount .muted {
+  font-size: 15px;
+}
+
+.spend-bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  overflow: hidden;
+  max-width: 260px;
+}
+
+.spend-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--ok);
+}
+
+.spend-bar-warn > span {
+  background: var(--warn);
+}
+
+.spend-note {
+  grid-column: 1 / -1;
+}
+
+.spend-empty {
+  margin-bottom: 16px;
+}
+
+.cost-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cost-fields > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.cost-fields[open] > summary {
+  margin-bottom: 8px;
+}
+
+.cost-fields > .field + .field,
+.cost-fields > fieldset + .field {
+  margin-top: 10px;
+}
+
+.price-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.price-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.input-suffix {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-suffix input {
+  flex: 1;
+  min-width: 0;
+  max-width: 10em;
+}
+
+.input-suffix span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 520px) {
+  .spend-strip,
+  .price-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 960px) {
   .assistants-grid {
     grid-template-columns: minmax(0, 1fr);

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ApiFailure, api, describeError, type RouterReply } from "../api.ts";
+import { ApiFailure, api, describeError, type Prefer, type RouterReply } from "../api.ts";
 import { useApp } from "../app-context.ts";
 import { ErrorNote, Hint, Icon, Link, Loading } from "../components/bits.tsx";
 import { TabPanel, Tabs } from "../components/Tabs.tsx";
@@ -8,7 +8,7 @@ import { useChanges } from "../events.ts";
 import { ago, plural } from "../format.ts";
 import { useDebounced, useResource } from "../hooks.ts";
 import { href } from "../router.ts";
-import type { Assistant, Info, RouterUsage } from "../types.ts";
+import type { Assistant, Info, RouterUsage, SpendView } from "../types.ts";
 
 /**
  * Your assistants, set up once: flows add them from here, and the router reaches them by id through an
@@ -54,6 +54,8 @@ export function AssistantsScreen() {
         </div>
       </header>
 
+      {router.data && <SpendStrip spend={router.data.spend} anyPriced={list.some((assistant) => assistant.price !== undefined)} />}
+
       <div className="assistants-grid">
         <section className="assistants-list" aria-labelledby="your-assistants">
           <h2 id="your-assistants">Your assistants</h2>
@@ -89,9 +91,64 @@ function usageLine(row: RouterUsage | undefined): string {
   const parts = [plural(row.calls, "call")];
   if (row.failures) parts.push(`${row.failures} failed`);
   if (row.averageMs !== null) parts.push(`answers in ${seconds(row.averageMs)}`);
+  if (row.spentUsd > 0) parts.push(`${dollars(row.spentUsd)} this period`);
+  else if (row.unpriced > 0 && row.unpriced >= row.calls - row.failures) parts.push("cost unknown");
+  if (row.reused) parts.push(`${plural(row.reused, "answer")} given again`);
   if (row.lastAt) parts.push(`last ${ago(row.lastAt)}`);
   return parts.join(" · ");
 }
+
+/** Dollars, readably: $0.0042, $1.25. */
+function dollars(usd: number): string {
+  if (usd === 0) return "$0";
+  if (usd < 0.01) return `$${usd.toPrecision(2)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
+/** What assistants with a price have cost this period, against the budget, and what the router saved. */
+function SpendStrip({ spend, anyPriced }: { readonly spend: SpendView; readonly anyPriced: boolean }) {
+  const saved = spend.savedByReuseUsd + spend.savedByCheaperUsd;
+  const period = spend.period === "day" ? "Today" : "This month";
+  if (!anyPriced && spend.spentUsd === 0) {
+    return <p className="hint spend-empty">Give your assistants their prices (Edit, then Cost) to see what they cost, and so "auto" takes the cheaper of ones that fit about as well.</p>;
+  }
+  const share = spend.budgetUsd ? Math.min(1, spend.spentUsd / spend.budgetUsd) : null;
+  return (
+    <section className="card spend-strip" aria-label="Spending">
+      <div className="spend-figure">
+        <p className="eyebrow">{period}</p>
+        <p className="spend-amount">
+          <strong>{dollars(spend.spentUsd)}</strong>
+          {spend.budgetUsd !== null && <span className="muted"> of {dollars(spend.budgetUsd)}</span>}
+        </p>
+        {share !== null && (
+          <span className={share >= 0.8 ? "spend-bar spend-bar-warn" : "spend-bar"} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(share * 100)} aria-label="Budget used">
+            <span style={{ width: `${Math.max(2, Math.round(share * 100))}%` }} />
+          </span>
+        )}
+        <p className="hint">{dollars(spend.routerUsd)} of it through the router</p>
+      </div>
+      <div className="spend-figure">
+        <p className="eyebrow">Saved</p>
+        <p className="spend-amount">
+          <strong>{dollars(saved)}</strong>
+        </p>
+        <p className="hint">
+          {spend.reused || spend.cheaper
+            ? [spend.reused ? `${plural(spend.reused, "answer")} given again (${dollars(spend.savedByReuseUsd)})` : null, spend.cheaper ? `${plural(spend.cheaper, "cheaper pick")} (${dollars(spend.savedByCheaperUsd)})` : null].filter(Boolean).join(", ")
+            : "Nothing yet: kept answers and cheaper picks show here."}
+        </p>
+      </div>
+      {share !== null && share >= 0.8 && <p className="hint spend-note">{share >= 1 ? "The budget is spent: assistants with a price wait until it resets." : '"Auto" is going for the cheapest that fits until the budget resets.'}</p>}
+    </section>
+  );
+}
+
+const PREFERENCES: readonly { readonly value: Prefer; readonly label: string }[] = [
+  { value: "balanced", label: "Balanced: cheaper when it fits about as well" },
+  { value: "quality", label: "Best fit, whatever it costs" },
+  { value: "cheapest", label: "Cheapest that fits" },
+];
 
 const seconds = (ms: number) => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`);
 
@@ -104,6 +161,7 @@ const JUDGES: Readonly<Record<string, string>> = {
 
 function TryIt({ assistants }: { readonly assistants: readonly Assistant[] }) {
   const [model, setModel] = useState("auto");
+  const [prefer, setPrefer] = useState<Prefer>("balanced");
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [reply, setReply] = useState<RouterReply | null>(null);
@@ -119,7 +177,7 @@ function TryIt({ assistants }: { readonly assistants: readonly Assistant[] }) {
     setReply(null);
     started.current = Date.now();
     try {
-      setReply(await api.chat(model, text.trim()));
+      setReply(await api.chat(model, text.trim(), model === "auto" ? prefer : undefined));
       setTook(Date.now() - started.current);
     } catch (caught) {
       setError(describeError(caught));
@@ -151,6 +209,18 @@ function TryIt({ assistants }: { readonly assistants: readonly Assistant[] }) {
               ))}
             </select>
           </div>
+          {model === "auto" && (
+            <div className="field">
+              <label htmlFor="try-prefer">Cost</label>
+              <select id="try-prefer" value={prefer} onChange={(event) => setPrefer(event.target.value as Prefer)}>
+                {PREFERENCES.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="field">
             <label htmlFor="try-text">Message</label>
             <textarea
@@ -176,6 +246,7 @@ function TryIt({ assistants }: { readonly assistants: readonly Assistant[] }) {
             {name(reply.model)} answered{took !== null ? ` in ${seconds(took)}` : ""}
           </p>
           <p className="try-answer">{reply.text}</p>
+          <p className="hint try-cost">{costLine(reply)}</p>
           {reply.route && (
             <div className="route">
               <p className="hint">
@@ -199,6 +270,15 @@ function TryIt({ assistants }: { readonly assistants: readonly Assistant[] }) {
                 </ul>
               )}
               {!reply.route.probabilities && reply.route.order.length > 1 && <p className="hint">Order it would try: {reply.route.order.map(name).join(", then ")}.</p>}
+              {reply.route.cost?.reordered && (
+                <p className="hint">
+                  {name(reply.route.cost.top)} fit best, but {name(reply.route.order[0] ?? reply.model)} fits about as well for less
+                  {typeof reply.route.cost.estimates[reply.route.cost.top] === "number" && typeof reply.route.cost.estimates[reply.route.order[0] ?? ""] === "number"
+                    ? ` (about ${dollars(reply.route.cost.estimates[reply.route.order[0]!]!)} against ${dollars(reply.route.cost.estimates[reply.route.cost.top]!)})`
+                    : ""}
+                  .
+                </p>
+              )}
               {reply.route.note && <p className="hint">{reply.route.note}</p>}
             </div>
           )}
@@ -216,6 +296,12 @@ function TryIt({ assistants }: { readonly assistants: readonly Assistant[] }) {
       )}
     </section>
   );
+}
+
+function costLine(reply: RouterReply): string {
+  if (reply.reused) return "Given again from a kept answer: nothing spent.";
+  if (!reply.cost || reply.cost.usd === null) return "Cost unknown: give this assistant a price.";
+  return `Cost ${dollars(reply.cost.usd)}${reply.cost.estimated ? ", estimated from the text's length" : ""}.`;
 }
 
 type Lang = "curl" | "js" | "python" | "mcp";

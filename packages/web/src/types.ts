@@ -22,6 +22,7 @@ export type {
   RunSummary,
   RouterUsage,
   RouterView,
+  SpendView,
   RunView,
   SignIn,
   SandboxRequests,

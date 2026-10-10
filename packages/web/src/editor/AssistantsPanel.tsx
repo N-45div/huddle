@@ -176,9 +176,20 @@ interface Draft {
   to: string;
   from: string;
   replies: { key: string; answer: string }[];
+  /** Dollars per million tokens in and out, and per call: empty when you don't know. */
+  priceInput: string;
+  priceOutput: string;
+  priceCall: string;
+  maxTokens: string;
+  reuseMinutes: string;
 }
 
-type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies" | "scopes" | "to" | "from", string>>;
+type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies" | "scopes" | "to" | "from" | "price" | "maxTokens" | "reuseMinutes", string>>;
+
+/** Connectors whose answers Huddle can cap at a number of tokens. */
+const CAPPED = new Set(["openai", "ollama"]);
+const amount = (text: string): number | null => (text.trim() === "" ? null : Number(text.trim().replace(/^\$/, "")));
+const shown = (value: number | undefined): string => (value === undefined ? "" : String(value));
 
 /** The addresses in a "to" field: split on commas, semicolons or spaces. */
 const addresses = (text: string) => text.split(/[\s,;]+/).filter(Boolean);
@@ -231,6 +242,11 @@ function draftOf(assistant: Assistant | undefined): Draft {
     to: (assistant?.to ?? []).join(", "),
     from: assistant?.from ?? "",
     replies: Object.entries(assistant?.replies ?? {}).map(([key, answer]) => ({ key, answer })),
+    priceInput: shown(assistant?.price?.input),
+    priceOutput: shown(assistant?.price?.output),
+    priceCall: assistant?.price?.call ? String(assistant.price.call) : "",
+    maxTokens: shown(assistant?.maxTokens),
+    reuseMinutes: shown(assistant?.reuseMinutes),
   };
 }
 
@@ -301,6 +317,12 @@ function AssistantForm({
     }
     const from = draft.from.trim();
     if (fields.some((field) => field.key === "from") && from && !isSender(from)) found.from = 'Give an address, like huddle@yourdomain.com, or "Huddle <huddle@yourdomain.com>".';
+    const prices = [draft.priceInput, draft.priceOutput, draft.priceCall].map(amount);
+    if (prices.some((price) => price !== null && !(Number.isFinite(price) && price >= 0 && price <= 10_000))) found.price = "Prices are dollars, like 3 or 0.25.";
+    const cap = amount(draft.maxTokens);
+    if (cap !== null && !(Number.isInteger(cap) && cap >= 1 && cap <= 1_000_000)) found.maxTokens = "A whole number of tokens, like 800.";
+    const minutes = amount(draft.reuseMinutes);
+    if (minutes !== null && !(Number.isInteger(minutes) && minutes >= 1 && minutes <= 10_080)) found.reuseMinutes = "Whole minutes, from 1 to 10080 (a week).";
     return found;
   };
 
@@ -332,6 +354,14 @@ function AssistantForm({
     } else if (kept?.replies) {
       assistant.replies = kept.replies;
     }
+    const [input, output, call] = [draft.priceInput, draft.priceOutput, draft.priceCall].map(amount);
+    if (input !== null || output !== null || call !== null) {
+      assistant.price = { input: input ?? 0, output: output ?? 0, call: call ?? 0, ...(original?.price?.cached !== undefined ? { cached: original.price.cached } : {}) };
+    }
+    const cap = amount(draft.maxTokens);
+    if (cap !== null && CAPPED.has(draft.connector)) assistant.maxTokens = cap;
+    const minutes = amount(draft.reuseMinutes);
+    if (minutes !== null) assistant.reuseMinutes = minutes;
     onSave(assistant);
   };
 
@@ -423,6 +453,55 @@ function AssistantForm({
         <ChipsInput id="assistant-memory" values={draft.memory} onChange={(memory) => set("memory", memory)} suggestions={slices} describedBy="assistant-memory-hint" />
         <Hint id="assistant-memory-hint">Slices of shared memory, separated by commas. It sees kept notes in these and nothing else.</Hint>
       </div>
+
+      <details className="cost-fields" open={Boolean(draft.priceInput || draft.priceOutput || draft.priceCall || draft.maxTokens || draft.reuseMinutes || errors.price || errors.maxTokens || errors.reuseMinutes)}>
+        <summary>Cost (optional)</summary>
+        <fieldset className="field price-fields" aria-describedby="assistant-price-hint">
+          <legend>What it charges, in US dollars</legend>
+          <div className="price-row">
+            <label>
+              <span>Per million tokens in</span>
+              <input inputMode="decimal" value={draft.priceInput} placeholder="3" aria-invalid={errors.price ? true : undefined} onChange={(event) => set("priceInput", event.target.value)} />
+            </label>
+            <label>
+              <span>Per million out</span>
+              <input inputMode="decimal" value={draft.priceOutput} placeholder="15" aria-invalid={errors.price ? true : undefined} onChange={(event) => set("priceOutput", event.target.value)} />
+            </label>
+            <label>
+              <span>Per call</span>
+              <input inputMode="decimal" value={draft.priceCall} placeholder="0" aria-invalid={errors.price ? true : undefined} onChange={(event) => set("priceCall", event.target.value)} />
+            </label>
+          </div>
+          {errors.price ? (
+            <p className="error-text" id="assistant-price-hint">
+              {errors.price}
+            </p>
+          ) : (
+            <Hint id="assistant-price-hint">From its model's pricing page. With prices, Huddle counts what you spend, and "auto" takes the cheaper of assistants that fit about as well. Ollama on this machine is free already.</Hint>
+          )}
+        </fieldset>
+        {CAPPED.has(draft.connector) && (
+          <div className="field">
+            <label htmlFor="assistant-max-tokens">Longest answer, in tokens</label>
+            <input id="assistant-max-tokens" inputMode="numeric" value={draft.maxTokens} placeholder="No limit" aria-invalid={errors.maxTokens ? true : undefined} aria-describedby="assistant-max-tokens-hint" onChange={(event) => set("maxTokens", event.target.value)} />
+            {errors.maxTokens ? <p className="error-text" id="assistant-max-tokens-hint">{errors.maxTokens}</p> : <Hint id="assistant-max-tokens-hint">A cap on what one answer can cost. About 750 words is 1,000 tokens.</Hint>}
+          </div>
+        )}
+        <div className="field">
+          <label htmlFor="assistant-reuse">Give the same answer to the same question for</label>
+          <div className="input-suffix">
+            <input id="assistant-reuse" inputMode="numeric" value={draft.reuseMinutes} placeholder="Never" aria-invalid={errors.reuseMinutes ? true : undefined} aria-describedby="assistant-reuse-hint" onChange={(event) => set("reuseMinutes", event.target.value)} />
+            <span>minutes</span>
+          </div>
+          {errors.reuseMinutes ? (
+            <p className="error-text" id="assistant-reuse-hint">
+              {errors.reuseMinutes}
+            </p>
+          ) : (
+            <Hint id="assistant-reuse-hint">Through the router only, and only when nothing it may read has changed. Leave it empty for assistants that act (send, book, buy) or whose answers go stale.</Hint>
+          )}
+        </div>
+      </details>
 
       <div className="form-foot">
         <button type="button" className="btn" onClick={onCancel}>
