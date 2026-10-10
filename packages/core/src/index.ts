@@ -25,6 +25,8 @@ export { Memory, type MemoryHit, type MemoryOptions, NOTE_CLIP, RECALL_BUDGET } 
 export { type Reranker, reranker, type RerankerOptions } from "./memory/rerank.ts";
 export { findSecret, redactSecrets, SensitiveNote } from "./memory/sensitive.ts";
 export { askFrom, type Attempt, AUTO, type ChatMessage, type CostRoute, FIT, NoAnswer, PREFER, type Prefer, type RouteInfo, type RouteRequest, type Routed, Router, STICKY_MS } from "./router.ts";
+export { evaluateFormula, FormulaError, namesIn, parseFormula } from "./formula.ts";
+export { type Answer, type Choice, FILLED, FilledView, jevPresenter, type JevPresenterOptions, type ModelOptions, modelPresenter, obviousChoice, present, type Presenter, rulesPresenter, type Table, tableOf, type View, VIEW_KINDS, type ViewKind, VIEWS, type ViewWriter, viewWriter } from "./present.ts";
 export { type Budget, CHARS_PER_TOKEN, costOf, dollars, estimateTokens, parseBudget, periodStart, type Price, priceOf, type Spend, spendOf, type Usage } from "./cost.ts";
 export { type Candidate, jevJudge, type JevOptions, type Judge, modelJudge, type ModelJudgeOptions, type Ranking } from "./judge.ts";
 export { askFirst, Assistant, assistantProblems, Assistants, type Caller, callerDecision, Callers, CONTACT_TIERS, type ContactTier, EMAIL_PATTERN, everyMs, Flow, parseFlow, Step, TIERS, type Tier, Trigger } from "./schema.ts";
