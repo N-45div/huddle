@@ -1,5 +1,6 @@
 import { evaluate } from "./condition.ts";
 import type { Connector } from "./connector.ts";
+import type { Guard } from "./guard.ts";
 import { Memory } from "./memory/memory.ts";
 import type { Flow, Step } from "./schema.ts";
 import type { Approval, Run, Store } from "./store.ts";
@@ -37,17 +38,21 @@ export interface StartedBy {
 export interface EngineOptions {
   /** Picks the notes each agent step sends (default: found by their words, within Sochen's budget). */
   readonly memory?: Memory;
+  /** Looks at each hand-off before it's made (ArmorIQ); none by default. */
+  readonly guard?: Guard;
 }
 
 export class Engine {
   readonly store: Store;
   readonly connectors: Readonly<Record<string, Connector>>;
   readonly memory: Memory;
+  readonly guard: Guard | null;
 
   constructor(store: Store, connectors: Readonly<Record<string, Connector>>, options: EngineOptions = {}) {
     this.store = store;
     this.connectors = connectors;
     this.memory = options.memory ?? new Memory(store);
+    this.guard = options.guard ?? null;
   }
 
   async start(flow: Flow, input: string, flowId: string | null = null, startedBy?: StartedBy): Promise<RunView> {
@@ -81,13 +86,18 @@ export class Engine {
     if (!run) throw new Error(`The run for approval ${approvalId} is gone.`);
     if (!this.store.decide(approvalId, yes)) throw new Error(`Approval ${approvalId} was already answered (${approval.status}).`);
     const step = run.flow.steps.find((candidate) => candidate.id === approval.stepId);
+    // A hand-off the guard held: yes makes it, without asking the guard again; no ends the run.
+    if (step?.type === "agent") {
+      this.store.log(run.id, step.id, yes ? "approved" : "declined", { message: approval.message });
+      if (yes) return this.advance(run, step.id, step.id);
+      return this.end(run.id, "declined", null, run.context, null);
+    }
     if (!step || step.type !== "approval") throw new Error(`Approval ${approvalId} points at a step that isn't an approval.`);
     this.store.log(run.id, step.id, yes ? "approved" : "declined", { message: approval.message });
     const context: RunContext = { ...run.context, steps: { ...run.context.steps, [step.id]: { text: yes ? "yes" : "no", data: yes } } };
     if (yes) return this.advance({ ...run, context }, step.next ?? following(run.flow, step));
     if (step.onNo) return this.advance({ ...run, context }, step.onNo);
-    this.store.saveRun({ id: run.id, state: "declined", at: null, context, error: null });
-    return this.view(run.id);
+    return this.end(run.id, "declined", null, context, null);
   }
 
   view(runId: string): RunView {
@@ -107,22 +117,20 @@ export class Engine {
     };
   }
 
-  private async advance(run: Run, from: string): Promise<RunView> {
+  /** `cleared` is a held hand-off you've said yes to: it's made without asking the guard again. */
+  private async advance(run: Run, from: string, cleared: string | null = null): Promise<RunView> {
     let context = run.context;
     let target = from;
     // Carrying on after an approval: say so now, not after the next step (an assistant can take minutes).
     if (run.state !== "running" && target !== "end") this.store.saveRun({ id: run.id, state: "running", at: target, context, error: null });
     const done = Object.keys(context.steps).length;
     for (let count = done; ; count += 1) {
-      if (target === "end") {
-        this.store.saveRun({ id: run.id, state: "done", at: null, context, error: null });
-        return this.view(run.id);
-      }
+      if (target === "end") return this.end(run.id, "done", null, context, null);
       const step = run.flow.steps.find((candidate) => candidate.id === target);
       if (!step) return this.fail(run.id, target, context, `There's no step "${target}".`);
       if (count >= MAX_STEPS) return this.fail(run.id, step.id, context, `Stopped after ${MAX_STEPS} steps; the flow probably loops.`);
       try {
-        const outcome = await this.runStep(run, step, context);
+        const outcome = await this.runStep(run, step, context, cleared === step.id);
         if (outcome.wait) {
           this.store.saveRun({ id: run.id, state: "waiting", at: step.id, context, error: null });
           return this.view(run.id);
@@ -136,7 +144,7 @@ export class Engine {
     }
   }
 
-  private async runStep(run: Run, step: Step, context: RunContext): Promise<{ wait: true } | { wait: false; context: RunContext; next: string }> {
+  private async runStep(run: Run, step: Step, context: RunContext, cleared = false): Promise<{ wait: true } | { wait: false; context: RunContext; next: string }> {
     const keep = (text: string, data?: unknown): RunContext => ({ ...context, steps: { ...context.steps, [step.id]: data === undefined ? { text } : { text, data } } });
     switch (step.type) {
       case "agent": {
@@ -144,11 +152,31 @@ export class Engine {
         if (!assistant) throw new Error(`Step "${step.id}" asks "${step.agent}", which isn't one of the flow's assistants.`);
         const connector = this.connectors[assistant.connector];
         if (!connector) throw new Error(`There's no "${assistant.connector}" connector set up for "${assistant.id}".`);
+        const handOff = { run, step, assistant };
+        if (this.guard && !cleared) {
+          const verdict = await this.guard.check(handOff);
+          this.store.log(run.id, step.id, "guarded", { by: this.guard.name, assistant: assistant.id, ...verdict });
+          if (verdict.action === "block") throw new Error(`${this.guard.name} stopped the hand-off to "${assistant.id}": ${verdict.reason}.`);
+          if (verdict.action === "hold") {
+            const message = `${this.guard.name} held the hand-off to "${assistant.id}" (${verdict.reason}). Let it go ahead?`;
+            const approval = this.store.addApproval(run.id, step.id, message);
+            this.store.log(run.id, step.id, "waiting", { approval: approval.id, message });
+            return { wait: true };
+          }
+        }
         const ask = render(step.ask, context);
         // Kept notes from this assistant's slices only: all that fit the budget, the ones about this ask first.
         const memory = await this.memory.recall(ask, assistant.memory);
         this.store.log(run.id, step.id, "asked", { assistant: assistant.id, ask, memory: memory.map((note) => note.id) });
-        const answer = await connector.send({ assistant, ask, memory, runId: run.id });
+        const started = performance.now();
+        let answer: Awaited<ReturnType<Connector["send"]>>;
+        try {
+          answer = await connector.send({ assistant, ask, memory, runId: run.id });
+        } catch (error) {
+          void this.guard?.report(handOff, { ok: false, chars: 0, error: error instanceof Error ? error.message : String(error), ms: Math.round(performance.now() - started) });
+          throw error;
+        }
+        void this.guard?.report(handOff, { ok: true, chars: answer.text.length, ms: Math.round(performance.now() - started) });
         this.store.log(run.id, step.id, "answered", answer);
         return { wait: false, context: keep(answer.text, answer.data), next: step.next ?? following(run.flow, step) };
       }
@@ -174,7 +202,13 @@ export class Engine {
 
   private fail(runId: string, stepId: string, context: RunContext, error: string): RunView {
     this.store.log(runId, stepId, "failed", { error });
-    this.store.saveRun({ id: runId, state: "failed", at: stepId, context, error });
+    return this.end(runId, "failed", stepId, context, error);
+  }
+
+  /** A run is over: saved, and the guard told. */
+  private end(runId: string, state: "done" | "failed" | "declined", at: string | null, context: RunContext, error: string | null): RunView {
+    this.store.saveRun({ id: runId, state, at, context, error });
+    void this.guard?.finish(runId, state);
     return this.view(runId);
   }
 }
