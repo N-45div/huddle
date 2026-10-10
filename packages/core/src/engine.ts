@@ -1,5 +1,6 @@
 import { evaluate } from "./condition.ts";
-import type { Connector } from "./connector.ts";
+import { type Connector, memoryText, type Reply } from "./connector.ts";
+import { type Budget, budgetName, dollars, periodStart, priceOf, spendOf } from "./cost.ts";
 import type { Guard } from "./guard.ts";
 import { Memory } from "./memory/memory.ts";
 import type { Flow, Step } from "./schema.ts";
@@ -40,19 +41,32 @@ export interface EngineOptions {
   readonly memory?: Memory;
   /** Looks at each hand-off before it's made (ArmorIQ); none by default. */
   readonly guard?: Guard;
+  /** A cap on what hand-offs to paid assistants may spend; none by default. */
+  readonly budget?: Budget | null;
 }
+
+/** A hand-off to a paid assistant when the budget is spent. */
+export class OverBudget extends Error {}
 
 export class Engine {
   readonly store: Store;
   readonly connectors: Readonly<Record<string, Connector>>;
   readonly memory: Memory;
   readonly guard: Guard | null;
+  readonly budget: Budget | null;
 
   constructor(store: Store, connectors: Readonly<Record<string, Connector>>, options: EngineOptions = {}) {
     this.store = store;
     this.connectors = connectors;
     this.memory = options.memory ?? new Memory(store);
     this.guard = options.guard ?? null;
+    this.budget = options.budget ?? null;
+  }
+
+  /** What hand-offs with a known cost have spent in the budget's period (this month without one). */
+  spent(): number {
+    const since = periodStart(this.budget?.period ?? "month").toISOString();
+    return this.store.spendSince(since).reduce((sum, total) => sum + total.usd, 0);
   }
 
   async start(flow: Flow, input: string, flowId: string | null = null, startedBy?: StartedBy): Promise<RunView> {
@@ -164,20 +178,29 @@ export class Engine {
             return { wait: true };
           }
         }
+        // Over budget, paid assistants wait; free ones and those without a price carry on.
+        const price = priceOf(assistant);
+        if (this.budget && price && (price.input > 0 || price.output > 0 || price.call > 0)) {
+          const spent = this.spent();
+          if (spent >= this.budget.usd) throw new OverBudget(`${capital(budgetName(this.budget.period))} budget is spent (${dollars(spent)} of ${dollars(this.budget.usd)}), so "${assistant.id}", which costs money, wasn't asked. Raise HUDDLE_BUDGET, or wait for the next ${this.budget.period}.`);
+        }
         const ask = render(step.ask, context);
         // Kept notes from this assistant's slices only: all that fit the budget, the ones about this ask first.
         const memory = await this.memory.recall(ask, assistant.memory);
         this.store.log(run.id, step.id, "asked", { assistant: assistant.id, ask, memory: memory.map((note) => note.id) });
         const started = performance.now();
-        let answer: Awaited<ReturnType<Connector["send"]>>;
+        let reply: Reply;
         try {
-          answer = await connector.send({ assistant, ask, memory, runId: run.id });
+          reply = await connector.send({ assistant, ask, memory, runId: run.id });
         } catch (error) {
           void this.guard?.report(handOff, { ok: false, chars: 0, error: error instanceof Error ? error.message : String(error), ms: Math.round(performance.now() - started) });
           throw error;
         }
-        void this.guard?.report(handOff, { ok: true, chars: answer.text.length, ms: Math.round(performance.now() - started) });
-        this.store.log(run.id, step.id, "answered", answer);
+        void this.guard?.report(handOff, { ok: true, chars: reply.text.length, ms: Math.round(performance.now() - started) });
+        const { usage, ...answer } = reply;
+        const cost = spendOf(assistant, usage, memory.length ? `${memoryText(memory)}\n${ask}` : ask, answer.text);
+        this.store.addSpend(run, step.id, assistant.id, cost);
+        this.store.log(run.id, step.id, "answered", { ...answer, cost });
         return { wait: false, context: keep(answer.text, answer.data), next: step.next ?? following(run.flow, step) };
       }
       case "condition": {
@@ -212,6 +235,8 @@ export class Engine {
     return this.view(runId);
   }
 }
+
+const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** The step after this one in the file, or "end". */
 function following(flow: Flow, step: Step): string {

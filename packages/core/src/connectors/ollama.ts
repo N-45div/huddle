@@ -31,14 +31,14 @@ export function ollama(fetcher: typeof fetch = globalThis.fetch): Connector {
           method: "POST",
           headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
           // stream defaults to true on Ollama's own API; one JSON answer is what a step needs.
-          body: JSON.stringify({ model: assistant.model, messages, stream: false }),
+          body: JSON.stringify({ model: assistant.model, messages, stream: false, ...(assistant.maxTokens ? { options: { num_predict: assistant.maxTokens } } : {}) }),
           signal: signal ?? AbortSignal.timeout(TIMEOUT_MS),
         });
       } catch (error) {
         if (error instanceof Error && error.name === "TimeoutError") throw new Error(`${assistant.id} (${assistant.model}) didn't answer within ${TIMEOUT_MS / 60_000} minutes.`);
         throw new Error(`${assistant.id}: ${unreachable(root)}`);
       }
-      const body = (await response.json().catch(() => null)) as { message?: { content?: unknown }; error?: unknown } | null;
+      const body = (await response.json().catch(() => null)) as { message?: { content?: unknown }; error?: unknown; prompt_eval_count?: unknown; eval_count?: unknown } | null;
       if (!response.ok || body?.error) {
         const said = typeof body?.error === "string" ? body.error : `HTTP ${response.status}`;
         const hint =
@@ -50,7 +50,9 @@ export function ollama(fetcher: typeof fetch = globalThis.fetch): Connector {
       const text = typeof body?.message?.content === "string" ? body.message.content.trim() : "";
       if (!text) throw new Error(`${assistant.id} (${assistant.model}) answered without any text.`);
       const data = dataIn(text);
-      return data === undefined ? { text } : { text, data };
+      // Ollama counts tokens in and out on its own API.
+      const usage = typeof body?.prompt_eval_count === "number" && typeof body.eval_count === "number" ? { inputTokens: body.prompt_eval_count, outputTokens: body.eval_count } : undefined;
+      return { text, ...(data === undefined ? {} : { data }), ...(usage ? { usage } : {}) };
     },
   };
 }

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { DatabaseSync } from "node:sqlite";
+import type { Spend } from "./cost.ts";
 import { findSecret, redactSecrets, SensitiveNote } from "./memory/sensitive.ts";
 import type { Assistant, ContactTier, Flow } from "./schema.ts";
 import type { RunContext } from "./template.ts";
@@ -45,6 +46,33 @@ export interface Note {
   readonly status: "suggested" | "kept";
   readonly source: string;
   readonly createdAt: string;
+}
+
+/** What went on hand-offs to one assistant over a period. */
+export interface SpendTotal {
+  readonly assistant: string;
+  readonly calls: number;
+  /** Dollars spent on the calls with a known cost. */
+  readonly usd: number;
+  /** Calls whose cost is unknown (no price given, none reported). */
+  readonly unpriced: number;
+  /** Calls whose tokens were guessed from the text's length. */
+  readonly estimated: number;
+  /** Router calls answered from a kept answer, and what they would have cost. */
+  readonly reused: number;
+  readonly savedByReuse: number;
+  /** Router calls that went to a cheaper assistant than the judge's first choice, and what that saved. */
+  readonly cheaper: number;
+  readonly savedByCheaper: number;
+}
+
+/** An answer the router may give again. */
+export interface KeptAnswer {
+  readonly assistant: string;
+  readonly runId: string;
+  readonly text: string;
+  readonly data: unknown;
+  readonly costUsd: number | null;
 }
 
 export interface SavedFlow {
@@ -111,6 +139,10 @@ export class Store {
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS assistants (id TEXT PRIMARY KEY, position INTEGER NOT NULL, assistant TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS contacts (id TEXT PRIMARY KEY, name TEXT NOT NULL, tier TEXT NOT NULL, emails TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, last_seen_at TEXT);
+      CREATE TABLE IF NOT EXISTS spend (seq INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, step_id TEXT NOT NULL, flow_id TEXT, flow_name TEXT NOT NULL, assistant TEXT NOT NULL, input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, cached_tokens INTEGER NOT NULL, cost_usd REAL, estimated INTEGER NOT NULL, saved_usd REAL, saved_by TEXT, at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS answers (key TEXT PRIMARY KEY, assistant TEXT NOT NULL, run_id TEXT NOT NULL, text TEXT NOT NULL, data TEXT NOT NULL, cost_usd REAL, expires_at TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS spend_at ON spend (at);
+      CREATE INDEX IF NOT EXISTS spend_assistant ON spend (assistant, seq);
       CREATE INDEX IF NOT EXISTS approvals_run ON approvals (run_id);
       CREATE INDEX IF NOT EXISTS notes_slice ON notes (slice, status);
       CREATE INDEX IF NOT EXISTS log_run ON log (run_id, seq);
@@ -406,6 +438,79 @@ export class Store {
     this.db.prepare("INSERT INTO notes (id, slice, note, status, source, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(row.id, slice, note, status, source, row.createdAt);
     this.changed({ kind: "memory" });
     return row;
+  }
+
+  // Spend: what each hand-off took, and what the router saved -----------------------------------------
+
+  /** What one hand-off took. */
+  addSpend(run: Pick<Run, "id" | "flowId" | "flow">, stepId: string, assistant: string, spend: Spend): void {
+    this.db
+      .prepare("INSERT INTO spend (run_id, step_id, flow_id, flow_name, assistant, input_tokens, output_tokens, cached_tokens, cost_usd, estimated, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(run.id, stepId, run.flowId, run.flow.name, assistant, Math.round(spend.inputTokens), Math.round(spend.outputTokens), Math.round(spend.cachedTokens ?? 0), spend.costUsd, spend.estimated ? 1 : 0, now());
+  }
+
+  /** The router picked a cheaper assistant than the judge's first choice for this run: what that saved. */
+  savedByCheaperPick(runId: string, savedUsd: number): void {
+    this.db.prepare("UPDATE spend SET saved_usd = ?, saved_by = 'cheaper' WHERE seq = (SELECT MAX(seq) FROM spend WHERE run_id = ?)").run(savedUsd, runId);
+  }
+
+  /** The router answered from a kept answer: nothing spent, the answer's first cost saved. */
+  addReuse(runId: string, assistant: string, savedUsd: number | null): void {
+    this.db
+      .prepare("INSERT INTO spend (run_id, step_id, flow_id, flow_name, assistant, input_tokens, output_tokens, cached_tokens, cost_usd, estimated, saved_usd, saved_by, at) VALUES (?, 'reply', NULL, ?, ?, 0, 0, 0, 0, 0, ?, 'reuse', ?)")
+      .run(runId, `Router: ${assistant}`, assistant, savedUsd, now());
+  }
+
+  /** Spend since a time, per assistant: everything, or the router's calls only. */
+  spendSince(since: string, routerOnly = false): SpendTotal[] {
+    const rows = this.db
+      .prepare(
+        `SELECT assistant,
+           SUM(CASE WHEN saved_by IS NOT 'reuse' THEN 1 ELSE 0 END) AS calls,
+           COALESCE(SUM(cost_usd), 0) AS usd,
+           SUM(CASE WHEN cost_usd IS NULL THEN 1 ELSE 0 END) AS unpriced,
+           SUM(estimated) AS estimated,
+           SUM(CASE WHEN saved_by = 'reuse' THEN 1 ELSE 0 END) AS reused,
+           COALESCE(SUM(CASE WHEN saved_by = 'reuse' THEN saved_usd END), 0) AS saved_by_reuse,
+           SUM(CASE WHEN saved_by = 'cheaper' THEN 1 ELSE 0 END) AS cheaper,
+           COALESCE(SUM(CASE WHEN saved_by = 'cheaper' THEN saved_usd END), 0) AS saved_by_cheaper
+         FROM spend WHERE at >= ? ${routerOnly ? "AND flow_id IS NULL AND flow_name LIKE 'Router: %'" : ""} GROUP BY assistant ORDER BY usd DESC`,
+      )
+      .all(since) as Row[];
+    return rows.map((row) => ({
+      assistant: String(row.assistant),
+      calls: Number(row.calls),
+      usd: Number(row.usd),
+      unpriced: Number(row.unpriced),
+      estimated: Number(row.estimated),
+      reused: Number(row.reused),
+      savedByReuse: Number(row.saved_by_reuse),
+      cheaper: Number(row.cheaper),
+      savedByCheaper: Number(row.saved_by_cheaper),
+    }));
+  }
+
+  /** An assistant's latest priced calls, newest first: what the router expects its next call to cost. */
+  recentSpend(assistant: string, limit = 20): { costUsd: number; inputTokens: number; outputTokens: number }[] {
+    return (this.db.prepare("SELECT cost_usd, input_tokens, output_tokens FROM spend WHERE assistant = ? AND cost_usd IS NOT NULL AND saved_by IS NOT 'reuse' ORDER BY seq DESC LIMIT ?").all(assistant, limit) as Row[]).map((row) => ({
+      costUsd: Number(row.cost_usd),
+      inputTokens: Number(row.input_tokens),
+      outputTokens: Number(row.output_tokens),
+    }));
+  }
+
+  // Answers the router may give again ----------------------------------------------------------------
+
+  keptAnswer(key: string): KeptAnswer | null {
+    const row = this.db.prepare("SELECT * FROM answers WHERE key = ? AND expires_at > ?").get(key, now()) as Row | undefined;
+    if (!row) return null;
+    return { assistant: String(row.assistant), runId: String(row.run_id), text: String(row.text), data: JSON.parse(String(row.data)), costUsd: row.cost_usd === null ? null : Number(row.cost_usd) };
+  }
+
+  keepAnswer(key: string, answer: KeptAnswer, minutes: number): void {
+    this.db.prepare("DELETE FROM answers WHERE expires_at <= ?").run(now());
+    const expires = new Date(Date.now() + minutes * 60_000).toISOString();
+    this.db.prepare("INSERT OR REPLACE INTO answers (key, assistant, run_id, text, data, cost_usd, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(key, answer.assistant, answer.runId, answer.text, JSON.stringify(answer.data ?? null), answer.costUsd, expires);
   }
 
   // Log --------------------------------------------------------------------------------------------

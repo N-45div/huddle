@@ -36,6 +36,23 @@ export const Assistant = z.object({
   scopes: z.array(z.string().min(1).max(100)).max(50).optional(),
   /** openshell: the command that runs the agent in its sandbox; the request goes in on stdin, or where "{{ask}}" is. */
   command: z.array(z.string().min(1)).min(1).max(64).optional(),
+  /**
+   * What it charges, in US dollars: per million tokens in (input), from the provider's prompt cache (cached)
+   * and out (output), plus per call. Leave it out when you don't know; stand-ins and Ollama on this machine
+   * are free. The router uses it to pick the cheaper of assistants that fit about as well.
+   */
+  price: z
+    .object({
+      input: z.number().min(0).max(10_000).default(0),
+      output: z.number().min(0).max(10_000).default(0),
+      cached: z.number().min(0).max(10_000).optional(),
+      call: z.number().min(0).max(1_000).default(0),
+    })
+    .optional(),
+  /** openai, ollama: the most an answer may run to, in tokens (a cap on what one answer can cost). */
+  maxTokens: z.number().int().min(1).max(1_000_000).optional(),
+  /** Router: answer the very same ask again from the last answer, for this many minutes. Only for answers safe to reuse. */
+  reuseMinutes: z.number().int().min(1).max(10_080).optional(),
   /** mock: fixed answers; the first key found in the request (ignoring case) wins, then "*". */
   replies: z.record(z.string(), z.string()).optional(),
   /** email: who it goes to, always these addresses (up to 50), so a step can't be talked into mailing someone else. */

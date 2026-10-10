@@ -1,3 +1,4 @@
+import type { Usage } from "./cost.ts";
 import type { Assistant } from "./schema.ts";
 import type { Note } from "./store.ts";
 import type { StepAnswer } from "./template.ts";
@@ -16,8 +17,13 @@ export interface ConnectorRequest {
   readonly runId?: string;
 }
 
+/** An answer, and the tokens it took when the assistant says. */
+export interface Reply extends StepAnswer {
+  readonly usage?: Usage;
+}
+
 export interface Connector {
-  send(request: ConnectorRequest): Promise<StepAnswer>;
+  send(request: ConnectorRequest): Promise<Reply>;
 }
 
 /** Structured data inside an answer: the whole answer if it's JSON, else the first ```json block. */

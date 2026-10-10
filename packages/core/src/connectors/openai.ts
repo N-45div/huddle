@@ -1,4 +1,5 @@
 import { type Connector, dataIn, keyFor, memoryText } from "../connector.ts";
+import type { Usage } from "../cost.ts";
 
 /**
  * Assistants that answer the OpenAI chat-completions format, which many self-hosted ones serve:
@@ -23,12 +24,13 @@ export function openai(fetcher: typeof fetch = globalThis.fetch): Connector {
       const response = await fetcher(url, {
         method: "POST",
         headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
-        body: JSON.stringify({ model: assistant.model ?? "default", messages, stream: false }),
+        body: JSON.stringify({ model: assistant.model ?? "default", messages, stream: false, ...(assistant.maxTokens ? { max_tokens: assistant.maxTokens } : {}) }),
         signal: signal ?? AbortSignal.timeout(TIMEOUT_MS),
       });
       const body = (await response.json().catch(() => null)) as {
         choices?: { message?: { content?: string | { type?: string; text?: string }[] } }[];
         error?: { message?: string } | string;
+        usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; cost?: unknown; prompt_tokens_details?: { cached_tokens?: unknown } };
       } | null;
       if (!response.ok) {
         const reason = typeof body?.error === "string" ? body.error : (body?.error?.message ?? `HTTP ${response.status}`);
@@ -38,7 +40,20 @@ export function openai(fetcher: typeof fetch = globalThis.fetch): Connector {
       const text = typeof content === "string" ? content : (content ?? []).map((part) => part.text ?? "").join("");
       if (!text) throw new Error(`${assistant.id} answered without any text.`);
       const data = dataIn(text);
-      return data === undefined ? { text } : { text, data };
+      const usage = usageOf(body?.usage);
+      return { text, ...(data === undefined ? {} : { data }), ...(usage ? { usage } : {}) };
     },
   };
+}
+
+const count = (value: unknown): number | undefined => (typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined);
+
+/** OpenAI's usage block; OpenRouter adds what it cost. */
+function usageOf(usage: { prompt_tokens?: unknown; completion_tokens?: unknown; cost?: unknown; prompt_tokens_details?: { cached_tokens?: unknown } } | undefined): Usage | undefined {
+  const inputTokens = count(usage?.prompt_tokens);
+  const outputTokens = count(usage?.completion_tokens);
+  if (inputTokens === undefined || outputTokens === undefined) return undefined;
+  const cachedTokens = count(usage?.prompt_tokens_details?.cached_tokens);
+  const costUsd = count(usage?.cost);
+  return { inputTokens, outputTokens, ...(cachedTokens ? { cachedTokens } : {}), ...(costUsd !== undefined ? { costUsd } : {}) };
 }
