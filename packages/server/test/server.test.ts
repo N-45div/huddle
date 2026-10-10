@@ -69,6 +69,7 @@ describe("the API", () => {
       openshell: false,
       router: null,
       email: { hook: "http://huddle.test/hooks/email", receiving: false },
+      guard: null,
     });
     assert.equal((await app.request("/.well-known/agent-card.json")).status, 200);
   });

@@ -91,6 +91,7 @@ export function createApp(options: AppOptions): Hono {
       openshell: Boolean(options.sandboxes),
       router: options.router ? `${options.publicUrl}/v1` : null,
       email: { hook: `${options.publicUrl}/hooks/email`, receiving: Boolean(options.email?.webhookSecret && options.email.apiKey) },
+      guard: options.engine.guard?.name ?? null,
     }),
   );
 

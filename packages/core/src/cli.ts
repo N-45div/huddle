@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { defaultConnectors } from "./connectors/index.ts";
 import { Engine, type RunView } from "./engine.ts";
+import { armoriq, registerWithArmorIQ } from "./guards/armoriq.ts";
 import { parseFlow } from "./schema.ts";
 import { Store } from "./store.ts";
 
@@ -14,11 +15,15 @@ import { Store } from "./store.ts";
  *   huddle show <run-id>           a run's steps, what went in and what came out
  *   huddle memory [suggested|kept] the shared memory
  *   huddle memory add <slice> <note…> | keep <note-id> | forget <note-id>
+ *   huddle armoriq register [--deny <connector,…>] [--url <mcp-url>] [--replace]
+ *                                  tell ArmorIQ about Huddle: its agent, and a policy allowing every connector
+ *                                  but the ones you deny (ARMORIQ_API_KEY; HUDDLE_ARMORIQ_AGENT, default huddle)
  */
 
 
 const store = new Store(process.env.HUDDLE_DB ?? "huddle.db");
-const engine = new Engine(store, defaultConnectors());
+const armoriqKey = process.env.ARMORIQ_API_KEY?.trim() || undefined;
+const engine = new Engine(store, defaultConnectors(), { guard: armoriqKey ? armoriq({ apiKey: armoriqKey, agentId: process.env.HUDDLE_ARMORIQ_AGENT }) : undefined });
 const [command, ...args] = process.argv.slice(2);
 
 function option(name: string): string | undefined {
@@ -90,8 +95,25 @@ async function main(): Promise<void> {
       }
       return;
     }
+    case "armoriq": {
+      if (args[0] !== "register") throw new Error("huddle armoriq register [--deny <connector,…>] [--url <mcp-url>] [--replace]");
+      if (!armoriqKey) throw new Error("Set ARMORIQ_API_KEY first (Settings, API Keys on platform.armoriq.ai).");
+      const deny = (option("deny") ?? "").split(",").map((name) => name.trim()).filter(Boolean);
+      const connectors = Object.keys(defaultConnectors());
+      const unknown = deny.filter((name) => !connectors.includes(name));
+      if (unknown.length) throw new Error(`There's no ${unknown.join(", ")} connector; they are: ${connectors.join(", ")}.`);
+      const allow = connectors.filter((name) => !deny.includes(name));
+      const base = (process.env.HUDDLE_PUBLIC_URL ?? `http://localhost:${process.env.HUDDLE_PORT ?? 7700}`).replace(/\/$/, "");
+      const result = await registerWithArmorIQ({ apiKey: armoriqKey, agentId: process.env.HUDDLE_ARMORIQ_AGENT, mcpUrl: option("url") ?? `${base}/mcp`, allow, replace: args.includes("--replace") });
+      if (!result.ok) throw new Error(`ArmorIQ said no: ${result.error}`);
+      console.log(`Registered agent "${result.agent}" with ArmorIQ; policy ${result.policy || "(unnamed)"}.`);
+      console.log(`  Allowed: ${allow.join(", ")}`);
+      if (deny.length) console.log(`  Blocked: ${deny.join(", ")}`);
+      console.log("  To have a hand-off wait for your yes, set that tool to hold on ArmorIQ's dashboard (Policies).");
+      return;
+    }
     default:
-      console.log("huddle run <flow.json> [--input <text>|@<file>] | approve <id> yes|no | runs | show <run-id> | memory [suggested|kept|add|keep|forget]");
+      console.log("huddle run <flow.json> [--input <text>|@<file>] | approve <id> yes|no | runs | show <run-id> | memory [suggested|kept|add|keep|forget] | armoriq register");
   }
 }
 

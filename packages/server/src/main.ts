@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { defaultConnectors, embedder, Engine, jevJudge, type Judge, Memory, modelJudge, OpenShell, openshell, PactIdentity, pact, RECALL_BUDGET, reranker, Router, SignIns, Store, storedGrants } from "@huddle/core";
+import { armoriq, defaultConnectors, embedder, Engine, jevJudge, type Judge, Memory, modelJudge, OpenShell, openshell, PactIdentity, pact, RECALL_BUDGET, reranker, Router, SignIns, Store, storedGrants } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
 import { SandboxWatcher } from "./sandbox-requests.ts";
@@ -38,6 +38,9 @@ import { webApp } from "./static.ts";
  *                      reading needs a full-access key
  *   RESEND_WEBHOOK_SECRET  the signing secret of Resend's inbound webhook, pointed at /hooks/email
  *   HUDDLE_OWNER_EMAILS    your addresses, comma-separated: mail from them counts as you
+ *   ARMORIQ_API_KEY    ArmorIQ checks every hand-off against the run's signed plan and your policy first;
+ *                      HUDDLE_ARMORIQ_AGENT names the agent your policies are for (default huddle).
+ *                      Set the policy up once with: npm run huddle -- armoriq register
  */
 
 const env = (name: string): string | undefined => process.env[name]?.trim() || undefined;
@@ -85,7 +88,9 @@ const memory = new Memory(store, {
 });
 // PACT sign-ins wait in Approvals while the step that needs them keeps running.
 const signIns = new SignIns();
-const engine = new Engine(store, { ...defaultConnectors(), openshell: openshell(() => shell), pact: pact(() => identity, undefined, { signIns, grants: storedGrants(store) }) }, { memory });
+const armoriqKey = env("ARMORIQ_API_KEY");
+const guard = armoriqKey ? armoriq({ apiKey: armoriqKey, agentId: env("HUDDLE_ARMORIQ_AGENT") }) : undefined;
+const engine = new Engine(store, { ...defaultConnectors(), openshell: openshell(() => shell), pact: pact(() => identity, undefined, { signIns, grants: storedGrants(store) }) }, { memory, guard });
 const sandboxes = shell ? new SandboxWatcher(shell, store) : undefined;
 const scheduler = new Scheduler(store, engine);
 
@@ -122,6 +127,7 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   console.log(`  Router (OpenAI-compatible): ${publicUrl}/v1, model = one of your assistants' ids, or "auto" (${judge ? `judged by ${judge.name}` : "no judge: your list's order"})`);
   if (!built) console.log(`  The canvas isn't built (no ${join(web, "index.html")}): run npm run build.`);
   if (!llmUrl || !llmModel) console.log('  "Describe it" is off: set HUDDLE_LLM_URL and HUDDLE_LLM_MODEL to turn it on.');
+  console.log(guard ? `  ArmorIQ checks every hand-off first (agent ${env("HUDDLE_ARMORIQ_AGENT") ?? "huddle"}); a blocked one fails its run, a held one waits in Approvals` : "  ArmorIQ is off: set ARMORIQ_API_KEY to check every hand-off against a signed plan and your policy.");
   const finds = [memory.embedder ? `words and meaning (${memory.embedder.model})` : "words", ...(memory.reranker ? [`reranked by ${memory.reranker.model}`] : [])];
   console.log(`  Memory: up to ${budget} characters of kept notes per request, found by ${finds.join(", ")}`);
   if (env("RESEND_WEBHOOK_SECRET")) {

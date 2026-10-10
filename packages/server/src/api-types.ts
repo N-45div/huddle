@@ -25,6 +25,8 @@ export interface Info {
    * can take it (RESEND_WEBHOOK_SECRET and RESEND_API_KEY are set).
    */
   readonly email: { readonly hook: string; readonly receiving: boolean };
+  /** What checks each hand-off before it's made (e.g. "ArmorIQ"), when something does. */
+  readonly guard: string | null;
 }
 
 /** One saved flow, as the list and the editor see it. */
