@@ -3,9 +3,9 @@
  * can't drift apart. All routes are under /api; when the server has a token, every call carries
  * `Authorization: Bearer <token>` (the event stream takes `?token=` instead).
  */
-import type { Assistant, Contact, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger } from "@huddle/core";
+import type { Assistant, Choice, Contact, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger, View } from "@huddle/core";
 
-export type { Assistant, Contact, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger };
+export type { Assistant, Choice, Contact, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger, View };
 
 /** GET /api/info: what this Huddle can do. */
 export interface Info {
@@ -32,6 +32,14 @@ export interface Info {
   readonly email: { readonly hook: string; readonly receiving: boolean };
   /** What checks each hand-off before it's made (e.g. "ArmorIQ"), when something does. */
   readonly guard: string | null;
+  /** Showing answers as views: who chooses the view ("jev", "model", "rules"), and the model that fills charts and the like in, if any. */
+  readonly present: { readonly chooser: string; readonly writer: string | null };
+}
+
+/** POST /api/present: how to show an answer, and the view. */
+export interface PresentedView {
+  readonly choice: Choice;
+  readonly view: View;
 }
 
 /** One saved flow, as the list and the editor see it. */

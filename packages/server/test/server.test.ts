@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { a2a, Assistant, type Connector, Engine, type Flow, mock, newKey, type OpenShell, PactIdentity, parseFlow, Router, type Run, SignIns, Store } from "@huddle/core";
+import { a2a, Assistant, type Connector, Engine, type Flow, mock, newKey, type OpenShell, PactIdentity, parseFlow, Router, type Run, rulesPresenter, SignIns, Store, viewWriter } from "@huddle/core";
 import { Hono } from "hono";
 import { createApp } from "../src/app.ts";
 import { describer } from "../src/describe.ts";
@@ -71,6 +71,7 @@ describe("the API", () => {
       mcp: { url: "http://huddle.test/mcp", token: "HUDDLE_TOKEN" },
       email: { hook: "http://huddle.test/hooks/email", receiving: false },
       guard: null,
+      present: { chooser: "rules", writer: null },
     });
     assert.equal((await app.request("/.well-known/agent-card.json")).status, 200);
   });
@@ -590,6 +591,41 @@ describe("the router (OpenAI-compatible)", () => {
     const error = (await over.json()).error;
     assert.deepEqual([error.code, error.type], ["budget_exceeded", "insufficient_quota"]);
     assert.match(error.message, /The budget \(\$1\.00 a day\) is spent/);
+  });
+
+  it("shows answers as views: a table from records with no model, a chart a model filled in, checked, and says why not", async () => {
+    const store = new Store();
+    const engine = new Engine(store, { mock });
+    const filled = (async () => Response.json({ choices: [{ message: { content: '{"title": "Spend", "unit": "$", "labels": ["Rent", "Food"], "series": [{"name": "October", "values": [1200, 400]}]}' } }] })) as unknown as typeof fetch;
+    const app = createApp({ store, engine, version: "test", publicUrl: "http://huddle.test", present: { presenter: rulesPresenter, writer: viewWriter({ url: "http://model.test/v1", model: "small", fetcher: filled }) } });
+    const presentIt = (body: object) => app.request("/api/present", chat(body));
+
+    const table = await (await presentIt({ text: "Two invoices.", data: [{ vendor: "Northwind", amount: 450 }, { vendor: "Contoso", amount: 90 }], assistant: "finance" })).json();
+    assert.deepEqual([table.choice.kind, table.view.kind, table.view.table.rows.length, table.view.source], ["table", "table", 2, "finance's answer"]);
+    const chart = await (await presentIt({ text: "Rent 1200, food 400.", kind: "bar_chart", assistant: "finance" })).json();
+    assert.deepEqual([chart.choice.by, chart.view.kind, chart.view.series[0].values], ["you", "bar_chart", [1200, 400]]);
+    assert.equal((await presentIt({ text: "x", kind: "hologram" })).status, 400);
+    assert.equal((await presentIt({ text: "No records here.", kind: "table" })).status, 400);
+    assert.equal((await (await app.request("/api/info")).json()).present.writer, "small");
+
+    const noModel = createApp({ store, engine, version: "test", publicUrl: "http://huddle.test" });
+    const refused = await noModel.request("/api/present", chat({ text: "Rent 1200", kind: "bar_chart" }));
+    assert.equal(refused.status, 501);
+    assert.match((await refused.json()).error, /set HUDDLE_LLM_URL and HUDDLE_LLM_MODEL/);
+  });
+
+  it("adds huddle.view to a /v1 answer when asked, and never loses the answer if the view fails", async () => {
+    const store = new Store();
+    const engine = new Engine(store, { mock });
+    store.saveAssistants([Assistant.parse({ id: "finance", connector: "mock", replies: { "*": '[{"vendor": "Northwind", "amount": 450}]' } }), Assistant.parse({ id: "talk", connector: "mock", replies: { "*": "Rent 1200, food 400." } })]);
+    const broken = (async () => Response.json({ error: { message: "overloaded" } }, { status: 529 })) as unknown as typeof fetch;
+    const app = createApp({ store, engine, version: "test", publicUrl: "http://huddle.test", router: new Router(store, engine), present: { presenter: { name: "test", choose: async () => ({ kind: "bar_chart", by: "test", confidence: null }) }, writer: viewWriter({ url: "http://model.test/v1", model: "small", fetcher: broken }) } });
+    const ask = (model: string, present: boolean) => app.request("/v1/chat/completions", chat({ model, messages: [{ role: "user", content: "My spending" }], huddle: { present } }));
+    const plain = await (await ask("finance", false)).json();
+    assert.equal(plain.huddle.view, undefined, "only when asked");
+    const failed = await (await ask("talk", true)).json();
+    assert.equal(failed.choices[0].message.content, "Rent 1200, food 400.");
+    assert.match(failed.huddle.viewError, /The model said: overloaded/);
   });
 
   it("streams like OpenAI when asked", async () => {

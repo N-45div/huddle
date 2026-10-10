@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { askFrom, AUTO, type ChatMessage, NoAnswer, PREFER, type Prefer, type Router, type Store } from "@huddle/core";
+import { askFrom, AUTO, type ChatMessage, NoAnswer, PREFER, type Prefer, type Presenter, present, type Router, type Store, type ViewWriter } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { bearerOf, same } from "./auth.ts";
@@ -12,7 +12,8 @@ import { bearerOf, same } from "./auth.ts";
  *
  * Huddle's own options go in a `huddle` object: `prefer` ("quality", "balanced" or "cheapest") says how
  * much fit "auto" may trade for cost, and `reuse: false` (or Cache-Control: no-cache) asks afresh instead
- * of answering from a kept answer. `usage` in the answer is the assistant's real token count when it
+ * of answering from a kept answer, and `present: true` adds `huddle.view`: how best to show the answer (a
+ * table, chart, flowchart, calculator or comparison, as checked JSON for your app to draw). `usage` in the answer is the assistant's real token count when it
  * reports one, else an estimate, and `huddle.cost` says which and what it cost.
  */
 
@@ -21,6 +22,8 @@ export interface RouterOptions {
   readonly router: Router;
   /** Who may call: HUDDLE_ROUTER_KEY or HUDDLE_TOKEN. Neither set (this machine only): anyone local. */
   readonly keys: readonly string[];
+  /** For huddle.present: how to show an answer, and a model to fill views in. */
+  readonly present?: { readonly presenter: Presenter; readonly writer: ViewWriter | null };
 }
 
 /** An error in the shape OpenAI clients read. */
@@ -58,7 +61,7 @@ export function routerRoutes(options: RouterOptions): Hono {
   });
 
   app.post("/v1/chat/completions", async (c) => {
-    const body = (await c.req.json().catch(() => null)) as { model?: unknown; models?: unknown; messages?: unknown; stream?: unknown; huddle?: { prefer?: unknown; reuse?: unknown } } | null;
+    const body = (await c.req.json().catch(() => null)) as { model?: unknown; models?: unknown; messages?: unknown; stream?: unknown; huddle?: { prefer?: unknown; reuse?: unknown; present?: unknown } } | null;
     if (!body) return fail(c, 400, "Send a JSON body with model and messages.", "invalid_body");
     const models = Array.isArray(body.models) ? body.models.filter((id): id is string => typeof id === "string" && id.length > 0) : [];
     const model = typeof body.model === "string" && body.model ? body.model : undefined;
@@ -103,6 +106,17 @@ export function routerRoutes(options: RouterOptions): Hono {
       reused: routed.reused,
       cost: cost ? { usd: cost.costUsd, estimated: cost.estimated, cachedTokens: cost.cachedTokens ?? 0 } : null,
     };
+    // Shown as a view when asked: a failure to present never loses the answer.
+    let presented: { view?: unknown; viewError?: string } = {};
+    if (body.huddle?.present === true && options.present) {
+      try {
+        const { choice, view } = await present({ text: routed.text, ask, assistant: routed.assistant.name ?? routed.assistant.id, ...(routed.data !== null && routed.data !== undefined ? { data: routed.data } : {}) }, options.present);
+        presented = { view: { ...view, chosenBy: choice.by } };
+      } catch (error) {
+        presented = { viewError: error instanceof Error ? error.message : String(error) };
+      }
+    }
+    Object.assign(huddle, presented);
     const usage = { prompt_tokens: cost?.inputTokens ?? 0, completion_tokens: cost?.outputTokens ?? 0, total_tokens: (cost?.inputTokens ?? 0) + (cost?.outputTokens ?? 0) };
     if (body.stream === true) {
       // Assistants answer whole, so the stream is the answer in one piece, then the end.

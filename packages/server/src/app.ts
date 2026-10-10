@@ -1,4 +1,4 @@
-import { Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type MemoryHit, type Note, ollamaModels, type PactIdentity, periodStart, type Router, type SavedFlow, SensitiveNote, type SignIns, type Store } from "@huddle/core";
+import { Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type MemoryHit, type Note, ollamaModels, type PactIdentity, periodStart, type Presenter, present, rulesPresenter, VIEW_KINDS, type ViewKind, type ViewWriter, type Router, type SavedFlow, SensitiveNote, type SignIns, type Store } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { a2aRoutes } from "./a2a.ts";
@@ -6,7 +6,7 @@ import { type EmailOptions, emailRoutes } from "./email.ts";
 import { mcpRoutes, toolNames } from "./mcp.ts";
 import { routerRoutes } from "./router.ts";
 import { bearerOf, same } from "./auth.ts";
-import type { ApiError, FlowView, Info, RouterUsage, RouterView, RunDetail, RunSummary, SpendView, WaitingApproval } from "./api-types.ts";
+import type { ApiError, FlowView, Info, PresentedView, RouterUsage, RouterView, RunDetail, RunSummary, SpendView, WaitingApproval } from "./api-types.ts";
 import { CONNECTORS } from "./connectors-info.ts";
 import { noSandboxes, type SandboxInbox, Stale } from "./sandbox-requests.ts";
 
@@ -48,6 +48,8 @@ export interface AppOptions {
   readonly routerKey?: string;
   /** Email in through Resend: its webhook secret, a key to read the mail, and your addresses. */
   readonly email?: EmailOptions;
+  /** Showing answers as views: who chooses, and a model to fill charts and the like in (default: rules, no model). */
+  readonly present?: { readonly presenter: Presenter; readonly writer: ViewWriter | null };
 }
 
 /** A flow from a request body, or the problems with it, one line each. */
@@ -88,6 +90,7 @@ export function createApp(options: AppOptions): Hono {
   });
 
   const sandboxes = options.sandboxes ?? noSandboxes;
+  const presenting = options.present ?? { presenter: rulesPresenter, writer: null };
   app.get("/api/info", (c) =>
     c.json<Info>({
       version: options.version,
@@ -100,6 +103,7 @@ export function createApp(options: AppOptions): Hono {
       mcp: { url: `${options.publicUrl}/mcp`, token: options.a2aToken ? "HUDDLE_A2A_TOKEN" : options.token ? "HUDDLE_TOKEN" : null },
       email: { hook: `${options.publicUrl}/hooks/email`, receiving: Boolean(options.email?.webhookSecret && options.email.apiKey) },
       guard: options.engine.guard?.name ?? null,
+      present: { chooser: presenting.presenter.name, writer: presenting.writer?.model ?? null },
     }),
   );
 
@@ -317,6 +321,26 @@ export function createApp(options: AppOptions): Hono {
   app.delete("/api/memory/:id", (c) => (store.forget(c.req.param("id")) ? c.json({ ok: true }) : bad(c, "There's no such note.", 404)));
 
   // Describe it -------------------------------------------------------------------------------------
+  // Answers you can interact with: how to show one, and the view (a table, or one a model filled in, checked).
+  app.post("/api/present", async (c) => {
+    const given = await body(c);
+    if (typeof given.text !== "string" || !given.text.trim()) return bad(c, "Send the answer's text.");
+    if (given.kind !== undefined && !VIEW_KINDS.includes(given.kind as ViewKind)) return bad(c, `kind is one of ${VIEW_KINDS.join(", ")}.`);
+    const answer = {
+      text: given.text.slice(0, 20_000),
+      ...(given.data !== undefined && given.data !== null ? { data: given.data } : {}),
+      ...(typeof given.ask === "string" ? { ask: given.ask.slice(0, 4_000) } : {}),
+      ...(typeof given.assistant === "string" ? { assistant: given.assistant.slice(0, 64) } : {}),
+    };
+    try {
+      return c.json<PresentedView>(await present(answer, { ...presenting, ...(given.kind ? { kind: given.kind as ViewKind } : {}) }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // No model to fill views in is a setting; no records is the request; anything else is the model.
+      return bad(c, message, presenting.writer === null && message.includes("HUDDLE_LLM") ? 501 : message.includes("no records") ? 400 : 502);
+    }
+  });
+
   app.post("/api/describe", async (c) => {
     if (!options.describe) return bad(c, "Describe it needs an AI model: set HUDDLE_LLM_URL and HUDDLE_LLM_MODEL (and HUDDLE_LLM_KEY if it needs one).", 501);
     const text = (await body(c)).text;
@@ -392,7 +416,7 @@ export function createApp(options: AppOptions): Hono {
   });
 
   app.route("/", emailRoutes(options));
-  if (options.router) app.route("/", routerRoutes({ store, router: options.router, keys: [options.routerKey, options.token].filter((key): key is string => Boolean(key)) }));
+  if (options.router) app.route("/", routerRoutes({ store, router: options.router, keys: [options.routerKey, options.token].filter((key): key is string => Boolean(key)), present: presenting }));
   app.route("/", a2aRoutes(options));
   app.route("/", mcpRoutes(options));
   return app;

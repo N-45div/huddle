@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { armoriq, type Budget, defaultConnectors, dollars, embedder, Engine, jevJudge, type Judge, Memory, modelJudge, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, reranker, Router, SignIns, Store, storedGrants } from "@huddle/core";
+import { armoriq, type Budget, defaultConnectors, dollars, embedder, Engine, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, reranker, Router, rulesPresenter, SignIns, Store, storedGrants, viewWriter } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
 import { SandboxWatcher } from "./sandbox-requests.ts";
@@ -108,6 +108,10 @@ let judge: Judge | null = null;
 if (typesafeKey) judge = jevJudge({ key: typesafeKey, model: env("HUDDLE_JEV_MODEL") });
 else if (llmUrl && llmModel) judge = modelJudge({ url: llmUrl, model: llmModel, key: env("HUDDLE_LLM_KEY") });
 
+// How answers are shown: Jev chooses the view if it's set up, else the HUDDLE_LLM_* model, else plain rules; that model fills charts and the like in.
+const presenter = typesafeKey ? jevPresenter({ key: typesafeKey, model: env("HUDDLE_JEV_MODEL") }) : llmUrl && llmModel ? modelPresenter({ url: llmUrl, model: llmModel, key: env("HUDDLE_LLM_KEY") }) : rulesPresenter;
+const writer = llmUrl && llmModel ? viewWriter({ url: llmUrl, model: llmModel, key: env("HUDDLE_LLM_KEY") }) : null;
+
 const app = createApp({
   store,
   engine,
@@ -121,6 +125,7 @@ const app = createApp({
   pact: identity,
   router: new Router(store, engine, judge),
   routerKey: env("HUDDLE_ROUTER_KEY"),
+  present: { presenter, writer },
   email: { webhookSecret: env("RESEND_WEBHOOK_SECRET"), apiKey: env("RESEND_API_KEY"), ownerEmails: (env("HUDDLE_OWNER_EMAILS") ?? "").split(",").filter((address) => address.trim()) },
 });
 const web = env("HUDDLE_WEB") ?? fileURLToPath(new URL("../../web/dist", import.meta.url));
@@ -138,6 +143,7 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   if (spendCap) console.log(`  Budget: ${dollars(spendCap.usd)} a ${spendCap.period} for priced assistants; ${dollars(engine.spent())} spent so far`);
   if (!built) console.log(`  The canvas isn't built (no ${join(web, "index.html")}): run npm run build.`);
   if (!llmUrl || !llmModel) console.log('  "Describe it" is off: set HUDDLE_LLM_URL and HUDDLE_LLM_MODEL to turn it on.');
+  console.log(`  Answers as views: ${presenter.name === "rules" ? "tables only (set TYPESAFE_API_KEY or HUDDLE_LLM_* to choose views)" : `chosen by ${presenter.name}`}${writer ? `, charts, flowcharts, calculators and comparisons filled in by ${writer.model}` : ""}`);
   console.log(guard ? `  ArmorIQ checks every hand-off first (agent ${env("HUDDLE_ARMORIQ_AGENT") ?? "huddle"}); a blocked one fails its run, a held one waits in Approvals` : "  ArmorIQ is off: set ARMORIQ_API_KEY to check every hand-off against a signed plan and your policy.");
   const finds = [memory.embedder ? `words and meaning (${memory.embedder.model})` : "words", ...(memory.reranker ? [`reranked by ${memory.reranker.model}`] : [])];
   console.log(`  Memory: up to ${budget} characters of kept notes per request, found by ${finds.join(", ")}`);
