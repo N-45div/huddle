@@ -479,6 +479,24 @@ await huddle.chat.completions.create({ model: "claw", models: ["hermes"], messag
 - The canvas's **Assistants** page holds the list, with calls, failures and speed per assistant, a
   **Try it** box that shows how "auto" judged, and the code to call it. Flows add assistants from it.
 
+**Spending less.** Give an assistant its price (dollars per million tokens in and out, or per call) and
+Huddle counts what every hand-off costs, from the assistant's own token counts where it reports them
+(OpenAI-style APIs, OpenRouter's exact cost, Ollama) and from the text's length where it doesn't. Then:
+
+- **Cheaper picks.** "Auto" asks the cheapest of the assistants that fit nearly as well as the best (at
+  least 60% of the top one's probability). `huddle: { prefer: "quality" }` keeps the judge's order;
+  `"cheapest"` reaches further. The answer says when a cheaper one went first, and what each would cost.
+- **Sticky conversations.** A later turn goes back to the assistant that answered the conversation for
+  ten minutes, without asking the judge again, so that assistant's prompt cache stays warm.
+- **Answers given again.** An assistant can give the very same question the same answer for a while
+  (`reuseMinutes`), and only while nothing it may read has changed. Opt-in, router only; `Cache-Control:
+  no-cache` asks afresh. Leave it off for assistants that act.
+- **A cap per answer** (`maxTokens`, for OpenAI-style and Ollama assistants) and **a budget**
+  (`HUDDLE_BUDGET=20/month`): past 80% "auto" goes for the cheapest; once it's spent, assistants with a
+  price wait (flows' steps fail saying so, `/v1` answers 429) while free ones carry on.
+- `usage` in `/v1` answers is real, and **Assistants** shows this period's spend against the budget and
+  what kept answers and cheaper picks saved.
+
 Tested with the OpenAI Node SDK against OpenClaw, Hermes, a local Ollama model and Hermes in an
 OpenShell sandbox: "auto" sent a work question to OpenClaw, "what's my cat called?" to Hermes, and small
 talk to the local model. [docs/ROUTER.md](docs/ROUTER.md) has the design.
@@ -596,6 +614,7 @@ docker compose up -d   # http://localhost:7700, data in the huddle-data volume
 | `RESEND_API_KEY` | none | sends email (the `email` connector's default key) and reads mail that arrives; reading needs a full-access key |
 | `RESEND_WEBHOOK_SECRET` | none | the signing secret of Resend's `email.received` webhook, pointed at `/hooks/email`; without it Huddle takes no mail |
 | `HUDDLE_OWNER_EMAILS` | none | your own addresses, comma-separated: mail from them counts as you |
+| `HUDDLE_BUDGET` | none | a cap on what assistants with a price may spend, in US dollars: `20/month` or `5/day` |
 | `ARMORIQ_API_KEY` | none | ArmorIQ checks every hand-off first (see [above](#every-hand-off-checked-first-with-armoriq)) |
 | `HUDDLE_ARMORIQ_AGENT` | `huddle` | the agent your ArmorIQ policies are for |
 
@@ -619,7 +638,8 @@ npm run huddle -- armoriq register       # set up ArmorIQ's policy for Huddle
 3. The canvas: drag assistants in, draw the hand-offs, watch runs live (done)
 4. Schedules, webhooks, Huddle as an A2A agent and an MCP server, "describe it", and trust tiers for who may start a flow (done)
 5. Ollama, and sandboxed assistants with NVIDIA OpenShell, their requests in your approvals (done)
-6. The router: one OpenAI-compatible API to every assistant, "auto" judged by Jev, fallbacks (started)
+6. The router: one OpenAI-compatible API to every assistant, "auto" judged by Jev, fallbacks, and
+   spending less: cheaper picks, sticky conversations, answers given again, a budget (done); keys per app next
 7. PACT: Huddle as your personal agent with businesses, its identity and signing in from Approvals (done),
    and Sierra and Meta's Personal Agent Protocol when its v0.1 spec is out
 8. Email in and out through Resend (done); approvals on your phone and a Telegram trigger next

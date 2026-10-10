@@ -79,6 +79,41 @@ assistant that doesn't exist is a 404.
 Conversations: chat clients send the whole history each time, so the router sends the assistant the
 last thing you said, with the conversation before it when there is one.
 
+## Spending less
+
+Every hand-off's tokens and cost are kept (the `spend` table): the assistant's own counts where it
+reports them (OpenAI-style `usage`, OpenRouter's `usage.cost`, Ollama's `prompt_eval_count` and
+`eval_count`), else a guess at four characters a token, marked `estimated`. An assistant's `price`
+(dollars per million tokens in, from the provider's cache, and out, plus per call) turns tokens into
+dollars; stand-ins and Ollama on this machine are free, and anything else without a price is unknown.
+
+**Cheaper picks.** With probabilities from the judge, the candidates within a share of the best fit
+(`prefer`: "balanced" 60%, "cheapest" 25%, "quality" none) are ordered by expected cost, the rest follow in
+the judge's order. Expected cost is the price on this ask with the assistant's usual answer length, else
+the middle of its last calls' reported costs. An unknown cost counts as the middle of the known ones and
+goes after any that cost the same, so a free assistant beats an unknown one. Without probabilities
+(a model judge, or none) cost changes nothing. When the answer comes from a cheaper assistant than the
+judge's first choice, the difference from that one's expected cost is kept as saved. The route (judge,
+probabilities, estimates, what went first) is logged on the run as `routed`, for replaying later.
+
+**Sticky conversations.** A request whose messages include an earlier assistant turn is a later turn of
+the conversation named by its instructions and first message (and key). For ten minutes after the last
+turn it goes back to the same assistant without a judge call, which also keeps that assistant's prompt
+cache warm (Anthropic and OpenAI caches live minutes). If that assistant fails, the judge decides afresh.
+
+**Answers given again.** `reuseMinutes` on an assistant lets the router answer the very same ask (spaces
+and Unicode forms evened out) from its last answer. The key covers the assistant's setup and the kept
+notes it may read, so a new note means a new answer. No run is made; the saving is kept. Exact matches
+only: similarity caches can be poisoned and give wrong answers to near-misses, and a personal assistant
+sees few true repeats, so it stays opt-in. `huddle: { reuse: false }` or `Cache-Control: no-cache` skips it.
+
+**Budget.** `HUDDLE_BUDGET` ("20/month", "5/day") caps what hand-offs to priced assistants spend, flows and
+router alike. Past 80%, "auto" switches to "cheapest". Once spent, priced assistants aren't asked: a flow's
+step fails saying so, `/v1` answers 429 `budget_exceeded`, and free assistants carry on.
+
+`GET /api/router` returns this period's spend, the budget, and what kept answers and cheaper picks saved,
+with spend per assistant; the Assistants page shows them.
+
 ## Keys and trust
 
 - `/v1` takes `HUDDLE_ROUTER_KEY` or `HUDDLE_TOKEN` as a Bearer key. With neither set Huddle only
@@ -90,6 +125,6 @@ last thing you said, with the conversation before it when there is one.
 ## Next
 
 1. Trust tiers: who may call which assistants; strangers' requests wait in Approvals.
-2. Keys per app, each with its own budget and the assistants it may reach.
+2. Keys per app, each with its own budget and the assistants it may reach (one budget for all, done).
 3. Each assistant as an MCP tool and at its own A2A address.
 4. Learning from outcomes: which assistant answered well, fed back into routing.
