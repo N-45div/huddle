@@ -35,7 +35,8 @@ teammate: you put them on a canvas, say who does what, and decide where you want
 - **Runs start how you like.** Press Run, put it on a schedule ("every 2h"), give it a webhook
   address that anything can post to, or an email address: mail to it starts the flow.
 - **Your assistants can call it too.** Huddle is an A2A agent itself, so OpenClaw, Hermes or any other
-  A2A assistant can hand a job to one of your flows.
+  A2A assistant can hand a job to one of your flows. And it's an MCP server, so Claude Code, Claude
+  Desktop, Cursor or any MCP client gets your flows as tools.
 - **One API to every assistant you run.** Huddle's router is OpenAI-compatible: point any app or SDK
   at it and the model name is your assistant (`"hermes"`, `"claw"`, or `"auto"` to let Huddle pick).
   Every call still gets only that assistant's memory, and shows in Runs.
@@ -297,6 +298,53 @@ tab says who may start it:
 Each contact sees only the tasks they started, a new token cuts the old one off at once, and every run's
 log starts with who started it. Email works the same way, by the sender's address (see [Email](#email)).
 
+## Use Huddle from Claude, Cursor or any MCP client
+
+Huddle is an MCP server too, at `<your Huddle>/mcp`. Add it to Claude Code with `HUDDLE_A2A_TOKEN` (or
+`HUDDLE_TOKEN`) as its Bearer token:
+
+```bash
+claude mcp add --transport http huddle http://localhost:7700/mcp --header "Authorization: Bearer $HUDDLE_A2A_TOKEN"
+```
+
+Claude Desktop and Cursor take it through [mcp-remote](https://github.com/geelen/mcp-remote), in
+`claude_desktop_config.json` or `.cursor/mcp.json` (Cursor also takes `url` and `headers` directly):
+
+```json
+{ "mcpServers": { "huddle": {
+  "command": "npx",
+  "args": ["-y", "mcp-remote", "http://localhost:7700/mcp", "--header", "Authorization:${HUDDLE_AUTH}"],
+  "env": { "HUDDLE_AUTH": "Bearer <your HUDDLE_A2A_TOKEN>" }
+} } }
+```
+
+On a Huddle with no token (this machine only), leave the header out. The **Assistants** page has both,
+filled in, under **Use it from any app**. Then these tools appear:
+
+- **A tool per flow**, named after it (`flow_plan_a_walk`; each flow's Trigger tab shows its tool) and
+  described by the flow's description. What the client gives as `input` becomes the run's input. The
+  tool waits up to 50 seconds for the run and answers with what it said.
+- **`get_run`** follows a run started over MCP, by the run id a flow tool answered with.
+- **`ask_assistant`** asks one of your assistants through the [router](#the-router-one-api-to-every-assistant-you-run),
+  by its id or `"auto"`, with only its memory slices, and **`list_assistants`** lists them. They're for
+  your token only, since your assistants act for you.
+
+Approvals still come to you. A run that reaches an approval comes back *waiting*, saying what for, with
+its run id; answer it in **Approvals**, and `get_run` then has the answer. A run that takes longer than
+the wait comes back *still running* the same way.
+
+Trust tiers apply as on A2A ([Who can start a flow](#who-can-start-a-flow)): your token sees every flow.
+A contact's own token sees only the flows their tier may start or ask you for (their runs open with an
+approval saying who wants what), and `get_run` shows them only the runs they started. People not in
+your contacts get a 401, unless a flow lets strangers ask: then they see that flow's tool and nothing
+else. Every run's log says who started it, over MCP.
+
+`/mcp` speaks MCP's current revision (2026-07-28, where each request carries its version) and the
+earlier ones most clients still send (2025-11-25 and 2025-06-18, which open with `initialize`), with no
+sessions: one JSON-RPC request per POST, answered in plain JSON. Checked with Claude Code (it connects),
+the official TypeScript SDK's clients (v1, and v2 in both revisions) and the MCP conformance suite's
+initialize, ping, tools and DNS-rebinding checks.
+
 ## Email
 
 Huddle sends and receives mail through [Resend](https://resend.com), a hosted email API (there's no
@@ -536,7 +584,7 @@ docker compose up -d   # http://localhost:7700, data in the huddle-data volume
 | `HUDDLE_PORT` | `7700` | |
 | `HUDDLE_DB` | `huddle.db` | where everything is kept (`/data/huddle.db` in Docker) |
 | `HUDDLE_PUBLIC_URL` | `http://localhost:7700` | how others reach this Huddle, for webhook and A2A addresses |
-| `HUDDLE_A2A_TOKEN` | `HUDDLE_TOKEN` | a separate token for assistants calling Huddle over A2A |
+| `HUDDLE_A2A_TOKEN` | `HUDDLE_TOKEN` | a separate token for assistants and MCP clients calling Huddle over A2A or MCP |
 | `HUDDLE_LLM_URL`, `HUDDLE_LLM_MODEL`, `HUDDLE_LLM_KEY` | none | any OpenAI-compatible chat API (OpenAI, OpenRouter, Ollama, LM Studio) for "describe it" |
 | `HUDDLE_MEMORY_BUDGET` | `4000` | characters of kept notes each request carries; past that, the notes that match it go first |
 | `HUDDLE_EMBED_URL`, `HUDDLE_EMBED_MODEL`, `HUDDLE_EMBED_KEY` | none | any OpenAI-compatible embeddings API, so memory finds notes by meaning too |
@@ -569,7 +617,7 @@ npm run huddle -- armoriq register       # set up ArmorIQ's policy for Huddle
 1. The engine, shared memory, approvals and the first connectors (done)
 2. OpenClaw, Hermes Agent, A2A, OpenAI-style, Home Assistant and Agent Zero connectors (done); MCP next
 3. The canvas: drag assistants in, draw the hand-offs, watch runs live (done)
-4. Schedules, webhooks, Huddle as an A2A agent, "describe it", and trust tiers for who may start a flow (done)
+4. Schedules, webhooks, Huddle as an A2A agent and an MCP server, "describe it", and trust tiers for who may start a flow (done)
 5. Ollama, and sandboxed assistants with NVIDIA OpenShell, their requests in your approvals (done)
 6. The router: one OpenAI-compatible API to every assistant, "auto" judged by Jev, fallbacks (started)
 7. PACT: Huddle as your personal agent with businesses, its identity and signing in from Approvals (done),

@@ -92,7 +92,7 @@ carry on as before.
 ## The server
 
 One process serves the canvas, the API it uses (`/api`, described in
-`packages/server/src/api-types.ts`), webhooks (`/hooks`), and Huddle's own A2A endpoint (`/a2a`). Runs
+`packages/server/src/api-types.ts`), webhooks (`/hooks`), and Huddle's own A2A and MCP endpoints (`/a2a`, `/mcp`). Runs
 started from the API carry on in the background; the canvas follows them over a Server-Sent Events
 stream of changes. With `HUDDLE_TOKEN` set, every call needs it, and the server refuses to listen
 beyond this machine without one.
@@ -101,6 +101,16 @@ Over A2A, a task is a run. `SendMessage` starts the flow named in the message's 
 one) and waits until the run ends or stops for an approval. The task's state follows the run: `running`
 and `waiting` are working, `done` is completed (the run's last answer is the artifact), `declined` is
 rejected, `failed` is failed. Only runs started over A2A can be read with `GetTask`.
+
+Over MCP, each flow the caller may start is a tool (`flow_` and its name; a later flow of the same name
+adds its id), beside `get_run`, and for the owner `ask_assistant` and `list_assistants` through the
+router. A tool call starts the run as `SendMessage` does (the same callers rule and approval in front,
+from `callers.ts`, which both share), waits up to 50 s, and answers with the run's last answer, or with
+where it stands and its id. There are no sessions: each POST is one JSON-RPC request, answered in JSON.
+A request whose `_meta` carries `io.modelcontextprotocol/protocolVersion` is served as 2026-07-28 (its
+`MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers checked against the body, results marked
+`complete` with caching hints); anything else as 2025-11-25 or 2025-06-18, which open with `initialize`.
+Only runs started over MCP can be read with `get_run`.
 
 With an OpenShell gateway set (`HUDDLE_OPENSHELL_GATEWAY`), the server polls every ready sandbox's
 drafted network rules (`GetDraftPolicy`, pending only) every few seconds and streams a `sandbox` change
