@@ -8,6 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@armoriq/sdk": "0.6.10",
     "@grpc/grpc-js": "^1.14.6",
     "@grpc/proto-loader": "^0.8.1",
     "zod": "^4.1.0"
