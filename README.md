@@ -571,6 +571,28 @@ npm start
 To have a hand-off wait for you, say `huddle.email`, set that tool to hold on ArmorIQ's dashboard
 (Policies, `cli-huddle-huddle`). Registering again won't wipe that unless you add `--replace`.
 
+## Answers you can interact with
+
+After [Open Intelligent UI](https://github.com/CopilotKit/OpenIntelligentUI) (CopilotKit, MIT): Huddle
+shows an assistant's answer the way that suits it. Records become a **table**. Amounts become a **bar,
+line or part-to-whole chart**, a process becomes a **flowchart**, numbers you'd want to change become a
+**calculator**, and options become a **comparison** whose weights you can move.
+
+- **Who chooses:** Jev with `TYPESAFE_API_KEY` (one calibrated choice, as Open Intelligent UI does),
+  else your `HUDDLE_LLM_*` model, else the answer's shape (records make a table). Obvious cases need no
+  model at all.
+- **Who fills it in:** your `HUDDLE_LLM_*` model, as JSON that Huddle checks: every value has a label,
+  a chart's series match its labels, a flowchart's arrows point at its own steps, and a calculator's
+  formulas are arithmetic on its own inputs. A model that gets it wrong is told what's wrong, once.
+- **Data, never code.** Open Intelligent UI also lets a model write HTML and JavaScript into a sandboxed
+  frame. Huddle doesn't: its answers come from other assistants, and an answer poisoned by a web page
+  could have the model write a page that carries your data away (a frame can always navigate itself).
+  Huddle draws every view with its own components, and calculators use its own arithmetic.
+- Every view says where its values came from and what was assumed. **Ask about this** puts a follow-up
+  in the message box with your current numbers; nothing is sent until you send it.
+- In **Try it** answers are shown at once; on a run's page, press **Show it** on any answer. Apps get
+  the same with `huddle: { present: true }` on `/v1` (as `huddle.view`), or `POST /api/present`.
+
 ## Run it
 
 Requires Node.js 24 or later.
@@ -644,7 +666,9 @@ npm run huddle -- armoriq register       # set up ArmorIQ's policy for Huddle
    and Sierra and Meta's Personal Agent Protocol when its v0.1 spec is out
 8. Email in and out through Resend (done); approvals on your phone and a Telegram trigger next
 9. Every hand-off checked against a signed plan and your policy with ArmorIQ (done)
-10. The hosted version, for people who'd rather not run anything
+10. Answers you can interact with: tables, charts, flowcharts, calculators and comparisons (done);
+    approvals shown the same way next
+11. The hosted version, for people who'd rather not run anything
 
 ## License
 
