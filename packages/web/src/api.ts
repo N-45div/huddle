@@ -9,6 +9,7 @@ import type {
   Info,
   MemoryHit,
   Note,
+  PresentedView,
   RunDetail,
   RouterView,
   RunSummary,
@@ -130,6 +131,8 @@ export interface RouterReply {
   } | null;
   /** Given again from a kept answer: nothing spent. */
   readonly reused: boolean;
+  /** Structured data in the answer, when there is some. */
+  readonly data: unknown;
   /** What it cost in dollars (null when the assistant has no price), and whether the tokens were guessed. */
   readonly cost: { readonly usd: number | null; readonly estimated: boolean } | null;
 }
@@ -149,7 +152,7 @@ async function routerChat(model: string, text: string, prefer?: Prefer): Promise
   const body = (await response.json().catch(() => null)) as {
     model?: string;
     choices?: { message?: { content?: string } }[];
-    huddle?: { run?: string; skipped?: RouterReply["skipped"]; route?: RouterReply["route"]; reused?: boolean; cost?: RouterReply["cost"] };
+    huddle?: { run?: string; skipped?: RouterReply["skipped"]; route?: RouterReply["route"]; reused?: boolean; cost?: RouterReply["cost"]; data?: unknown };
     error?: { message?: string };
   } | null;
   if (!response.ok) {
@@ -163,6 +166,7 @@ async function routerChat(model: string, text: string, prefer?: Prefer): Promise
     skipped: body?.huddle?.skipped ?? [],
     route: body?.huddle?.route ?? null,
     reused: body?.huddle?.reused === true,
+    data: body?.huddle?.data ?? null,
     cost: body?.huddle?.cost ?? null,
   };
 }
@@ -173,6 +177,7 @@ export const api = {
   assistants: () => call<Assistant[]>("GET", "/assistants"),
   saveAssistants: (assistants: readonly Assistant[]) => call<Assistant[]>("PUT", "/assistants", { assistants }),
   router: () => call<RouterView>("GET", "/router"),
+  present: (answer: { text: string; data?: unknown; ask?: string; assistant?: string; kind?: string }) => call<PresentedView>("POST", "/present", answer),
   signIns: () => call<SignIn[]>("GET", "/signins"),
   checkSignIn: (signInId: string) => call<{ ok: true }>("POST", `/signins/${id(signInId)}/check`),
   cancelSignIn: (signInId: string) => call<{ ok: true }>("POST", `/signins/${id(signInId)}/cancel`),

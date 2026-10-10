@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { clockTime, fullTime, pretty } from "../format.ts";
 import type { LogLine } from "../types.ts";
+import { AnswerView } from "../views/AnswerView.tsx";
 
 /**
  * A run's log, one line per thing that happened, in plain words. The engine writes:
@@ -121,6 +122,17 @@ function describe(line: LogLine): Described {
   }
 }
 
+/** What the step asked just before this answer, and of whom. */
+function askBefore(log: readonly LogLine[], index: number): string | undefined {
+  const asked = log.slice(0, index).findLast((line) => line.kind === "asked" && line.stepId === log[index]?.stepId);
+  return asked ? text(asked.detail, "ask") || undefined : undefined;
+}
+
+function assistantBefore(log: readonly LogLine[], index: number): string | undefined {
+  const asked = log.slice(0, index).findLast((line) => line.kind === "asked" && line.stepId === log[index]?.stepId);
+  return asked ? text(asked.detail, "assistant") || undefined : undefined;
+}
+
 export function RunLog({ log, compact = false }: { readonly log: readonly LogLine[]; readonly compact?: boolean }) {
   if (log.length === 0) return <p className="hint">Nothing has happened yet.</p>;
   return (
@@ -137,6 +149,9 @@ export function RunLog({ log, compact = false }: { readonly log: readonly LogLin
               </time>
             </div>
             {described.body && <p className="log-body">{described.body}</p>}
+            {line.kind === "answered" && !compact && typeof field(line.detail, "text") === "string" && (
+              <AnswerView text={text(line.detail, "text")} data={field(line.detail, "data")} ask={askBefore(log, index)} assistant={assistantBefore(log, index)} />
+            )}
             {described.data !== undefined && described.data !== null && (
               <details className="log-data">
                 <summary>Data</summary>

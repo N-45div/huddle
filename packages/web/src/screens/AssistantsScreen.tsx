@@ -9,6 +9,7 @@ import { ago, plural } from "../format.ts";
 import { useDebounced, useResource } from "../hooks.ts";
 import { href } from "../router.ts";
 import type { Assistant, Info, RouterUsage, SpendView } from "../types.ts";
+import { AnswerView } from "../views/AnswerView.tsx";
 
 /**
  * Your assistants, set up once: flows add them from here, and the router reaches them by id through an
@@ -165,6 +166,7 @@ function TryIt({ assistants }: { readonly assistants: readonly Assistant[] }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [reply, setReply] = useState<RouterReply | null>(null);
+  const [asked, setAsked] = useState("");
   const [error, setError] = useState<string | null>(null);
   const started = useRef(0);
   const [took, setTook] = useState<number | null>(null);
@@ -176,6 +178,7 @@ function TryIt({ assistants }: { readonly assistants: readonly Assistant[] }) {
     setError(null);
     setReply(null);
     started.current = Date.now();
+    setAsked(text.trim());
     try {
       setReply(await api.chat(model, text.trim(), model === "auto" ? prefer : undefined));
       setTook(Date.now() - started.current);
@@ -247,6 +250,7 @@ function TryIt({ assistants }: { readonly assistants: readonly Assistant[] }) {
           </p>
           <p className="try-answer">{reply.text}</p>
           <p className="hint try-cost">{costLine(reply)}</p>
+          <AnswerView key={`${reply.runId}-${reply.text.length}`} text={reply.text} data={reply.data} ask={asked} assistant={name(reply.model)} auto onAsk={(follow) => setText(follow)} />
           {reply.route && (
             <div className="route">
               <p className="hint">

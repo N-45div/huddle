@@ -7,6 +7,7 @@ import type { Flow } from "../../server/src/api-types.ts";
 export type {
   ApiError,
   ChangeEvent,
+  Choice,
   ConnectorField,
   ConnectorInfo,
   Contact,
@@ -17,6 +18,7 @@ export type {
   LogLine,
   MemoryHit,
   Note,
+  PresentedView,
   RunDetail,
   RunState,
   RunSummary,
@@ -28,6 +30,7 @@ export type {
   SandboxRequests,
   SandboxRequestView,
   Trigger,
+  View,
   WaitingApproval,
 } from "../../server/src/api-types.ts";
 
