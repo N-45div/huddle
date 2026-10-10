@@ -87,6 +87,8 @@ describe("Huddle as an MCP server", () => {
     assert.equal(older.body?.result?.protocolVersion, "2025-11-25", "Huddle's latest, for the client to accept or leave");
     const notified = await app.request("/mcp", { method: "POST", headers: { authorization: `Bearer ${OWNER}`, "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) });
     assert.deepEqual([notified.status, await notified.text()], [202, ""]);
+    const answered = await app.request("/mcp", { method: "POST", headers: { authorization: `Bearer ${OWNER}`, "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 9, result: {} }) });
+    assert.equal(answered.status, 202, "a response, to a request Huddle never sends");
     assert.deepEqual((await legacy(app, "ping")).body?.result, {});
     for (const method of ["GET", "DELETE"]) {
       const refused = await app.request("/mcp", { method, headers: { authorization: `Bearer ${OWNER}` } });

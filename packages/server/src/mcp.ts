@@ -299,8 +299,9 @@ export function mcpRoutes(options: AppOptions): Hono {
     }
     if (Array.isArray(message)) return failed(c, undefined, new RpcError(INVALID_REQUEST, "Send one JSON-RPC message per request; MCP has no batches since 2025-06-18.", 400));
     if (!isObject(message) || message.jsonrpc !== "2.0") return failed(c, undefined, new RpcError(INVALID_REQUEST, "Send a JSON-RPC 2.0 message.", 400));
-    // A notification (initialized, cancelled) or a response: nothing to answer.
-    if (message.id === undefined && (typeof message.method === "string" || "result" in message || "error" in message)) return c.body(null, 202);
+    // A notification (initialized, cancelled), or a response to a request Huddle never sends: nothing to answer.
+    const notification = typeof message.method === "string" && message.id === undefined;
+    if (notification || (message.method === undefined && ("result" in message || "error" in message))) return c.body(null, 202);
     const id = typeof message.id === "string" || typeof message.id === "number" ? message.id : undefined;
     if (id === undefined || typeof message.method !== "string") return failed(c, id, new RpcError(INVALID_REQUEST, "A request has a method, and an id that's a string or a number.", 400));
     const params = isObject(message.params) ? message.params : {};
