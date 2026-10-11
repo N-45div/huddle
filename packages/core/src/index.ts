@@ -17,7 +17,7 @@ export { type GrantStore, type SignIn, SignIns, storedGrants } from "./pact/sign
 export { newKey, PactIdentity, type PrivateJwk, type PublicJwk, thumbprint } from "./pact/identity.ts";
 export { DEFAULT_CERT_DIR, type ExecResult, OpenShell, type OpenShellOptions, type SandboxRequest } from "./openshell/client.ts";
 export { sochen } from "./connectors/sochen.ts";
-export { Engine, type EngineOptions, MAX_STEPS, OverBudget, type RunView, type StartedBy } from "./engine.ts";
+export { Engine, type EngineOptions, HeldElsewhere, MAX_STEPS, OverBudget, type RunView, type StartedBy } from "./engine.ts";
 export { type AgentStep, type Guard, type HandOff, type Outcome, type Verdict } from "./guard.ts";
 export { ARMORIQ_API, armoriq, type ArmorIQOptions, armoriqPlan, type ArmorIQRegistration, type ArmorIQSdk, armoriqTool, registerWithArmorIQ, type RegisterResult } from "./guards/armoriq.ts";
 export { type Embedder, embedder, type EmbedderOptions } from "./memory/embeddings.ts";
@@ -30,5 +30,5 @@ export { type Answer, type Choice, FILLED, FilledView, jevPresenter, type JevPre
 export { type Budget, CHARS_PER_TOKEN, costOf, dollars, estimateTokens, parseBudget, periodStart, type Price, priceOf, type Spend, spendOf, type Usage } from "./cost.ts";
 export { type Candidate, jevJudge, type JevOptions, type Judge, modelJudge, type ModelJudgeOptions, type Ranking } from "./judge.ts";
 export { askFirst, Assistant, assistantProblems, Assistants, type Caller, callerDecision, Callers, CONTACT_TIERS, type ContactTier, EMAIL_PATTERN, everyMs, Flow, parseFlow, Step, TIERS, type Tier, Trigger } from "./schema.ts";
-export { type Approval, type Change, type Contact, type KeptAnswer, type LogLine, type Note, type Run, type RunState, type SavedFlow, type SpendTotal, Store } from "./store.ts";
+export { type Approval, type Change, type Contact, type HeldBy, type KeptAnswer, type LogLine, type Note, type Run, type RunState, type SavedFlow, type SpendTotal, Store } from "./store.ts";
 export { lookup, render, type RunContext, type StepAnswer } from "./template.ts";

@@ -1,5 +1,5 @@
 import type { Assistant, Step } from "./schema.ts";
-import type { Run, RunState } from "./store.ts";
+import type { HeldBy, Run, RunState } from "./store.ts";
 
 /**
  * A guard looks at each hand-off before the engine makes it, and can let it through, stop it, or hold it
@@ -23,6 +23,8 @@ export interface Verdict {
   readonly code?: string;
   /** The rule that decided it, when the guard says. */
   readonly policy?: string;
+  /** A hold filed with the guard's own approver: only a yes there releases it. */
+  readonly heldBy?: HeldBy;
 }
 
 /** What came of a hand-off the guard let through. */
@@ -42,4 +44,6 @@ export interface Guard {
   report(handOff: HandOff, outcome: Outcome): Promise<void>;
   /** The run is over: let go of whatever was kept for it. Never throws. */
   finish(runId: string, state: RunState): Promise<void>;
+  /** Waits for the guard's own approver to decide a hold it filed (Verdict.heldBy). Never throws. */
+  awaitRelease?(heldBy: HeldBy): Promise<"approved" | "rejected" | "timeout">;
 }

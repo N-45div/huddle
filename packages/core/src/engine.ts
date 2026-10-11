@@ -21,8 +21,8 @@ export interface RunView {
   readonly state: Run["state"];
   readonly at: string | null;
   readonly error: string | null;
-  /** What the run is waiting on, when it is. */
-  readonly waiting: Pick<Approval, "id" | "message"> | null;
+  /** What the run is waiting on, when it is; heldBy when only a guard's own approver can say yes. */
+  readonly waiting: Pick<Approval, "id" | "message" | "heldBy"> | null;
   readonly context: RunContext;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -47,6 +47,15 @@ export interface EngineOptions {
 
 /** A hand-off to a paid assistant when the budget is spent. */
 export class OverBudget extends Error {}
+
+/** A yes for a hand-off that only its guard's approver can release. */
+export class HeldElsewhere extends Error {
+  readonly url: string;
+  constructor(by: string, url: string) {
+    super(`${by} holds this one: approve it in ${by} (${url}), and the run carries on by itself. You can still say no here.`);
+    this.url = url;
+  }
+}
 
 export class Engine {
   readonly store: Store;
@@ -88,14 +97,19 @@ export class Engine {
     const approval = this.store.approval(approvalId);
     if (!approval) throw new Error(`There's no approval ${approvalId}.`);
     if (approval.status !== "waiting") throw new Error(`Approval ${approvalId} was already answered (${approval.status}).`);
+    if (yes && approval.heldBy) throw new HeldElsewhere(approval.heldBy.by, approval.heldBy.url);
     void this.decide(approvalId, yes).catch((error: unknown) => console.error(`[huddle] approval ${approvalId}:`, error));
     return approval.runId;
   }
 
-  /** Answers an approval and carries its run on: yes goes to `next`, no to `onNo` or ends the run as declined. */
-  async decide(approvalId: string, yes: boolean): Promise<RunView> {
+  /**
+   * Answers an approval and carries its run on: yes goes to `next`, no to `onNo` or ends the run as declined.
+   * A hand-off held by a guard's own approver takes a yes only from there (`released`); a no works anywhere.
+   */
+  async decide(approvalId: string, yes: boolean, options: { readonly released?: boolean } = {}): Promise<RunView> {
     const approval = this.store.approval(approvalId);
     if (!approval) throw new Error(`There's no approval ${approvalId}.`);
+    if (yes && approval.heldBy && !options.released) throw new HeldElsewhere(approval.heldBy.by, approval.heldBy.url);
     const run = this.store.run(approval.runId);
     if (!run) throw new Error(`The run for approval ${approvalId} is gone.`);
     if (!this.store.decide(approvalId, yes)) throw new Error(`Approval ${approvalId} was already answered (${approval.status}).`);
@@ -124,7 +138,7 @@ export class Engine {
       state: run.state,
       at: run.at,
       error: run.error,
-      waiting: waiting ? { id: waiting.id, message: waiting.message } : null,
+      waiting: waiting ? { id: waiting.id, message: waiting.message, heldBy: waiting.heldBy } : null,
       context: run.context,
       createdAt: run.createdAt,
       updatedAt: run.updatedAt,
@@ -172,9 +186,14 @@ export class Engine {
           this.store.log(run.id, step.id, "guarded", { by: this.guard.name, assistant: assistant.id, ...verdict });
           if (verdict.action === "block") throw new Error(`${this.guard.name} stopped the hand-off to "${assistant.id}": ${verdict.reason}.`);
           if (verdict.action === "hold") {
-            const message = `${this.guard.name} held the hand-off to "${assistant.id}" (${verdict.reason}). Let it go ahead?`;
-            const approval = this.store.addApproval(run.id, step.id, message);
-            this.store.log(run.id, step.id, "waiting", { approval: approval.id, message });
+            // Filed with the guard's own approver (ArmorIQ): approved there, and Huddle carries on by itself.
+            const heldBy = verdict.heldBy && this.guard.awaitRelease ? verdict.heldBy : null;
+            const message = heldBy
+              ? `${this.guard.name} held the hand-off to "${assistant.id}" (${verdict.reason}). Approve it in ${heldBy.by}; the run carries on by itself once you do.`
+              : `${this.guard.name} held the hand-off to "${assistant.id}" (${verdict.reason}). Let it go ahead?`;
+            const approval = this.store.addApproval(run.id, step.id, message, heldBy);
+            this.store.log(run.id, step.id, "waiting", { approval: approval.id, message, ...(heldBy ? { heldBy } : {}) });
+            if (heldBy) this.watch(approval);
             return { wait: true };
           }
         }
@@ -221,6 +240,31 @@ export class Engine {
         return { wait: false, context: keep(note), next: step.next ?? following(run.flow, step) };
       }
     }
+  }
+
+  /** Waits on every held approval still waiting (after a restart, say): they carry on when their approver decides. */
+  resumeHolds(): number {
+    const held = this.store.waitingApprovals().filter((approval) => approval.heldBy);
+    for (const approval of held) this.watch(approval);
+    return held.length;
+  }
+
+  private readonly watching = new Set<string>();
+
+  /** Waits for a held approval's own approver; a no given here first wins. */
+  private watch(approval: Approval): void {
+    if (!approval.heldBy || !this.guard?.awaitRelease || this.watching.has(approval.id)) return;
+    this.watching.add(approval.id);
+    const heldBy = approval.heldBy;
+    void this.guard
+      .awaitRelease(heldBy)
+      .then(async (outcome) => {
+        if (this.store.approval(approval.id)?.status !== "waiting") return;
+        this.store.log(approval.runId, approval.stepId, outcome === "approved" ? "released" : "refused", { by: heldBy.by, outcome });
+        await this.decide(approval.id, outcome === "approved", { released: true });
+      })
+      .catch((error: unknown) => console.error(`[huddle] waiting on ${heldBy.by} for approval ${approval.id}:`, error))
+      .finally(() => this.watching.delete(approval.id));
   }
 
   private fail(runId: string, stepId: string, context: RunContext, error: string): RunView {

@@ -36,6 +36,15 @@ export interface Approval {
   readonly status: "waiting" | "yes" | "no";
   readonly createdAt: string;
   readonly decidedAt: string | null;
+  /** Held by a guard's own approver (ArmorIQ): only a yes there lets it go ahead; a no here still stops it. */
+  readonly heldBy: HeldBy | null;
+}
+
+/** Where a held hand-off is approved: who holds it, their id for it, and the page to approve it on. */
+export interface HeldBy {
+  readonly by: string;
+  readonly id: string;
+  readonly url: string;
 }
 
 export interface Note {
@@ -150,6 +159,9 @@ export class Store {
     // Databases from before saved flows: add the column runs use to point at one.
     const columns = this.db.prepare("PRAGMA table_info(runs)").all() as Row[];
     if (!columns.some((column) => column.name === "flow_id")) this.db.exec("ALTER TABLE runs ADD COLUMN flow_id TEXT");
+    // Databases from before guards could hold a hand-off for their own approver.
+    const approvalColumns = this.db.prepare("PRAGMA table_info(approvals)").all() as Row[];
+    if (!approvalColumns.some((column) => column.name === "held_by")) this.db.exec("ALTER TABLE approvals ADD COLUMN held_by TEXT");
     this.db.exec("CREATE INDEX IF NOT EXISTS runs_flow ON runs (flow_id, created_at)");
   }
 
@@ -358,9 +370,9 @@ export class Store {
 
   // Approvals --------------------------------------------------------------------------------------
 
-  addApproval(runId: string, stepId: string, message: string): Approval {
-    const approval: Approval = { id: newId("ok"), runId, stepId, message, status: "waiting", createdAt: now(), decidedAt: null };
-    this.db.prepare("INSERT INTO approvals (id, run_id, step_id, message, status, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(approval.id, runId, stepId, message, approval.status, approval.createdAt);
+  addApproval(runId: string, stepId: string, message: string, heldBy: HeldBy | null = null): Approval {
+    const approval: Approval = { id: newId("ok"), runId, stepId, message, status: "waiting", createdAt: now(), decidedAt: null, heldBy };
+    this.db.prepare("INSERT INTO approvals (id, run_id, step_id, message, status, created_at, held_by) VALUES (?, ?, ?, ?, ?, ?, ?)").run(approval.id, runId, stepId, message, approval.status, approval.createdAt, heldBy ? JSON.stringify(heldBy) : null);
     this.changed({ kind: "approval", runId });
     return approval;
   }
@@ -564,6 +576,7 @@ function toApproval(row: Row): Approval {
     message: String(row.message),
     status: String(row.status) as Approval["status"],
     createdAt: String(row.created_at),
+    heldBy: row.held_by ? (JSON.parse(String(row.held_by)) as HeldBy) : null,
     decidedAt: row.decided_at === null ? null : String(row.decided_at),
   };
 }

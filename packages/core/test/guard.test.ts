@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { type Connector, type ConnectorRequest } from "../src/connector.ts";
 import { mock } from "../src/connectors/mock.ts";
-import { Engine } from "../src/engine.ts";
+import { Engine, HeldElsewhere } from "../src/engine.ts";
 import type { Guard, HandOff, Outcome, Verdict } from "../src/guard.ts";
 import { parseFlow } from "../src/schema.ts";
 import { Store } from "../src/store.ts";
@@ -112,5 +112,104 @@ describe("a guard", () => {
     assert.equal(view.state, "failed");
     assert.equal(view.error, "mail server down");
     assert.deepEqual(reported.map((r) => [r.assistant, r.outcome.ok, r.outcome.error]), [["planner", true, undefined], ["mailer", false, "mail server down"]]);
+  });
+});
+
+/** A guard whose holds only its own approver releases; the test says when, and what. */
+function holdingGuard() {
+  const checked: string[] = [];
+  let release: (outcome: "approved" | "rejected" | "timeout") => void = () => {};
+  const waits: string[] = [];
+  const guard: Guard = {
+    name: "ArmorIQ",
+    async check({ assistant }: HandOff) {
+      checked.push(assistant.id);
+      return assistant.id === "mailer"
+        ? { action: "hold", reason: "your policy wants a yes", heldBy: { by: "ArmorIQ", id: `del-${checked.length}`, url: "https://platform.armoriq.test/dashboard/plans/p1" } }
+        : { action: "allow", reason: "fine" };
+    },
+    async report() {},
+    async finish() {},
+    awaitRelease(heldBy) {
+      waits.push(heldBy.id);
+      return new Promise((resolve) => (release = resolve));
+    },
+  };
+  return { guard, checked, waits, release: (outcome: "approved" | "rejected" | "timeout") => release(outcome) };
+}
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+describe("a hold the guard's own approver releases (ArmorIQ)", () => {
+  it("waits in Approvals with where to approve it, and refuses a yes from Huddle", async () => {
+    const store = new Store();
+    sent.length = 0;
+    const { guard, waits } = holdingGuard();
+    const engine = new Engine(store, { mock, email }, { guard });
+    const waiting = await engine.start(flow, "the week");
+    assert.equal(waiting.state, "waiting");
+    assert.deepEqual(waiting.waiting?.heldBy, { by: "ArmorIQ", id: "del-2", url: "https://platform.armoriq.test/dashboard/plans/p1" });
+    assert.match(waiting.waiting?.message ?? "", /Approve it in ArmorIQ; the run carries on by itself once you do\./);
+    assert.deepEqual(waits, ["del-2"]);
+    assert.throws(() => engine.answer(waiting.waiting!.id, true), HeldElsewhere);
+    await assert.rejects(engine.decide(waiting.waiting!.id, true), /ArmorIQ holds this one: approve it in ArmorIQ \(https:\/\/platform\.armoriq\.test\/dashboard\/plans\/p1\)/);
+    assert.equal(sent.length, 0);
+  });
+
+  it("carries on by itself when it's approved there, without asking the guard again", async () => {
+    const store = new Store();
+    sent.length = 0;
+    const { guard, checked, release } = holdingGuard();
+    const engine = new Engine(store, { mock, email }, { guard });
+    const waiting = await engine.start(flow, "the week");
+    release("approved");
+    await settle();
+    const done = engine.view(waiting.id);
+    assert.equal(done.state, "done");
+    assert.equal(sent.length, 1);
+    assert.deepEqual(checked, ["planner", "mailer"]);
+    assert.deepEqual(store.logOf(done.id).map((line) => `${line.stepId}:${line.kind}`).slice(3), ["send:guarded", "send:waiting", "send:released", "send:approved", "send:asked", "send:answered"]);
+  });
+
+  it("ends the run as declined when it's refused there, or the approval runs out", async () => {
+    for (const outcome of ["rejected", "timeout"] as const) {
+      const store = new Store();
+      sent.length = 0;
+      const { guard, release } = holdingGuard();
+      const engine = new Engine(store, { mock, email }, { guard });
+      const waiting = await engine.start(flow, "the week");
+      release(outcome);
+      await settle();
+      assert.equal(engine.view(waiting.id).state, "declined", outcome);
+      assert.equal(sent.length, 0);
+      assert.equal(store.logOf(waiting.id).find((line) => line.kind === "refused")?.detail && (store.logOf(waiting.id).find((line) => line.kind === "refused")!.detail as { outcome: string }).outcome, outcome);
+    }
+  });
+
+  it("lets you say no in Huddle first, and then an approval there changes nothing", async () => {
+    const store = new Store();
+    sent.length = 0;
+    const { guard, release } = holdingGuard();
+    const engine = new Engine(store, { mock, email }, { guard });
+    const waiting = await engine.start(flow, "the week");
+    assert.equal((await engine.decide(waiting.waiting!.id, false)).state, "declined");
+    release("approved");
+    await settle();
+    assert.equal(engine.view(waiting.id).state, "declined");
+    assert.equal(sent.length, 0);
+  });
+
+  it("picks the wait up again after a restart", async () => {
+    const store = new Store();
+    sent.length = 0;
+    const first = holdingGuard();
+    const waiting = await new Engine(store, { mock, email }, { guard: first.guard }).start(flow, "the week");
+    const second = holdingGuard();
+    const restarted = new Engine(store, { mock, email }, { guard: second.guard });
+    assert.equal(restarted.resumeHolds(), 1);
+    assert.deepEqual(second.waits, ["del-2"]);
+    second.release("approved");
+    await settle();
+    assert.equal(restarted.view(waiting.id).state, "done");
   });
 });
