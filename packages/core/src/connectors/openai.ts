@@ -21,17 +21,30 @@ export function openai(fetcher: typeof fetch = globalThis.fetch): Connector {
         ...(memory.length ? [{ role: "system", content: `What you may use about the person:\n${memoryText(memory)}` }] : []),
         { role: "user", content: ask },
       ];
-      const response = await fetcher(url, {
-        method: "POST",
-        headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
-        body: JSON.stringify({ model: assistant.model ?? "default", messages, stream: false, ...(assistant.maxTokens ? { max_tokens: assistant.maxTokens } : {}) }),
-        signal: signal ?? AbortSignal.timeout(TIMEOUT_MS),
-      });
-      const body = (await response.json().catch(() => null)) as {
-        choices?: { message?: { content?: string | { type?: string; text?: string }[] }; finish_reason?: string }[];
-        error?: { message?: string } | string;
-        usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; cost?: unknown; prompt_tokens_details?: { cached_tokens?: unknown } };
-      } | null;
+      // A cap on the answer: OpenAI's current models take max_completion_tokens and refuse max_tokens, which
+      // the other OpenAI-style servers (Hermes, Open WebUI, Ollama...) still use. So: the new name for OpenAI,
+      // the old one elsewhere, and the other one once if a server refuses the name it was sent.
+      const post = (cap: "max_tokens" | "max_completion_tokens" | null) =>
+        fetcher(url, {
+          method: "POST",
+          headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
+          body: JSON.stringify({ model: assistant.model ?? "default", messages, stream: false, ...(cap ? { [cap]: assistant.maxTokens } : {}) }),
+          signal: signal ?? AbortSignal.timeout(TIMEOUT_MS),
+        });
+      const read = async (response: Response) =>
+        (await response.json().catch(() => null)) as {
+          choices?: { message?: { content?: string | { type?: string; text?: string }[] }; finish_reason?: string }[];
+          error?: { message?: string } | string;
+          usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; cost?: unknown; prompt_tokens_details?: { cached_tokens?: unknown } };
+        } | null;
+      const first: "max_tokens" | "max_completion_tokens" | null = !assistant.maxTokens ? null : /(^|\.)openai\.com$/.test(new URL(url).hostname) ? "max_completion_tokens" : "max_tokens";
+      let response = await post(first);
+      let body = await read(response);
+      const refused = response.status === 400 && first !== null && JSON.stringify(body?.error ?? "").includes(first);
+      if (refused) {
+        response = await post(first === "max_tokens" ? "max_completion_tokens" : "max_tokens");
+        body = await read(response);
+      }
       if (!response.ok) {
         const reason = typeof body?.error === "string" ? body.error : (body?.error?.message ?? `HTTP ${response.status}`);
         throw new Error(`${assistant.id} said: ${key ? reason.replaceAll(key, "[key]") : reason}`);

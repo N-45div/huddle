@@ -45,6 +45,27 @@ describe("what a hand-off costs", () => {
     assert.equal(sent.max_tokens, 300);
   });
 
+  it("caps OpenAI's own models with max_completion_tokens, and tries the other name once when a server refuses one", async () => {
+    const sent: Record<string, unknown>[] = [];
+    const openaiApi = (async (_url: string, init: RequestInit) => {
+      sent.push(JSON.parse(String(init.body)));
+      return Response.json({ choices: [{ message: { content: "Hi." } }] });
+    }) as typeof fetch;
+    await openai(openaiApi).send({ assistant: assistant({ id: "o", connector: "openai", url: "https://api.openai.com", model: "gpt-5.4-mini", maxTokens: 300 }), ask: "hi", memory: [] });
+    assert.deepEqual([sent[0]?.max_completion_tokens, sent[0]?.max_tokens], [300, undefined]);
+
+    sent.length = 0;
+    const strict = (async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      sent.push(body);
+      if ("max_tokens" in body) return Response.json({ error: { message: "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead." } }, { status: 400 });
+      return Response.json({ choices: [{ message: { content: "Hi." } }] });
+    }) as typeof fetch;
+    const reply = await openai(strict).send({ assistant: assistant({ id: "p", connector: "openai", url: "https://gateway.example.com", maxTokens: 300 }), ask: "hi", memory: [] });
+    assert.equal(reply.text, "Hi.");
+    assert.deepEqual(sent.map((body) => Object.keys(body).find((name) => name.startsWith("max_"))), ["max_tokens", "max_completion_tokens"]);
+  });
+
   it("reads Ollama's own token counts", async () => {
     let sent: Record<string, unknown> = {};
     const fetcher = (async (_url: string, init: RequestInit) => {
