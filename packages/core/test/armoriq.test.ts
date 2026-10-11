@@ -29,6 +29,10 @@ function fakeSdk(decide: (tool: string) => { allowed: boolean; action: string; r
       constructor(options: { apiKey: string; userId: string; agentId: string }) {
         calls.push(`client ${options.agentId}/${options.userId}`);
       }
+      async recordTokenUsage(payload: { product: string; sessionId: string; entries: { model: string; inputTokens: number; outputTokens: number }[] }) {
+        calls.push(`tokens ${payload.product} ${payload.sessionId} ${payload.entries.map((entry) => `${entry.model}:${entry.inputTokens}/${entry.outputTokens}`).join(",")}`);
+        return { ok: true };
+      }
     },
     ArmorIQSession: class {
       async startPlan(tools: { name: string; args: Record<string, unknown> }[], goal?: string) {
@@ -125,6 +129,16 @@ describe("the ArmorIQ guard", () => {
     const done = await engine.decide(waiting.waiting!.id, true);
     assert.equal(done.state, "done");
     assert.equal(calls.filter((call) => call.startsWith("plan")).length, 2);
+  });
+});
+
+describe("ArmorIQ's token counts", () => {
+  it("get the tokens an assistant counted, filed under the run's plan, and never a guess", async () => {
+    const { sdk, calls } = fakeSdk(() => ({ allowed: true, action: "allow" }));
+    const counted: Connector = { send: async () => ({ text: "Sent.", usage: { inputTokens: 120, outputTokens: 30 } }) };
+    await new Engine(new Store(), { mock, email: counted }, { guard: armoriq({ apiKey: "ak_test_x", sdk: async () => sdk }) }).start(flow, "x");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual(calls.filter((call) => call.startsWith("tokens")), ["tokens huddle plan-1 email:120/30"], "the stand-in counted nothing, so nothing is sent for it");
   });
 });
 

@@ -215,9 +215,10 @@ export class Engine {
           void this.guard?.report(handOff, { ok: false, chars: 0, error: error instanceof Error ? error.message : String(error), ms: Math.round(performance.now() - started) });
           throw error;
         }
-        void this.guard?.report(handOff, { ok: true, chars: reply.text.length, ms: Math.round(performance.now() - started) });
         const { usage, ...answer } = reply;
         const cost = spendOf(assistant, usage, memory.length ? `${memoryText(memory)}\n${ask}` : ask, answer.text);
+        const counted = usage ? { model: assistant.model ?? assistant.connector, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, cachedTokens: usage.cachedTokens ?? 0 } : undefined;
+        void this.guard?.report(handOff, { ok: true, chars: reply.text.length, ms: Math.round(performance.now() - started), ...(counted ? { usage: counted } : {}) });
         this.store.addSpend(run, step.id, assistant.id, cost);
         this.store.log(run.id, step.id, "answered", { ...answer, cost });
         return { wait: false, context: keep(answer.text, answer.data), next: step.next ?? following(run.flow, step) };

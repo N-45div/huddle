@@ -34,6 +34,8 @@ export interface Outcome {
   readonly chars: number;
   readonly error?: string;
   readonly ms: number;
+  /** The tokens it took, when the assistant counted them (never a guess). */
+  readonly usage?: { readonly model: string; readonly inputTokens: number; readonly outputTokens: number; readonly cachedTokens: number };
 }
 
 export interface Guard {

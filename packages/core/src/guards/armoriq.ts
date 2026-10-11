@@ -152,8 +152,10 @@ export function armoriq(options: ArmorIQOptions): Guard {
     },
 
     async report(handOff: HandOff, outcome: Outcome): Promise<void> {
-      const session = runs.get(handOff.run.id)?.session;
-      if (!session) return;
+      // Taken now: the run can end, and be let go of, while the report is on its way.
+      const kept = runs.get(handOff.run.id);
+      if (!kept) return;
+      const { session, planId } = kept;
       try {
         await session.report(armoriqTool(handOff.assistant, mcp), argsOf(handOff), { ok: outcome.ok, chars: outcome.chars }, {
           status: outcome.ok ? "success" : "error",
@@ -162,6 +164,18 @@ export function armoriq(options: ArmorIQOptions): Guard {
         });
       } catch (error) {
         console.error(`[huddle] ArmorIQ didn't take the report for run ${handOff.run.id}: ${message(error)}`);
+      }
+      // Real token counts go to ArmorIQ's token and cost views, filed under the run's plan.
+      if (outcome.usage) {
+        const { client: armor } = await connect().catch(() => ({ client: null }));
+        const recorder = armor as { recordTokenUsage?: (payload: { product: string; sessionId: string; entries: { model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }[] }) => Promise<{ ok: boolean; status?: number; reason?: string }> } | null;
+        const sessionId = planId;
+        if (recorder?.recordTokenUsage && sessionId) {
+          const result = await recorder
+            .recordTokenUsage({ product: "huddle", sessionId, entries: [{ model: outcome.usage.model, inputTokens: outcome.usage.inputTokens, outputTokens: outcome.usage.outputTokens, cacheReadTokens: outcome.usage.cachedTokens, cacheWriteTokens: 0 }] })
+            .catch((error: unknown) => ({ ok: false, reason: message(error) }));
+          if (!result.ok) console.error(`[huddle] ArmorIQ didn't take the token counts for run ${handOff.run.id}: ${"reason" in result && result.reason ? result.reason : `HTTP ${"status" in result ? result.status : "?"}`}`);
+        }
       }
     },
 
