@@ -1,6 +1,6 @@
 import type { Guard, HandOff, Outcome, Verdict } from "../guard.ts";
 import type { Assistant, Flow } from "../schema.ts";
-import type { Run, RunState } from "../store.ts";
+import type { HeldBy, Run, RunState } from "../store.ts";
 
 /**
  * ArmorIQ (armoriq.ai) checks every hand-off against the run's plan and your org's policy, outside any model.
@@ -12,9 +12,18 @@ import type { Run, RunState } from "../store.ts";
  * A hand-off is the tool `<mcp>__<connector>` (huddle__openclaw, huddle__email, ...), with the step and assistant
  * ids as its arguments. ArmorIQ never sees the ask or the answer: only which assistant each step went to, how long
  * the answer was, and how long it took.
+ *
+ * A hold is ArmorIQ's to release: it files an approval request in ArmorIQ (as Huddle's own agent address, since
+ * ArmorIQ won't let you approve a request you made), you approve it on ArmorIQ's Plans page, and the run carries
+ * on by itself. Huddle never approves its own held hand-offs.
  */
 
 export const ARMORIQ_API = "https://api.armoriq.ai";
+export const ARMORIQ_PLANS = "https://platform.armoriq.ai/dashboard/plans";
+/** Who Huddle's approval requests come from: not you, since ArmorIQ won't let you approve your own request. */
+export const ARMORIQ_REQUESTER = "huddle-agent@huddle.local";
+/** How long a hold waits for its approver: ArmorIQ lets a delegation run an hour. */
+const HOLD_WAIT_S = 3_600;
 const DEFAULT_AGENT = "huddle";
 const DEFAULT_USER = "huddle-owner";
 const DEFAULT_MCP = "huddle";
@@ -33,7 +42,8 @@ interface CheckResult {
 /** The part of ArmorIQSession Huddle uses. */
 export interface ArmorIQSessionLike {
   startPlan(toolCalls: { name: string; args: Record<string, unknown> }[], goal?: string): Promise<unknown>;
-  check(toolName: string, toolArgs: Record<string, unknown>): Promise<CheckResult>;
+  check(toolName: string, toolArgs: Record<string, unknown>, userEmail?: string): Promise<CheckResult & { readonly delegationId?: string }>;
+  awaitApproval(delegationId: string, options?: { timeout?: number; interval?: number; userEmail?: string }): Promise<"approved" | "rejected" | "timeout">;
   report(toolName: string, toolArgs: Record<string, unknown>, result: unknown, options?: { status?: "success" | "error"; errorMessage?: string; durationMs?: number }): Promise<void>;
   close(status?: "ok" | "error" | "denied"): Promise<void>;
 }
@@ -51,6 +61,10 @@ export interface ArmorIQOptions {
   readonly userId?: string;
   /** The MCP the hand-offs are filed under (default "huddle"). */
   readonly mcp?: string;
+  /** The address Huddle's approval requests come from (default huddle-agent@huddle.local). */
+  readonly requester?: string;
+  /** Seconds between asking ArmorIQ about a hold (default 5). */
+  readonly pollSeconds?: number;
   /** Loads the SDK; tests pass a fake. */
   readonly sdk?: () => Promise<ArmorIQSdk>;
   readonly now?: () => number;
@@ -77,13 +91,16 @@ function plainReason(code: string, tool: string): string {
   if (code.startsWith("tool-not-in-plan")) return `${tool} wasn't in the plan ArmorIQ signed for this run`;
   if (code === "token-expired") return "the run's ArmorIQ plan ran out";
   if (code === "allow_with_logging") return "allowed, and logged";
+  if (code === "rule_action_hold") return `your ArmorIQ policy wants a yes before ${tool}`;
   return code;
 }
 
-function verdictOf(result: CheckResult, tool: string): Verdict {
+function verdictOf(result: CheckResult & { readonly delegationId?: string }, tool: string, planId: string | null): Verdict {
   const action = result.action === "allow" || result.action === "block" || result.action === "hold" ? result.action : result.allowed ? "allow" : "block";
   const code = result.reason ?? (action === "allow" ? "allowed" : action === "hold" ? "held" : "blocked");
-  return { action, reason: plainReason(code, tool), code, ...(result.matchedPolicy ? { policy: result.matchedPolicy } : {}) };
+  // A hold ArmorIQ filed an approval request for: approved on its Plans page, on this run's plan when it's known.
+  const heldBy = action === "hold" && result.delegationId ? { by: "ArmorIQ", id: result.delegationId, url: planId ? `${ARMORIQ_PLANS}/${planId}` : ARMORIQ_PLANS } : null;
+  return { action, reason: plainReason(code, tool), code, ...(result.matchedPolicy ? { policy: result.matchedPolicy } : {}), ...(heldBy ? { heldBy } : {}) };
 }
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -96,7 +113,8 @@ export function armoriq(options: ArmorIQOptions): Guard {
     return sdk.ArmorIQClient ? sdk : sdk.default!;
   });
   let client: Promise<{ sdk: ArmorIQSdk; client: unknown }> | null = null;
-  const runs = new Map<string, { session: ArmorIQSessionLike; plannedAt: number }>();
+  const runs = new Map<string, { session: ArmorIQSessionLike; plannedAt: number; planId: string | null }>();
+  const requester = options.requester ?? ARMORIQ_REQUESTER;
 
   const connect = () => {
     client ??= load().then((sdk) => ({ sdk, client: new sdk.ArmorIQClient({ apiKey: options.apiKey, userId: options.userId ?? DEFAULT_USER, agentId: options.agentId ?? DEFAULT_AGENT }) }));
@@ -110,9 +128,9 @@ export function armoriq(options: ArmorIQOptions): Guard {
     if (kept && now() - kept.plannedAt < PLAN_LIFETIME_MS) return kept.session;
     const { sdk, client: armor } = await connect();
     const session = new sdk.ArmorIQSession(armor as never, { mode: "sdk", defaultMcpName: mcp, validitySeconds: 3600 });
-    await session.startPlan(armoriqPlan(run.flow, mcp), `Run the "${run.flow.name}" flow`);
+    const token = (await session.startPlan(armoriqPlan(run.flow, mcp), `Run the "${run.flow.name}" flow`)) as { planId?: unknown } | null;
     runs.delete(run.id);
-    runs.set(run.id, { session, plannedAt: now() });
+    runs.set(run.id, { session, plannedAt: now(), planId: typeof token?.planId === "string" ? token.planId : null });
     if (runs.size > MAX_RUNS) runs.delete(runs.keys().next().value!);
     return session;
   }
@@ -126,7 +144,7 @@ export function armoriq(options: ArmorIQOptions): Guard {
       const tool = armoriqTool(handOff.assistant, mcp);
       try {
         const session = await sessionFor(handOff.run);
-        return verdictOf(await session.check(tool, argsOf(handOff)), tool);
+        return verdictOf(await session.check(tool, argsOf(handOff), requester), tool, runs.get(handOff.run.id)?.planId ?? null);
       } catch (error) {
         runs.delete(handOff.run.id);
         return { action: "block", reason: `ArmorIQ couldn't check it, so it didn't go ahead: ${message(error)}`, code: "unreachable" };
@@ -145,6 +163,24 @@ export function armoriq(options: ArmorIQOptions): Guard {
       } catch (error) {
         console.error(`[huddle] ArmorIQ didn't take the report for run ${handOff.run.id}: ${message(error)}`);
       }
+    },
+
+    async awaitRelease(heldBy: HeldBy): Promise<"approved" | "rejected" | "timeout"> {
+      const deadline = now() + HOLD_WAIT_S * 1_000;
+      // A session of its own: the run's may be gone (a restart), and waiting needs no plan.
+      while (now() < deadline) {
+        try {
+          const { sdk, client: armor } = await connect();
+          const session = new sdk.ArmorIQSession(armor as never, { mode: "sdk", defaultMcpName: mcp, validitySeconds: 3600 });
+          const left = Math.max(1, Math.round((deadline - now()) / 1_000));
+          return await session.awaitApproval(heldBy.id, { timeout: left, interval: options.pollSeconds ?? 5, userEmail: requester });
+        } catch (error) {
+          // ArmorIQ unreachable for a moment: the hold stands; ask again shortly.
+          console.error(`[huddle] couldn't ask ArmorIQ about hold ${heldBy.id}: ${message(error)}`);
+          await new Promise((resolve) => setTimeout(resolve, 30_000));
+        }
+      }
+      return "timeout";
     },
 
     async finish(runId: string, state: RunState): Promise<void> {

@@ -34,10 +34,14 @@ function fakeSdk(decide: (tool: string) => { allowed: boolean; action: string; r
       async startPlan(tools: { name: string; args: Record<string, unknown> }[], goal?: string) {
         calls.push(`plan ${tools.map((tool) => tool.name).join(",")} "${goal}"`);
         if (fail?.plan) throw fail.plan;
-        return {};
+        return { planId: "plan-1" };
       }
-      async check(tool: string, args: Record<string, unknown>) {
-        calls.push(`check ${tool} ${JSON.stringify(args)}`);
+      async awaitApproval(id: string, options?: { userEmail?: string }) {
+        calls.push(`await ${id} as ${options?.userEmail}`);
+        return "approved";
+      }
+      async check(tool: string, args: Record<string, unknown>, userEmail?: string) {
+        calls.push(`check ${tool} ${JSON.stringify(args)}${userEmail && userEmail !== "huddle-agent@huddle.local" ? ` as ${userEmail}` : ""}`);
         if (fail?.check) throw fail.check;
         return decide(tool);
       }
@@ -121,6 +125,28 @@ describe("the ArmorIQ guard", () => {
     const done = await engine.decide(waiting.waiting!.id, true);
     assert.equal(done.state, "done");
     assert.equal(calls.filter((call) => call.startsWith("plan")).length, 2);
+  });
+});
+
+describe("an ArmorIQ hold", () => {
+  it("is filed as Huddle's own agent address, links to the run's plan, and carries on once ArmorIQ approves it", async () => {
+    const { sdk, calls } = fakeSdk((tool) => (tool === "huddle__email" ? { allowed: false, action: "hold", reason: "rule_action_hold", matchedPolicy: "cli-huddle-huddle", delegationId: "del-9" } : { allowed: true, action: "allow" }));
+    const store = new Store();
+    const guard = armoriq({ apiKey: "ak_test_x", sdk: async () => sdk, pollSeconds: 0 });
+    const engine = new Engine(store, { mock, email }, { guard });
+    const waiting = await engine.start(flow, "x");
+    assert.equal(waiting.state, "waiting");
+    assert.deepEqual(waiting.waiting?.heldBy, { by: "ArmorIQ", id: "del-9", url: "https://platform.armoriq.ai/dashboard/plans/plan-1" });
+    assert.match(waiting.waiting?.message ?? "", /ArmorIQ held the hand-off to "mailer" \(your ArmorIQ policy wants a yes before huddle__email\)\. Approve it in ArmorIQ/);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(engine.view(waiting.id).state, "done");
+    assert.ok(calls.includes("await del-9 as huddle-agent@huddle.local"));
+  });
+
+  it("can come from another address", async () => {
+    const { sdk, calls } = fakeSdk(() => ({ allowed: true, action: "allow" }));
+    await new Engine(new Store(), { mock, email }, { guard: armoriq({ apiKey: "ak_test_x", sdk: async () => sdk, requester: "agent@example.com" }) }).start(flow, "x");
+    assert.ok(calls.some((call) => call.endsWith(" as agent@example.com")));
   });
 });
 
