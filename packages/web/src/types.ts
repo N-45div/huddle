@@ -14,6 +14,7 @@ export type {
   ContactTier,
   Flow,
   FlowView,
+  HeldBy,
   Info,
   LogLine,
   MemoryHit,

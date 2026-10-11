@@ -59,7 +59,7 @@ export function RunScreen({ runId }: { readonly runId: string }) {
             <section className="card waiting-card" aria-label="Waiting for you">
               <p className="eyebrow">Waiting for you</p>
               <p className="waiting-message">{run.waiting.message}</p>
-              <AnswerButtons approvalId={run.waiting.id} onAnswered={refetch} />
+              <AnswerButtons approvalId={run.waiting.id} heldBy={run.waiting.heldBy} onAnswered={refetch} />
             </section>
           )}
 

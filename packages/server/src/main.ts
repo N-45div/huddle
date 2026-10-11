@@ -41,7 +41,9 @@ import { webApp } from "./static.ts";
  *   HUDDLE_BUDGET      a cap on what hand-offs to priced assistants may spend, in US dollars: "20/month"
  *                      or "5/day"; past 80% the router's "auto" goes for the cheapest that fits
  *   ARMORIQ_API_KEY    ArmorIQ checks every hand-off against the run's signed plan and your policy first;
- *                      HUDDLE_ARMORIQ_AGENT names the agent your policies are for (default huddle).
+ *                      HUDDLE_ARMORIQ_AGENT names the agent your policies are for (default huddle);
+ *                      a hand-off your policy holds is approved on ArmorIQ's Plans page, where its request
+ *                      comes from HUDDLE_ARMORIQ_REQUESTER (default huddle-agent@huddle.local).
  *                      Set the policy up once with: npm run huddle -- armoriq register
  */
 
@@ -91,7 +93,7 @@ const memory = new Memory(store, {
 // PACT sign-ins wait in Approvals while the step that needs them keeps running.
 const signIns = new SignIns();
 const armoriqKey = env("ARMORIQ_API_KEY");
-const guard = armoriqKey ? armoriq({ apiKey: armoriqKey, agentId: env("HUDDLE_ARMORIQ_AGENT") }) : undefined;
+const guard = armoriqKey ? armoriq({ apiKey: armoriqKey, agentId: env("HUDDLE_ARMORIQ_AGENT"), requester: env("HUDDLE_ARMORIQ_REQUESTER") }) : undefined;
 let spendCap: Budget | null;
 try {
   spendCap = parseBudget(env("HUDDLE_BUDGET"));
@@ -101,6 +103,9 @@ try {
 }
 const engine = new Engine(store, { ...defaultConnectors(), openshell: openshell(() => shell), pact: pact(() => identity, undefined, { signIns, grants: storedGrants(store) }) }, { memory, guard, budget: spendCap });
 const sandboxes = shell ? new SandboxWatcher(shell, store) : undefined;
+// Hand-offs ArmorIQ held before a restart: wait on them again, so they carry on once approved there.
+const held = engine.resumeHolds();
+if (held) console.log(`[huddle] waiting on ${held} hand-off(s) ArmorIQ holds for your approval there.`);
 const scheduler = new Scheduler(store, engine);
 
 const typesafeKey = env("TYPESAFE_API_KEY");

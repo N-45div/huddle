@@ -73,6 +73,7 @@ export function ApprovalsScreen() {
             <div className="approval-foot">
               <AnswerButtons
                 approvalId={approval.id}
+                heldBy={approval.heldBy}
                 onAnswered={() => {
                   approvals.setData((current) => current?.filter((other) => other.id !== approval.id) ?? null);
                   refetch();

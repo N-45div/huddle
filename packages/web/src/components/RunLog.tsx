@@ -5,7 +5,7 @@ import { AnswerView } from "../views/AnswerView.tsx";
 
 /**
  * A run's log, one line per thing that happened, in plain words. The engine writes:
- * started, guarded, asked, answered, checked, waiting, approved, declined, suggested and failed.
+ * started, guarded, asked, answered, checked, waiting, released, refused, approved, declined, suggested and failed.
  */
 
 function field(detail: unknown, key: string): unknown {
@@ -101,7 +101,13 @@ function describe(line: LogLine): Described {
       };
     }
     case "waiting":
-      return { title: "Waiting for a yes or no", body: text(detail, "message"), tone: "warn" };
+      return { title: field(detail, "heldBy") ? `Held: waiting for a yes in ${text(field(detail, "heldBy"), "by")}` : "Waiting for a yes or no", body: text(detail, "message"), tone: "warn" };
+    case "released":
+      return { title: `Approved in ${text(detail, "by") || "the guard"}`, tone: "ok" };
+    case "refused": {
+      const outcome = text(detail, "outcome");
+      return { title: outcome === "timeout" ? `${text(detail, "by")}'s approval ran out` : `Refused in ${text(detail, "by") || "the guard"}`, tone: "danger" };
+    }
     case "approved":
       return { title: "Answered yes", body: text(detail, "message"), tone: "ok" };
     case "declined":

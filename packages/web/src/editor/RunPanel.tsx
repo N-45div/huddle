@@ -101,7 +101,7 @@ export function RunPanel({ flowId, dirty, watching, detail, detailError, onRun, 
                 <div className="card waiting-card">
                   <p className="eyebrow">Waiting for you</p>
                   <p className="waiting-message">{current.run.waiting.message}</p>
-                  <AnswerButtons key={current.run.waiting.id} approvalId={current.run.waiting.id} onAnswered={onAnswered} />
+                  <AnswerButtons key={current.run.waiting.id} approvalId={current.run.waiting.id} heldBy={current.run.waiting.heldBy} onAnswered={onAnswered} />
                 </div>
               )}
               {current.run.state === "failed" && current.run.error && <ErrorNote message={current.run.error} />}

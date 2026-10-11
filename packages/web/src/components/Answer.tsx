@@ -1,9 +1,13 @@
 import { useState } from "react";
 import { api, describeError } from "../api.ts";
 import { useApp } from "../app-context.ts";
+import type { HeldBy } from "../types.ts";
 
-/** Yes / No for one waiting approval. */
-export function AnswerButtons({ approvalId, onAnswered }: { readonly approvalId: string; readonly onAnswered?: (yes: boolean) => void }) {
+/**
+ * Yes / No for one waiting approval. A hand-off ArmorIQ holds is approved there instead: the yes is a link to
+ * its page, and the run carries on by itself once you approve it; a no here still stops it.
+ */
+export function AnswerButtons({ approvalId, heldBy, onAnswered }: { readonly approvalId: string; readonly heldBy?: HeldBy | null; readonly onAnswered?: (yes: boolean) => void }) {
   const { refreshWaiting } = useApp();
   const [busy, setBusy] = useState(false);
   const [answered, setAnswered] = useState<boolean | null>(null);
@@ -35,13 +39,20 @@ export function AnswerButtons({ approvalId, onAnswered }: { readonly approvalId:
   return (
     <div className="answer">
       <div className="answer-buttons">
-        <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void answer(true)}>
-          Yes
-        </button>
+        {heldBy ? (
+          <a className="btn btn-primary" href={heldBy.url} target="_blank" rel="noopener noreferrer">
+            Approve in {heldBy.by}
+          </a>
+        ) : (
+          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void answer(true)}>
+            Yes
+          </button>
+        )}
         <button type="button" className="btn" disabled={busy} onClick={() => void answer(false)}>
           No
         </button>
       </div>
+      {heldBy && <p className="hint held-hint">Only {heldBy.by} can let this one through. Huddle carries on by itself once you approve it there.</p>}
       {error && (
         <p className="error-text" role="alert">
           {error}
