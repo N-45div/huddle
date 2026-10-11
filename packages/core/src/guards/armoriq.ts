@@ -221,17 +221,53 @@ export interface ArmorIQRegistration {
   readonly allow: readonly string[];
   /** Replace a policy you've since changed on ArmorIQ's dashboard (its holds and other rules go). */
   readonly replace?: boolean;
+  /** Connectors whose hand-offs wait for your yes in ArmorIQ (each must be allowed too). */
+  readonly hold?: readonly string[];
   readonly fetcher?: typeof fetch;
 }
 
 export type RegisterResult =
-  | { readonly ok: true; readonly agent: string; readonly policy: string; readonly allowed: readonly string[] }
+  | { readonly ok: true; readonly agent: string; readonly policy: string; readonly allowed: readonly string[]; readonly held: readonly string[] }
   | { readonly ok: false; readonly conflict: boolean; readonly error: string };
+
+interface StoredPolicy {
+  readonly orgId: string;
+  readonly name: string;
+  readonly targetType: string;
+  readonly targetId: string;
+  readonly priority: number;
+  readonly defaultEnforcementAction: string;
+  readonly memberRules: Readonly<Record<string, { readonly allowedTools?: readonly string[] }>>;
+}
+
+/** The policy as ArmorIQ's YAML import takes it (armor.io/v1), every member's rule holding the given tools. */
+export function policyYaml(policy: StoredPolicy, hold: readonly string[]): string {
+  const members = Object.entries(policy.memberRules).map(([member, rule]) => {
+    const enforcement = hold.length ? `\n      toolEnforcement:\n${hold.map((tool) => `        ${tool}: hold`).join("\n")}` : "";
+    return `    ${JSON.stringify(member)}:\n      allowedTools: [${(rule.allowedTools ?? []).join(", ")}]${enforcement}`;
+  });
+  return [
+    "apiVersion: armor.io/v1",
+    "kind: Policy",
+    "metadata:",
+    `  name: ${JSON.stringify(policy.name)}`,
+    `  orgId: ${JSON.stringify(policy.orgId)}`,
+    `  targetType: ${policy.targetType}`,
+    `  targetId: ${JSON.stringify(policy.targetId)}`,
+    "spec:",
+    `  priority: ${policy.priority}`,
+    `  defaultEnforcementAction: ${policy.defaultEnforcementAction}`,
+    "  memberRules:",
+    ...members,
+    "",
+  ].join("\n");
+}
 
 /**
  * Tells ArmorIQ about Huddle, the way `armoriq register` does: the agent, the MCP its hand-offs are filed under,
- * and a policy allowing the listed connectors. Holds (ask first) are set on ArmorIQ's dashboard, and registering
- * again won't wipe them unless `replace` says to.
+ * and a policy allowing the listed connectors. With `hold`, those connectors then wait for your yes in ArmorIQ,
+ * set the way ArmorIQ's dashboard imports a policy. Registering again without `hold` won't wipe holds set on
+ * the dashboard unless `replace` says to.
  */
 export async function registerWithArmorIQ(registration: ArmorIQRegistration): Promise<RegisterResult> {
   const mcp = registration.mcp ?? DEFAULT_MCP;
@@ -243,15 +279,17 @@ export async function registerWithArmorIQ(registration: ArmorIQRegistration): Pr
     mcp_servers: [{ id: mcp, url: registration.mcpUrl, auth: { type: "none" }, description: "Huddle: hand-offs between your personal assistants" }],
     policy: { allow: registration.allow.map((connector) => `${mcp}.${connector}`), deny: [] },
     intent: { ttl_seconds: 3600, require_csrg: true },
-    ...(registration.replace ? { onConflict: "replace" } : {}),
+    // Holds are put back straight after, so registering with them may replace the policy's earlier holds.
+    ...(registration.replace || registration.hold?.length ? { onConflict: "replace" } : {}),
   };
-  const response = await (registration.fetcher ?? fetch)(`${ARMORIQ_API}/iap/sdk/register`, {
+  const fetcher = registration.fetcher ?? fetch;
+  const response = await fetcher(`${ARMORIQ_API}/iap/sdk/register`, {
     method: "POST",
     headers: { authorization: `Bearer ${registration.apiKey}`, "content-type": "application/json" },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(20_000),
   });
-  const json = (await response.json().catch(() => null)) as { message?: unknown; code?: unknown; agent?: { name?: string }; policies?: { name?: string }[] } | null;
+  const json = (await response.json().catch(() => null)) as { message?: unknown; code?: unknown; agent?: { name?: string }; policies?: { name?: string }[]; registered_mcps?: { mcpId?: string }[] } | null;
   if (!response.ok) {
     const conflict = response.status === 409;
     const said = typeof json?.message === "string" ? json.message : `HTTP ${response.status}`;
@@ -259,5 +297,24 @@ export async function registerWithArmorIQ(registration: ArmorIQRegistration): Pr
     const moved = response.status >= 500 ? ` (if Huddle was registered before at another address, ArmorIQ can't move it this way: use --url with the old one, or change it under MCP Servers on ArmorIQ's dashboard)` : "";
     return { ok: false, conflict, error: conflict ? `${said} (run it with --replace to overwrite those changes)` : `${said}${moved}` };
   }
-  return { ok: true, agent: json?.agent?.name ?? registration.agentId ?? DEFAULT_AGENT, policy: json?.policies?.[0]?.name ?? "", allowed: registration.allow };
+  const registered = { agent: json?.agent?.name ?? registration.agentId ?? DEFAULT_AGENT, policy: json?.policies?.[0]?.name ?? "", allowed: registration.allow };
+  const hold = registration.hold ?? [];
+  if (hold.length === 0) return { ok: true, ...registered, held: [] };
+
+  const failed = (why: string): RegisterResult => ({ ok: false, conflict: false, error: `Registered, but the holds didn't take: ${why}` });
+  const mcpId = json?.registered_mcps?.[0]?.mcpId;
+  if (!mcpId) return failed("ArmorIQ didn't say which MCP it registered.");
+  const headers = { "X-API-Key": registration.apiKey, "content-type": "application/json" };
+  const found = await fetcher(`${ARMORIQ_API}/policies/by-target-apikey?targetType=mcp_server&targetId=${encodeURIComponent(mcpId)}`, { headers, signal: AbortSignal.timeout(20_000) });
+  const policy = ((await found.json().catch(() => null)) as { data?: StoredPolicy[] } | null)?.data?.find((candidate) => candidate.name === registered.policy) ?? null;
+  if (!found.ok || !policy) return failed(`ArmorIQ didn't return the policy it made (HTTP ${found.status}).`);
+  const imported = await fetcher(`${ARMORIQ_API}/policies/yaml/import-apikey`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ orgId: policy.orgId, yaml: policyYaml(policy, hold), onConflict: "refuse" }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  const result = (await imported.json().catch(() => null)) as { success?: boolean; failed?: number; message?: unknown; results?: { error?: string }[] } | null;
+  if (!imported.ok || result?.success === false || (result?.failed ?? 0) > 0) return failed(typeof result?.message === "string" ? result.message : result?.results?.[0]?.error ?? `HTTP ${imported.status}`);
+  return { ok: true, ...registered, held: hold };
 }

@@ -15,9 +15,10 @@ import { Store } from "./store.ts";
  *   huddle show <run-id>           a run's steps, what went in and what came out
  *   huddle memory [suggested|kept] the shared memory
  *   huddle memory add <slice> <note…> | keep <note-id> | forget <note-id>
- *   huddle armoriq register [--deny <connector,…>] [--url <mcp-url>] [--replace]
+ *   huddle armoriq register [--deny <connector,…>] [--hold <connector,…>] [--url <mcp-url>] [--replace]
  *                                  tell ArmorIQ about Huddle: its agent, and a policy allowing every connector
- *                                  but the ones you deny (ARMORIQ_API_KEY; HUDDLE_ARMORIQ_AGENT, default huddle)
+ *                                  but the ones you deny, the ones you hold waiting for your yes in ArmorIQ
+ *                                  (ARMORIQ_API_KEY; HUDDLE_ARMORIQ_AGENT, default huddle)
  */
 
 
@@ -96,20 +97,24 @@ async function main(): Promise<void> {
       return;
     }
     case "armoriq": {
-      if (args[0] !== "register") throw new Error("huddle armoriq register [--deny <connector,…>] [--url <mcp-url>] [--replace]");
+      if (args[0] !== "register") throw new Error("huddle armoriq register [--deny <connector,…>] [--hold <connector,…>] [--url <mcp-url>] [--replace]");
       if (!armoriqKey) throw new Error("Set ARMORIQ_API_KEY first (Settings, API Keys on platform.armoriq.ai).");
       const deny = (option("deny") ?? "").split(",").map((name) => name.trim()).filter(Boolean);
+      const hold = (option("hold") ?? "").split(",").map((name) => name.trim()).filter(Boolean);
       const connectors = Object.keys(defaultConnectors());
-      const unknown = deny.filter((name) => !connectors.includes(name));
+      const unknown = [...deny, ...hold].filter((name) => !connectors.includes(name));
+      const both = hold.filter((name) => deny.includes(name));
+      if (both.length) throw new Error(`${both.join(", ")} can't be both denied and held.`);
       if (unknown.length) throw new Error(`There's no ${unknown.join(", ")} connector; they are: ${connectors.join(", ")}.`);
       const allow = connectors.filter((name) => !deny.includes(name));
       const base = (process.env.HUDDLE_PUBLIC_URL ?? `http://localhost:${process.env.HUDDLE_PORT ?? 7700}`).replace(/\/$/, "");
-      const result = await registerWithArmorIQ({ apiKey: armoriqKey, agentId: process.env.HUDDLE_ARMORIQ_AGENT, mcpUrl: option("url") ?? `${base}/mcp`, allow, replace: args.includes("--replace") });
+      const result = await registerWithArmorIQ({ apiKey: armoriqKey, agentId: process.env.HUDDLE_ARMORIQ_AGENT, mcpUrl: option("url") ?? `${base}/mcp`, allow, hold, replace: args.includes("--replace") });
       if (!result.ok) throw new Error(`ArmorIQ said no: ${result.error}`);
       console.log(`Registered agent "${result.agent}" with ArmorIQ; policy ${result.policy || "(unnamed)"}.`);
       console.log(`  Allowed: ${allow.join(", ")}`);
       if (deny.length) console.log(`  Blocked: ${deny.join(", ")}`);
-      console.log("  To have a hand-off wait for your yes, set that tool to hold on ArmorIQ's dashboard (Policies).");
+      if (result.held.length) console.log(`  Held: ${result.held.join(", ")}. Each waits until you approve it in ArmorIQ (Plans); Huddle's Approvals links to it.`);
+      else console.log("  To have a hand-off wait for your yes in ArmorIQ, add --hold <connector> (say --hold email).");
       return;
     }
     default:

@@ -172,12 +172,30 @@ describe("registering with ArmorIQ", () => {
       return Response.json({ success: true, agent: { name: "huddle" }, policies: [{ name: "cli-huddle-huddle" }] });
     }) as typeof fetch;
     const result = await registerWithArmorIQ({ apiKey: "ak_test_secret", mcpUrl: "http://localhost:7700/mcp", allow: ["openclaw", "email"], fetcher });
-    assert.deepEqual(result, { ok: true, agent: "huddle", policy: "cli-huddle-huddle", allowed: ["openclaw", "email"] });
+    assert.deepEqual(result, { ok: true, agent: "huddle", policy: "cli-huddle-huddle", allowed: ["openclaw", "email"], held: [] });
     assert.equal(seen!.url, "https://api.armoriq.ai/iap/sdk/register");
     assert.equal(seen!.headers.authorization, "Bearer ak_test_secret");
     assert.ok(!JSON.stringify(seen!.body).includes("ak_test_secret"));
     assert.deepEqual(seen!.body.policy, { allow: ["huddle.openclaw", "huddle.email"], deny: [] });
     assert.equal(seen!.body.onConflict, undefined);
+  });
+
+  it("holds connectors for your yes in ArmorIQ: registers, then imports the policy back with every member holding them", async () => {
+    const seen: { url: string; body: Record<string, unknown> | null }[] = [];
+    const fetcher = (async (url: string, init: RequestInit) => {
+      seen.push({ url, body: init.body ? JSON.parse(String(init.body)) : null });
+      if (url.endsWith("/iap/sdk/register")) return Response.json({ success: true, agent: { name: "huddle" }, policies: [{ name: "cli-huddle-huddle" }], registered_mcps: [{ mcpId: "mcp-1" }] });
+      if (url.includes("/policies/by-target-apikey")) return Response.json({ data: [{ orgId: "org-1", name: "cli-huddle-huddle", targetType: "mcp_server", targetId: "mcp-1", priority: 100, defaultEnforcementAction: "block", memberRules: { "*": { allowedTools: ["openclaw", "email"] }, "member-7": { allowedTools: ["openclaw", "email"] } } }] });
+      return Response.json({ success: true, imported: 1, failed: 0, results: [{ success: true }] }, { status: 201 });
+    }) as typeof fetch;
+    const result = await registerWithArmorIQ({ apiKey: "ak_test_x", mcpUrl: "http://localhost:7700/mcp", allow: ["openclaw", "email"], hold: ["email"], fetcher });
+    assert.deepEqual(result, { ok: true, agent: "huddle", policy: "cli-huddle-huddle", allowed: ["openclaw", "email"], held: ["email"] });
+    assert.equal(seen[0]?.body?.onConflict, "replace", "the holds are put straight back");
+    assert.match(seen[1]?.url ?? "", /targetType=mcp_server&targetId=mcp-1/);
+    const imported = seen[2]?.body as { orgId: string; yaml: string; onConflict: string };
+    assert.deepEqual([imported.orgId, imported.onConflict], ["org-1", "refuse"]);
+    assert.equal((imported.yaml.match(/email: hold/g) ?? []).length, 2, "every member's rule holds it");
+    assert.ok(!/status:/.test(imported.yaml), "ArmorIQ refuses a status line");
   });
 
   it("won't wipe dashboard changes unless told to replace them", async () => {
