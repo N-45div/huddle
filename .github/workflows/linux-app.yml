@@ -58,6 +58,11 @@ jobs:
           grep -q "server starts: 1 (should be 1)" smoke.log
           rm out/smoke.sh
 
+      - name: Smoke test the Arch package (huddle-bin) on a clean Arch
+        run: |
+          docker run --rm -v "$PWD/out:/out" -v "$PWD/packages/desktop/linux/arch:/pkg:ro" archlinux:latest sh /pkg/smoke.sh | tee arch-smoke.log
+          grep -q "server starts: 1 (should be 1)" arch-smoke.log
+
       - uses: actions/upload-artifact@v4
         with:
           name: huddle-linux
