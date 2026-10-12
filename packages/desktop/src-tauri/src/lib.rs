@@ -1,6 +1,11 @@
 //! Huddle for Linux. The app starts Huddle's server on this computer and shows its canvas; closing the window
 //! keeps it running in the tray, so schedules, email and other triggers carry on. Ctrl+Alt+H opens a quick-ask
 //! box; approvals arrive as notifications you can answer; it starts when you log in.
+//!
+//!   huddle            opens Huddle (or brings its window back, if it's running)
+//!   huddle --quick    opens the quick-ask box: bind it to a shortcut where Ctrl+Alt+H can't be had (Wayland)
+//!   huddle --restart  restarts Huddle's server, to pick up changed keys and settings
+//!   huddle --hidden   starts in the background (how it starts at login)
 
 mod approvals;
 mod server;
@@ -39,6 +44,12 @@ struct Desktop {
     quick_shown: Mutex<Instant>,
     /// When the app opened: the opening screen plays out before the canvas takes over.
     opened: Instant,
+    /// The desktop shows tray icons; without one, closing the window minimizes it instead of hiding it.
+    has_tray: bool,
+    /// Closing minimized the main window (there's no tray).
+    minimized: AtomicBool,
+    /// Started with --quick: open the quick-ask box once the server answers.
+    quick_at_start: AtomicBool,
 }
 
 /// What the server's thread can be told.
@@ -64,7 +75,16 @@ impl Desktop {
 
 pub fn run() {
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app, None)))
+        // Running huddle again talks to the copy that's running.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if args.iter().any(|arg| arg == "--quick") {
+                toggle_quick(app);
+            } else if args.iter().any(|arg| arg == "--restart") {
+                restart(app);
+            } else {
+                show_main(app, None);
+            }
+        }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -88,6 +108,8 @@ pub fn run() {
                 keys: settings::keys_file(&config)?,
             };
             let first_run = !config.join("token").exists();
+            let quick = std::env::args().any(|arg| arg == "--quick");
+            let hidden = quick || std::env::args().any(|arg| arg == "--hidden");
             let desktop = Desktop {
                 paths,
                 port: server::pick_port(PORT),
@@ -98,8 +120,10 @@ pub fn run() {
                 approvals_item: Mutex::new(None),
                 quick_shown: Mutex::new(Instant::now()),
                 opened: Instant::now(),
+                has_tray: tray_host(),
+                minimized: AtomicBool::new(false),
+                quick_at_start: AtomicBool::new(quick),
             };
-            let hidden = std::env::args().any(|arg| arg == "--hidden");
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Huddle")
                 .inner_size(1280.0, 860.0)
@@ -107,6 +131,7 @@ pub fn run() {
                 .initialization_script(&desktop.token_script())
                 .visible(!hidden)
                 .build()?;
+            eprintln!("[huddle] tray: {}", if desktop.has_tray { "shown" } else { "none here, so closing the window minimizes it" });
             app.manage(desktop);
 
             // Always on is the point: start at login, from the first run on (the tray can turn it off).
@@ -129,10 +154,16 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| match event {
-            // Closing the window keeps Huddle running in the tray.
+            // Closing the window keeps Huddle running: in the tray, or minimized where there's no tray.
             WindowEvent::CloseRequested { api, .. } if window.label() == "main" || window.label() == "quick" => {
                 api.prevent_close();
-                let _ = window.hide();
+                let desktop = window.state::<Desktop>();
+                if window.label() == "main" && !desktop.has_tray {
+                    desktop.minimized.store(true, Ordering::SeqCst);
+                    let _ = window.minimize();
+                } else {
+                    let _ = window.hide();
+                }
             }
             WindowEvent::Focused(false) if window.label() == "quick" => {
                 let desktop = window.state::<Desktop>();
@@ -189,6 +220,9 @@ fn run_server(app: &AppHandle, inbox: mpsc::Receiver<Order>) {
         }
         if first {
             watch_approvals(app);
+            if desktop.quick_at_start.swap(false, Ordering::SeqCst) {
+                toggle_quick(app);
+            }
             first = false;
         }
         loop {
@@ -326,6 +360,21 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Whether the desktop shows tray icons (something answers for StatusNotifierWatcher on the session bus).
+/// Stock GNOME without the AppIndicator extension, and WSLg, have none.
+#[cfg(target_os = "linux")]
+fn tray_host() -> bool {
+    let Ok(bus) = zbus::blocking::Connection::session() else { return false };
+    let Ok(dbus) = zbus::blocking::fdo::DBusProxy::new(&bus) else { return false };
+    let Ok(name) = zbus::names::BusName::try_from("org.kde.StatusNotifierWatcher") else { return false };
+    dbus.name_has_owner(name).unwrap_or(false)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn tray_host() -> bool {
+    true
+}
+
 /// Brings the main window up, on a route of the canvas if given.
 fn show_main(app: &AppHandle, route: Option<&str>) {
     let Some(main) = app.get_webview_window("main") else { return };
@@ -334,6 +383,10 @@ fn show_main(app: &AppHandle, route: Option<&str>) {
         if desktop.ready.load(Ordering::SeqCst) {
             let _ = main.navigate(desktop.url(route));
         }
+    }
+    // Wayland gives an app no way to un-minimize its own window, but a window shown afresh always appears.
+    if app.state::<Desktop>().minimized.swap(false, Ordering::SeqCst) {
+        let _ = main.hide();
     }
     let _ = main.unminimize();
     let _ = main.show();

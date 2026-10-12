@@ -1570,6 +1570,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "ureq",
+ "zbus",
 ]
 
 [[package]]
