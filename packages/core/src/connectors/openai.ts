@@ -16,7 +16,8 @@ export function openai(fetcher: typeof fetch = globalThis.fetch): Connector {
     async send({ assistant, ask, memory, signal }) {
       if (!assistant.url) throw new Error(`Assistant "${assistant.id}" uses the openai connector but has no url.`);
       const key = keyFor(assistant);
-      const url = assistant.url.endsWith("/chat/completions") ? assistant.url : `${assistant.url.replace(/\/$/, "")}/v1/chat/completions`;
+      const base = assistant.url.replace(/\/+$/, "");
+      const url = base.endsWith("/chat/completions") ? base : base.endsWith("/v1") ? `${base}/chat/completions` : `${base}/v1/chat/completions`;
       const messages = [
         ...(memory.length ? [{ role: "system", content: `What you may use about the person:\n${memoryText(memory)}` }] : []),
         { role: "user", content: ask },
