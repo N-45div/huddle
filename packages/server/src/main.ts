@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { armoriq, type Budget, defaultConnectors, dollars, embedder, Engine, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, reranker, Router, rulesPresenter, SignIns, Store, storedGrants, viewWriter } from "@huddle/core";
+import { type Budget, defaultConnectors, dollars, embedder, Engine, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, reranker, Router, rulesPresenter, type Guard, guardFromEnv, SignIns, Store, storedGrants, viewWriter } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
 import { SandboxWatcher } from "./sandbox-requests.ts";
@@ -40,11 +40,13 @@ import { webApp } from "./static.ts";
  *   HUDDLE_OWNER_EMAILS    your addresses, comma-separated: mail from them counts as you
  *   HUDDLE_BUDGET      a cap on what hand-offs to priced assistants may spend, in US dollars: "20/month"
  *                      or "5/day"; past 80% the router's "auto" goes for the cheapest that fits
- *   ARMORIQ_API_KEY    ArmorIQ checks every hand-off against the run's signed plan and your policy first;
- *                      HUDDLE_ARMORIQ_AGENT names the agent your policies are for (default huddle);
- *                      a hand-off your policy holds is approved on ArmorIQ's Plans page, where its request
- *                      comes from HUDDLE_ARMORIQ_REQUESTER (default huddle-agent@huddle.local).
- *                      Set the policy up once with: npm run huddle -- armoriq register
+ *   HUDDLE_GUARD       something to check every hand-off first, if you want one (none by default):
+ *                      armoriq  ArmorIQ: the run's signed plan and your policy (ARMORIQ_API_KEY;
+ *                               HUDDLE_ARMORIQ_AGENT, default huddle; a held hand-off is approved on
+ *                               ArmorIQ's Plans page, its request from HUDDLE_ARMORIQ_REQUESTER).
+ *                               Set the policy up once with: npm run huddle -- armoriq register
+ *                      http     your own policy service: HUDDLE_GUARD_URL answers allow, block or hold
+ *                               (HUDDLE_GUARD_KEY as a Bearer token; HUDDLE_GUARD_ON_FAILURE block|allow)
  */
 
 const env = (name: string): string | undefined => process.env[name]?.trim() || undefined;
@@ -67,7 +69,8 @@ if (token && token.length < 16) {
 
 const llmUrl = env("HUDDLE_LLM_URL");
 const llmModel = env("HUDDLE_LLM_MODEL");
-const { version } = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
+// The desktop app runs Huddle bundled into one file, with its version given.
+const version = env("HUDDLE_VERSION") ?? (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }).version;
 const publicUrl = (env("HUDDLE_PUBLIC_URL") ?? `http://${loopback || host === "0.0.0.0" || host === "::" ? "localhost" : host}:${port}`).replace(/\/$/, "");
 
 const store = new Store(env("HUDDLE_DB") ?? "huddle.db");
@@ -92,8 +95,13 @@ const memory = new Memory(store, {
 });
 // PACT sign-ins wait in Approvals while the step that needs them keeps running.
 const signIns = new SignIns();
-const armoriqKey = env("ARMORIQ_API_KEY");
-const guard = armoriqKey ? armoriq({ apiKey: armoriqKey, agentId: env("HUDDLE_ARMORIQ_AGENT"), requester: env("HUDDLE_ARMORIQ_REQUESTER") }) : undefined;
+let guard: Guard | null;
+try {
+  guard = guardFromEnv(process.env);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
 let spendCap: Budget | null;
 try {
   spendCap = parseBudget(env("HUDDLE_BUDGET"));
@@ -101,7 +109,7 @@ try {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
-const engine = new Engine(store, { ...defaultConnectors(), openshell: openshell(() => shell), pact: pact(() => identity, undefined, { signIns, grants: storedGrants(store) }) }, { memory, guard, budget: spendCap });
+const engine = new Engine(store, { ...defaultConnectors(), openshell: openshell(() => shell), pact: pact(() => identity, undefined, { signIns, grants: storedGrants(store) }) }, { memory, guard: guard ?? undefined, budget: spendCap });
 const sandboxes = shell ? new SandboxWatcher(shell, store) : undefined;
 // Hand-offs ArmorIQ held before a restart: wait on them again, so they carry on once approved there.
 const held = engine.resumeHolds();
@@ -149,7 +157,8 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   if (!built) console.log(`  The canvas isn't built (no ${join(web, "index.html")}): run npm run build.`);
   if (!llmUrl || !llmModel) console.log('  "Describe it" is off: set HUDDLE_LLM_URL and HUDDLE_LLM_MODEL to turn it on.');
   console.log(`  Answers as views: ${presenter.name === "rules" ? "tables only (set TYPESAFE_API_KEY or HUDDLE_LLM_* to choose views)" : `chosen by ${presenter.name}`}${writer ? `, charts, flowcharts, calculators and comparisons filled in by ${writer.model}` : ""}`);
-  console.log(guard ? `  ArmorIQ checks every hand-off first (agent ${env("HUDDLE_ARMORIQ_AGENT") ?? "huddle"}); a blocked one fails its run, a held one waits in Approvals` : "  ArmorIQ is off: set ARMORIQ_API_KEY to check every hand-off against a signed plan and your policy.");
+  if (guard) console.log(`  ${guard.name} checks every hand-off first (HUDDLE_GUARD=${env("HUDDLE_GUARD")}): a blocked one fails its run, a held one waits for your yes`);
+  else if (env("ARMORIQ_API_KEY")) console.log("  ARMORIQ_API_KEY is set but no guard is on: set HUDDLE_GUARD=armoriq to have ArmorIQ check every hand-off.");
   const finds = [memory.embedder ? `words and meaning (${memory.embedder.model})` : "words", ...(memory.reranker ? [`reranked by ${memory.reranker.model}`] : [])];
   console.log(`  Memory: up to ${budget} characters of kept notes per request, found by ${finds.join(", ")}`);
   if (env("RESEND_WEBHOOK_SECRET")) {

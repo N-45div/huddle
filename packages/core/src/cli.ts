@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { defaultConnectors } from "./connectors/index.ts";
 import { Engine, type RunView } from "./engine.ts";
-import { armoriq, registerWithArmorIQ } from "./guards/armoriq.ts";
+import { registerWithArmorIQ } from "./guards/armoriq.ts";
+import { guardFromEnv } from "./guards/index.ts";
 import { parseFlow } from "./schema.ts";
 import { Store } from "./store.ts";
 
@@ -24,7 +25,8 @@ import { Store } from "./store.ts";
 
 const store = new Store(process.env.HUDDLE_DB ?? "huddle.db");
 const armoriqKey = process.env.ARMORIQ_API_KEY?.trim() || undefined;
-const engine = new Engine(store, defaultConnectors(), { guard: armoriqKey ? armoriq({ apiKey: armoriqKey, agentId: process.env.HUDDLE_ARMORIQ_AGENT }) : undefined });
+// The same guard as the server, if HUDDLE_GUARD names one.
+const engine = new Engine(store, defaultConnectors(), { guard: guardFromEnv(process.env) ?? undefined });
 const [command, ...args] = process.argv.slice(2);
 
 function option(name: string): string | undefined {
