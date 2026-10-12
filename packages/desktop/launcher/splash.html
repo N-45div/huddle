@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Huddle</title>
+    <style>
+      :root {
+        --bg: #fbfaf6;
+        --bg-2: #eef0ff;
+        --text: #1d1d1b;
+        --muted: #6a6a63;
+        --accent: #5b63e6;
+        --accent-2: #9a62e0;
+        --danger: #c0392f;
+        --dot: rgb(91 99 230 / 0.12);
+        color-scheme: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #0f1020; --bg-2: #1b1d3a; --text: #ecece8; --muted: #a6a7b8; --accent: #8d96f2; --accent-2: #c39bff; --danger: #f07a6c; --dot: rgb(141 150 242 / 0.14); }
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        overflow: hidden;
+        color: var(--text);
+        font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Ubuntu, Cantarell, sans-serif;
+        background:
+          radial-gradient(60vmax 45vmax at 50% 42%, var(--bg-2), transparent 70%),
+          radial-gradient(var(--dot) 1.2px, transparent 1.4px) 0 0 / 22px 22px,
+          var(--bg);
+      }
+      main { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px; text-align: center; }
+
+      /* The huddle: Hud in the middle, friends walking in from both sides. */
+      .huddle { position: relative; height: 170px; width: min(620px, 96vw); margin-bottom: 8px; }
+      .spot { position: absolute; bottom: 0; left: 50%; line-height: 0; }
+      .spot .who { display: block; }
+      .hud { transform: translateX(-50%); z-index: 3; }
+      .f1 { margin-left: -214px; z-index: 1; }
+      .f2 { margin-left: -142px; z-index: 2; }
+      .f3 { margin-left: 56px; z-index: 2; }
+      .f4 { margin-left: 128px; z-index: 1; }
+      .back1 { margin-left: -92px; bottom: 54px; z-index: 0; opacity: .9; }
+      .back2 { margin-left: 30px; bottom: 54px; z-index: 0; opacity: .9; }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(34px, 6vw, 52px);
+        letter-spacing: -0.035em;
+        font-weight: 760;
+        background: linear-gradient(100deg, var(--accent), var(--accent-2));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .tag { margin: 0; color: var(--muted); font-size: 16px; }
+      .status { margin: 18px 0 0; min-height: 1.5em; font-size: 14px; color: var(--muted); }
+      .status::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: var(--accent); vertical-align: 1px; }
+      pre { max-width: min(760px, 100%); max-height: 34vh; overflow: auto; white-space: pre-wrap; text-align: left; color: var(--danger); font-size: 12.5px; margin: 8px 0 0; }
+
+      @media (prefers-reduced-motion: no-preference) {
+        .hud .who { animation: pop .7s cubic-bezier(.3, 1.6, .5, 1) both; }
+        .f1 .who, .f2 .who, .back1 .who { animation: from-left 1.15s cubic-bezier(.2, .8, .3, 1) both; }
+        .f3 .who, .f4 .who, .back2 .who { animation: from-right 1.15s cubic-bezier(.2, .8, .3, 1) both; }
+        .f2 .who { animation-delay: .15s; } .f3 .who { animation-delay: .25s; } .f4 .who { animation-delay: .4s; } .back1 .who { animation-delay: .5s; } .back2 .who { animation-delay: .6s; }
+        .spot .hop { animation: hop .36s ease-in-out 3 both; }
+        .f1 .hop { animation-delay: .1s; } .f2 .hop { animation-delay: .25s; } .f3 .hop { animation-delay: .35s; } .f4 .hop { animation-delay: .5s; } .back1 .hop { animation-delay: .6s; } .back2 .hop { animation-delay: .7s; }
+        .cheer .spot .hop { animation: cheer .5s ease-in-out 2; }
+        .cheer .f2 .hop, .cheer .f4 .hop { animation-delay: .08s; } .cheer .hud .hop { animation-delay: .04s; }
+        h1, .tag { animation: rise .7s ease-out .55s both; }
+        .tag { animation-delay: .7s; }
+        .status::before { animation: breathe 1.4s ease-in-out infinite; }
+        .h-eyes { transform-box: fill-box; transform-origin: center; animation: blink 4.4s infinite; }
+        .cheer .mood-happy .h-arm-r { transform-box: fill-box; transform-origin: center top; animation: wave .8s ease-in-out infinite; }
+        .h-bulb { animation: breathe 2.2s ease-in-out infinite; }
+      }
+      @keyframes pop { from { transform: translateY(24px) scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+      @keyframes from-left { from { transform: translateX(-62vw); } to { transform: none; } }
+      @keyframes from-right { from { transform: translateX(62vw) scaleX(-1); } 99% { transform: scaleX(-1); } to { transform: none; } }
+      @keyframes hop { 50% { transform: translateY(-9px); } }
+      @keyframes cheer { 50% { transform: translateY(-14px); } }
+      @keyframes rise { from { transform: translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
+      @keyframes breathe { 50% { opacity: .4; } }
+      @keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.12); } }
+      @keyframes wave { 50% { transform: rotate(-38deg); } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="huddle" id="huddle">
+        <span class="spot back1"><span class="who"><span class="hop" data-spot="back1">{{back1}}</span></span></span>
+        <span class="spot back2"><span class="who"><span class="hop" data-spot="back2">{{back2}}</span></span></span>
+        <span class="spot f1"><span class="who"><span class="hop" data-spot="f1">{{f1}}</span></span></span>
+        <span class="spot f2"><span class="who"><span class="hop" data-spot="f2">{{f2}}</span></span></span>
+        <span class="spot f3"><span class="who"><span class="hop" data-spot="f3">{{f3}}</span></span></span>
+        <span class="spot f4"><span class="who"><span class="hop" data-spot="f4">{{f4}}</span></span></span>
+        <span class="spot hud"><span class="who"><span class="hop" data-spot="hud">{{hud}}</span></span></span>
+      </div>
+      <h1>Huddle</h1>
+      <p class="tag">All your assistants, one huddle.</p>
+      <p class="status" id="status" role="status">Waking everyone up…</p>
+      <pre id="problem" hidden></pre>
+    </main>
+    <script>
+      // Every Huddler in each mood, drawn when the app was built.
+      const moods = {{moods}};
+      const swap = (mood) => document.querySelectorAll("[data-spot]").forEach((spot) => { spot.innerHTML = moods[mood][spot.dataset.spot]; });
+      const lines = ["Waking everyone up…", "Pulling up chairs…", "Passing the memory around…", "Almost ready…"];
+      let line = 0;
+      const status = document.getElementById("status");
+      const turn = setInterval(() => { line = Math.min(line + 1, lines.length - 1); status.textContent = lines[line]; }, 1300);
+      // Once they're all in, they cheer.
+      setTimeout(() => { swap("happy"); document.getElementById("huddle").classList.add("cheer"); }, 1500);
+
+      // The app calls this when Huddle can't start, with what its log said.
+      window.huddleFailed = (message) => {
+        clearInterval(turn);
+        swap("oops");
+        document.getElementById("huddle").classList.remove("cheer");
+        status.textContent = "Huddle couldn't start. Fix what it says below, then choose Restart Huddle in the tray.";
+        const problem = document.getElementById("problem");
+        problem.textContent = message;
+        problem.hidden = false;
+      };
+    </script>
+  </body>
+</html>
