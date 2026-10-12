@@ -542,40 +542,48 @@ Businesses must reach your Huddle's `jwks.json` over the internet, so set `HUDDL
 Tested against PACT's reference Provider: Skyline Airways checked a flight, asked for permission to
 rebook, and rebooked it, with both receipts checked.
 
-## Every hand-off checked first, with ArmorIQ
+## Check hand-offs first (optional)
 
-Huddle lets your assistants hand each other work, and some of that work matters: an email sent, a
-booking changed, a shell run. With [ArmorIQ](https://armoriq.ai), every hand-off is checked before it is
-made, against a plan signed when the run started and a policy you keep on ArmorIQ, outside Huddle and
-outside any model. Block a connector there and no flow, contact or router call can use it; set one to
-hold and it waits for your yes; every decision lands in ArmorIQ's audit log.
+Huddle's own approvals are how you say yes, and that's all most setups need. If you want something
+outside Huddle to look at every hand-off before it's made, switch on a guard with `HUDDLE_GUARD`, the
+way a flow picks a connector. A guard answers allow, block or hold: a blocked hand-off fails its run with
+the reason and the assistant never hears of it; a held one waits for your yes. Router calls and runs
+started over A2A or MCP are checked the same way, and the run log shows each verdict. A guard never sees
+what was asked or answered, and if it can't be reached, nothing is handed off.
 
-- When a run starts, its flow's hand-offs go to ArmorIQ as a plan, which comes back signed.
-- Before each hand-off, Huddle asks ArmorIQ about it. One that wasn't in the plan, or that your policy
-  doesn't allow, is **stopped**: the run fails with ArmorIQ's reason, and the assistant never hears of it.
-  The rest go ahead.
-- One your policy **holds** is ArmorIQ's to release. Huddle's Approvals shows it with **Approve in
-  ArmorIQ**, linked to the run's plan there; once you approve it in ArmorIQ the run carries on by itself
-  (even after a restart). Huddle can't approve its own held hand-offs, but **No** in Huddle still stops it.
-- Router calls are checked the same way. The run log shows each verdict and the policy that gave it.
-- ArmorIQ sees which assistant each step goes to (as the tool `huddle__<connector>`), how long the
-  answer was, how long it took, and the tokens it used when the assistant counted them (they show in
-  ArmorIQ's token and cost views). It never sees what was asked or the answer.
-- If ArmorIQ can't be reached, nothing is handed off.
+### Your own policy service
 
-Set it up once:
+```bash
+HUDDLE_GUARD=http HUDDLE_GUARD_URL=https://policy.example.com/huddle npm start
+```
+
+Before each hand-off Huddle POSTs `{ "flow", "run", "step", "assistant", "connector" }` and does what you
+answer: `{ "action": "allow" | "block" | "hold", "reason": "..." }`. A hold waits in Huddle's Approvals.
+`HUDDLE_GUARD_KEY` is sent as a Bearer token; `HUDDLE_GUARD_ON_FAILURE=allow` lets hand-offs through
+when your service is down (it blocks them by default).
+
+### ArmorIQ
+
+With [ArmorIQ](https://armoriq.ai), a run's hand-offs are signed as a plan when it starts, and each one is
+checked against that plan and a policy you keep on ArmorIQ, with every decision in its audit log.
 
 ```bash
 export ARMORIQ_API_KEY=ak_live_...                 # Settings, API Keys on platform.armoriq.ai
 npm run huddle -- armoriq register                 # every connector allowed
-npm run huddle -- armoriq register --deny instinct,openshell   # or block some
-npm run huddle -- armoriq register --hold email     # email waits for your yes in ArmorIQ
-npm start
+npm run huddle -- armoriq register --deny instinct,openshell --hold email   # block some, hold some
+HUDDLE_GUARD=armoriq npm start
 ```
 
-A held hand-off's approval request comes from `huddle-agent@huddle.local` (`HUDDLE_ARMORIQ_REQUESTER`),
-since ArmorIQ won't let you approve a request you made yourself. Registering again without `--hold`
-won't wipe holds you set on ArmorIQ's dashboard unless you add `--replace`.
+- A hand-off that wasn't in the plan, or that your policy doesn't allow, is stopped.
+- One your policy holds is ArmorIQ's to release: Approvals shows **Approve in ArmorIQ**, linked to the
+  run's plan there, and once you approve it the run carries on by itself (even after a restart). Huddle
+  can't approve its own held hand-offs; **No** in Huddle still stops it. The approval request comes from
+  `huddle-agent@huddle.local` (`HUDDLE_ARMORIQ_REQUESTER`), since ArmorIQ won't let you approve your own.
+- ArmorIQ sees which assistant each step goes to (as the tool `huddle__<connector>`), how long the answer
+  was, how long it took, and the tokens it used when the assistant counted them (they show in ArmorIQ's
+  token and cost views).
+- Registering again without `--hold` won't wipe holds you set on ArmorIQ's dashboard unless you add
+  `--replace`.
 
 ## Answers you can interact with
 
@@ -643,9 +651,9 @@ docker compose up -d   # http://localhost:7700, data in the huddle-data volume
 | `RESEND_WEBHOOK_SECRET` | none | the signing secret of Resend's `email.received` webhook, pointed at `/hooks/email`; without it Huddle takes no mail |
 | `HUDDLE_OWNER_EMAILS` | none | your own addresses, comma-separated: mail from them counts as you |
 | `HUDDLE_BUDGET` | none | a cap on what assistants with a price may spend, in US dollars: `20/month` or `5/day` |
-| `ARMORIQ_API_KEY` | none | ArmorIQ checks every hand-off first (see [above](#every-hand-off-checked-first-with-armoriq)) |
-| `HUDDLE_ARMORIQ_AGENT` | `huddle` | the agent your ArmorIQ policies are for |
-| `HUDDLE_ARMORIQ_REQUESTER` | `huddle-agent@huddle.local` | who a held hand-off's approval request in ArmorIQ comes from |
+| `HUDDLE_GUARD` | none | something that checks every hand-off first: `armoriq` or `http` (see [above](#check-hand-offs-first-optional)) |
+| `HUDDLE_GUARD_URL`, `HUDDLE_GUARD_KEY`, `HUDDLE_GUARD_ON_FAILURE` | none, none, `block` | your own policy service, for `HUDDLE_GUARD=http` |
+| `ARMORIQ_API_KEY`, `HUDDLE_ARMORIQ_AGENT`, `HUDDLE_ARMORIQ_REQUESTER` | none, `huddle`, `huddle-agent@huddle.local` | for `HUDDLE_GUARD=armoriq` |
 
 To reach Huddle from outside your machine, put it behind HTTPS (Caddy, Cloudflare Tunnel, Tailscale)
 and set `HUDDLE_PUBLIC_URL`. Webhook addresses carry their own secret; make a new one from the flow's
@@ -672,7 +680,7 @@ npm run huddle -- armoriq register       # set up ArmorIQ's policy for Huddle
 7. PACT: Huddle as your personal agent with businesses, its identity and signing in from Approvals (done),
    and Sierra and Meta's Personal Agent Protocol when its v0.1 spec is out
 8. Email in and out through Resend (done); approvals on your phone and a Telegram trigger next
-9. Every hand-off checked against a signed plan and your policy with ArmorIQ (done)
+9. Guards that check every hand-off first, optional: your own policy service, or ArmorIQ (done)
 10. Answers you can interact with: tables, charts, flowcharts, calculators and comparisons (done);
     approvals shown the same way next
 11. The hosted version, for people who'd rather not run anything
