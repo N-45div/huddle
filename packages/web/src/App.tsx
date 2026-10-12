@@ -14,6 +14,7 @@ import { FlowsScreen } from "./screens/FlowsScreen.tsx";
 import { MemoryScreen } from "./screens/MemoryScreen.tsx";
 import { RunScreen } from "./screens/RunScreen.tsx";
 import { RunsScreen } from "./screens/RunsScreen.tsx";
+import { QuickScreen } from "./screens/QuickScreen.tsx";
 import type { Info } from "./types.ts";
 
 export function App() {
@@ -85,12 +86,18 @@ export function App() {
       }}>
         Skip to content
       </a>
-      <div className={route.name === "flow" ? "app app-wide" : "app"}>
-        <Sidebar route={route} onSaveToken={saveToken} />
-        <main className="main" id="main" tabIndex={-1}>
-          <Screen route={route} />
+      {route.name === "quick" ? (
+        <main className="main main-quick" id="main" tabIndex={-1}>
+          <QuickScreen />
         </main>
-      </div>
+      ) : (
+        <div className={route.name === "flow" ? "app app-wide" : "app"}>
+          <Sidebar route={route} onSaveToken={saveToken} />
+          <main className="main" id="main" tabIndex={-1}>
+            <Screen route={route} />
+          </main>
+        </div>
+      )}
       <TokenDialog
         open={needToken}
         onSaved={() => {
