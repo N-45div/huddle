@@ -1,0 +1,80 @@
+# Builds Huddle for Linux (.deb and AppImage) the same way as packages/desktop/linux/Dockerfile, smoke-tests the
+# .deb on a clean Ubuntu, and on a v* tag attaches both to a DRAFT release, for a person to publish.
+name: Linux app
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xdg-utils file
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.11.1
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/desktop/src-tauri
+
+      - name: Test
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npm run typecheck
+
+      - name: Build
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          NO_STRIP: "true"
+        run: |
+          npm run build -w @huddle/web
+          cd packages/desktop
+          HUDDLE_NODE_TARGET=x86_64-unknown-linux-gnu node scripts/bundle.mjs
+          npx tauri build
+          mkdir -p ../../out
+          cp src-tauri/target/release/bundle/deb/*.deb src-tauri/target/release/bundle/appimage/*.AppImage ../../out/
+          cd ../../out && sha256sum * > SHA256SUMS
+
+      - name: Smoke test on a clean Ubuntu 24.04
+        run: |
+          cp packages/desktop/linux/smoke.sh out/
+          docker run --rm -v "$PWD/out:/out" ubuntu:24.04 sh /out/smoke.sh | tee smoke.log
+          grep -q "server starts: 1 (should be 1)" smoke.log
+          rm out/smoke.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: huddle-linux
+          path: |
+            out/*.deb
+            out/*.AppImage
+            out/SHA256SUMS
+            out/smoke-*.png
+
+      - name: Draft a release (publish it by hand)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: Huddle ${{ github.ref_name }}
+          body_path: docs/releases/${{ github.ref_name }}.md
+          files: |
+            out/*.deb
+            out/*.AppImage
+            out/SHA256SUMS

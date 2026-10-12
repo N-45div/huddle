@@ -16,6 +16,7 @@ pub const KEYS_TEMPLATE: &str = "\
 #
 # Keys your assistants name in their settings (keyEnv), for example:
 # OPENAI_API_KEY=
+# VLLM_API_KEY=
 #
 # Email in and out through Resend:
 # RESEND_API_KEY=
