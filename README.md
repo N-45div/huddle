@@ -645,7 +645,7 @@ other triggers keep going with the window closed. Download the `.deb` or the App
 
 ```bash
 sudo apt install ./Huddle_0.2.0_amd64.deb      # Debian, Ubuntu, Mint, Pop!_OS
-yay -S huddle-bin                               # Arch, Omarchy, Manjaro (from the AUR)
+sudo pacman -U ./huddle-bin-0.2.0-1-x86_64.pkg.tar.zst   # Arch, Omarchy, Manjaro
 chmod +x Huddle_0.2.0_amd64.AppImage && ./Huddle_0.2.0_amd64.AppImage   # anywhere else
 ```
 
@@ -673,8 +673,9 @@ the top of `packages/desktop/linux/Dockerfile`.
 [Omarchy](https://omarchy.org) sets up a dozen agent CLIs and assistants on one machine; Huddle is where
 they work together. On Omarchy 4:
 
-- **Install** with `omarchy pkg aur add huddle-bin` (or Install > AUR). Use the package rather than the
-  AppImage, which needs `fuse2`.
+- **Install** the Arch package from [Releases](https://github.com/N-45div/huddle/releases) with
+  `sudo pacman -U ./huddle-bin-0.2.0-1-x86_64.pkg.tar.zst`, rather than the AppImage, which needs `fuse2`.
+  (It goes on the AUR as `huddle-bin` once the AUR takes new accounts again.)
 - **It wears your theme**, and changes with it when you switch: Huddle reads the theme's palette from
   `~/.local/state/omarchy/current/theme/colors.toml`.
 - **Quick ask on a key.** Hyprland keeps global shortcuts to itself, so bind one in

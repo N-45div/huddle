@@ -1,5 +1,6 @@
 # Builds Huddle for Linux (.deb and AppImage) the same way as packages/desktop/linux/Dockerfile, smoke-tests the
-# .deb on a clean Ubuntu, and on a v* tag attaches both to a DRAFT release, for a person to publish.
+# .deb on a clean Ubuntu and the Arch package (huddle-bin) on a clean Arch, and on a v* tag attaches all three
+# to a DRAFT release, for a person to publish.
 name: Linux app
 
 on:
@@ -49,7 +50,6 @@ jobs:
           npx tauri build
           mkdir -p ../../out
           cp src-tauri/target/release/bundle/deb/*.deb src-tauri/target/release/bundle/appimage/*.AppImage ../../out/
-          cd ../../out && sha256sum * > SHA256SUMS
 
       - name: Smoke test on a clean Ubuntu 24.04
         run: |
@@ -63,12 +63,16 @@ jobs:
           docker run --rm -v "$PWD/out:/out" -v "$PWD/packages/desktop/linux/arch:/pkg:ro" archlinux:latest sh /pkg/smoke.sh | tee arch-smoke.log
           grep -q "server starts: 1 (should be 1)" arch-smoke.log
 
+      - name: Checksums
+        run: cd out && sha256sum *.deb *.AppImage *.pkg.tar.zst > SHA256SUMS && cat SHA256SUMS
+
       - uses: actions/upload-artifact@v4
         with:
           name: huddle-linux
           path: |
             out/*.deb
             out/*.AppImage
+            out/*.pkg.tar.zst
             out/SHA256SUMS
             out/smoke-*.png
 
@@ -82,4 +86,5 @@ jobs:
           files: |
             out/*.deb
             out/*.AppImage
+            out/*.pkg.tar.zst
             out/SHA256SUMS
