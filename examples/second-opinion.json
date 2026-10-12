@@ -1,0 +1,14 @@
+{
+  "name": "Second opinion",
+  "assistants": [
+    { "id": "claw", "name": "OpenClaw", "connector": "openclaw", "memory": ["work"], "description": "My work assistant." },
+    { "id": "hermes", "name": "Hermes", "connector": "hermes", "memory": ["home"], "description": "My home assistant." },
+    { "id": "judge", "name": "Judge", "connector": "openai", "url": "https://api.openai.com", "model": "gpt-5.4-mini", "keyEnv": "OPENAI_API_KEY", "description": "Weighs two answers.", "price": { "input": 0.75, "output": 4.5 }, "maxTokens": 900 }
+  ],
+  "steps": [
+    { "id": "one", "type": "agent", "agent": "claw", "ask": "{{input}}" },
+    { "id": "two", "type": "agent", "agent": "hermes", "ask": "{{input}}" },
+    { "id": "weigh", "type": "agent", "agent": "judge", "ask": "Someone asked: {{input}}\n\nAnswer A (OpenClaw): {{one.text}}\n\nAnswer B (Hermes): {{two.text}}\n\nSay in two sentences where they agree and differ, and which to go with. Then a line of JSON: {\"options\": [\"A\", \"B\"], \"pick\": \"A\" or \"B\"}." },
+    { "id": "keep", "type": "memory", "slice": "work", "note": "Asked both about: {{input}}. Went with {{weigh.data.pick}}." }
+  ]
+}

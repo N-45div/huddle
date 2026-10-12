@@ -1,0 +1,15 @@
+{
+  "name": "Inbox digest",
+  "trigger": { "type": "email", "address": "inbox@mail.example.com" },
+  "assistants": [
+    { "id": "reader", "name": "Reader", "connector": "openai", "url": "https://api.openai.com", "model": "gpt-5.4-mini", "keyEnv": "OPENAI_API_KEY", "memory": ["work"], "description": "Reads email and says what matters.", "price": { "input": 0.75, "output": 4.5 }, "maxTokens": 600 },
+    { "id": "me", "name": "My inbox", "connector": "email", "to": ["you@example.com"], "from": "Huddle <huddle@mail.example.com>" }
+  ],
+  "steps": [
+    { "id": "read", "type": "agent", "agent": "reader", "ask": "Here is an email that just arrived. Answer with JSON only: {\"important\": true or false, \"why\": \"one sentence\", \"summary\": \"two sentences\"}.\n\n{{input}}" },
+    { "id": "matters", "type": "condition", "if": "{{read.data.important}} == true", "then": "ok", "else": "remember" },
+    { "id": "ok", "type": "approval", "message": "This one matters ({{read.data.why}}). Send yourself the summary?", "next": "tell", "onNo": "remember" },
+    { "id": "tell", "type": "agent", "agent": "me", "ask": "Worth a look\n{{read.data.summary}}" },
+    { "id": "remember", "type": "memory", "slice": "work", "note": "Email: {{read.data.summary}}" }
+  ]
+}

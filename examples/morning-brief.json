@@ -1,0 +1,14 @@
+{
+  "name": "Morning brief",
+  "trigger": { "type": "schedule", "every": "1d", "input": "Today" },
+  "assistants": [
+    { "id": "briefer", "name": "Briefer", "connector": "openai", "url": "https://api.openai.com", "model": "gpt-5.4-mini", "keyEnv": "OPENAI_API_KEY", "memory": ["work", "home"], "description": "Writes a short morning brief from what it may read about you.", "price": { "input": 0.75, "output": 4.5 }, "maxTokens": 700 },
+    { "id": "me", "name": "My inbox", "connector": "email", "to": ["you@example.com"], "from": "Huddle <huddle@mail.example.com>" }
+  ],
+  "steps": [
+    { "id": "brief", "type": "agent", "agent": "briefer", "ask": "{{input}}: write my morning brief from what you know about me. Three things to focus on, one thing to drop, and anything with a deadline, in under 120 words. Then a line of JSON: {\"focus\": [\"...\", \"...\", \"...\"]}." },
+    { "id": "keep", "type": "memory", "slice": "work", "note": "Brief: {{brief.data.focus}}" },
+    { "id": "send", "type": "approval", "message": "Send today's brief to your inbox?\n\n{{brief.text}}" },
+    { "id": "mail", "type": "agent", "agent": "me", "ask": "Your morning brief\n{{brief.text}}" }
+  ]
+}
