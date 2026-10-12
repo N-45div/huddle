@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Huddle",
+  "mainBinaryName": "huddle",
+  "version": "0.2.0",
+  "identifier": "dev.huddle.desktop",
+  "build": {
+    "frontendDist": "../launcher"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb", "appimage"],
+    "category": "Productivity",
+    "shortDescription": "One place for all your AI assistants",
+    "longDescription": "Huddle connects the assistants you already run (OpenClaw, Hermes, a local model, agents in sandboxes), gives them one shared memory with slices each may read, and lets you draw how they hand work to each other, with your yes before anything that matters. The desktop app keeps it on in the tray, opens a quick-ask box on a shortcut, and brings approvals to you as notifications.",
+    "license": "AGPL-3.0-only",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.png"],
+    "externalBin": ["binaries/huddle-node"],
+    "resources": {
+      "resources/server/": "server/",
+      "resources/web/": "web/"
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  }
+}

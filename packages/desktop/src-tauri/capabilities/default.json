@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The starting page the main window shows while Huddle comes up.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
