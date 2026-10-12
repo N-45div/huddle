@@ -644,9 +644,9 @@ other triggers keep going with the window closed. Download the `.deb` or the App
 [Releases](https://github.com/N-45div/huddle/releases).
 
 ```bash
-sudo apt install ./Huddle_0.2.0_amd64.deb      # Debian, Ubuntu, Mint, Pop!_OS
-sudo pacman -U ./huddle-bin-0.2.0-1-x86_64.pkg.tar.zst   # Arch, Omarchy, Manjaro
-chmod +x Huddle_0.2.0_amd64.AppImage && ./Huddle_0.2.0_amd64.AppImage   # anywhere else
+sudo apt install ./Huddle_0.2.1_amd64.deb      # Debian, Ubuntu, Mint, Pop!_OS
+sudo pacman -U ./huddle-bin-0.2.1-1-x86_64.pkg.tar.zst   # Arch, Omarchy, Manjaro
+chmod +x Huddle_0.2.1_amd64.AppImage && ./Huddle_0.2.1_amd64.AppImage   # anywhere else
 ```
 
 - **Ctrl+Alt+H** opens a quick-ask box over whatever you're doing: ask "auto" or any assistant, and the
@@ -674,7 +674,7 @@ the top of `packages/desktop/linux/Dockerfile`.
 they work together. On Omarchy 4:
 
 - **Install** the Arch package from [Releases](https://github.com/N-45div/huddle/releases) with
-  `sudo pacman -U ./huddle-bin-0.2.0-1-x86_64.pkg.tar.zst`, rather than the AppImage, which needs `fuse2`.
+  `sudo pacman -U ./huddle-bin-0.2.1-1-x86_64.pkg.tar.zst`, rather than the AppImage, which needs `fuse2`.
   (It goes on the AUR as `huddle-bin` once the AUR takes new accounts again.)
 - **It wears your theme**, and changes with it when you switch: Huddle reads the theme's palette from
   `~/.local/state/omarchy/current/theme/colors.toml`.

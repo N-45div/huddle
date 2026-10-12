@@ -3,7 +3,7 @@
 # huddle-bin on the AUR: the released .deb, unpacked as is (it bundles its own Node, so it needs no
 # nodejs). After a release: set pkgver, run updpkgsums, then makepkg --printsrcinfo > .SRCINFO.
 pkgname=huddle-bin
-pkgver=0.2.0
+pkgver=0.2.1
 pkgrel=1
 pkgdesc='One place for all your AI assistants: put them on a canvas, share memory, approve what matters'
 arch=('x86_64')

@@ -1,6 +1,6 @@
 [package]
 name = "huddle-desktop"
-version = "0.2.0"
+version = "0.2.1"
 description = "Huddle for Linux: one place for all your AI assistants, always on in the tray"
 edition = "2021"
 license = "AGPL-3.0-only"
