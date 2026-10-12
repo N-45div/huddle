@@ -3,11 +3,13 @@
 **n8n for personal assistants.** Connect the AI assistants you already use, give them one shared
 memory, and draw how they hand work to each other, with you approving anything that matters.
 
+![Huddle's opening screen: Hud and the Huddlers gathering](docs/images/opening-screen.png)
+
 > Status: early, and self-hosted. The canvas, the flow engine, shared memory, approvals, schedules,
 > webhooks, email in and out, "describe it", and connectors for OpenClaw, Hermes Agent, any A2A agent,
-> OpenAI-style APIs, Ollama, agents in NVIDIA OpenShell sandboxes, Home Assistant, Agent Zero and Sochen
-> all work today, from one command or one container. Approvals on
-> your phone and the hosted version are next. See [Roadmap](#roadmap).
+> OpenAI-style APIs, Ollama, vLLM, agents in NVIDIA OpenShell sandboxes, Home Assistant, Agent Zero and
+> Sochen all work today, from one command, one container, or the [Linux app](#the-linux-app). Approvals
+> on your phone and the hosted version are next. See [Roadmap](#roadmap).
 
 ---
 
@@ -108,6 +110,7 @@ benchmarked yet.
 | **`a2a`** | any agent that speaks [A2A](https://a2a-protocol.org) 1.0 (Agent2Agent) | ready |
 | **`openai`** | anything with an OpenAI-style chat API: Open WebUI, AnythingLLM, LibreChat's Agents API, Letta, and the API servers of OpenClaw and Hermes | ready |
 | **`ollama`** | a model in [Ollama](https://ollama.com), on your machine or on ollama.com | ready |
+| **`vllm`** | your own model served by [vLLM](https://github.com/vllm-project/vllm), on your machine or a GPU server | ready |
 | **`openshell`** | any agent with a one-shot command (Hermes, OpenCode, Claude Code, Codex…) inside an [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandbox | ready |
 | **`pact`** | a business's support agent over [PACT](https://github.com/openpactprotocol/openpactprotocol), with Huddle as your personal agent: its identity, and signing in to act for you | ready |
 | **`sochen`** | [Sochen](https://sochen.dev)'s agent and its pets, through the Agent API | ready |
@@ -194,6 +197,17 @@ Huddle finds Ollama at `http://127.0.0.1:11434` unless you give a `url` (in Dock
 ollama.com's models, give `https://ollama.com` and put your key's variable in `keyEnv`
 (`OLLAMA_API_KEY`). Ollama's default context is small on most machines; for long asks, raise
 `OLLAMA_CONTEXT_LENGTH` where Ollama runs.
+
+**vLLM.** Your own model, served by `vllm serve <model>`. Add an assistant, pick from the models it
+serves (the canvas lists them), or in a flow file:
+
+```json
+{ "id": "mine", "connector": "vllm", "model": "Qwen/Qwen3-8B", "memory": ["work"] }
+```
+
+Huddle finds vLLM at `http://127.0.0.1:8000` unless you give a `url` (a GPU server's, with or without
+`/v1`). If you started it with `--api-key`, put that key's variable in `keyEnv`. A model on your own
+machine counts as free, so the router's cheaper picks favour it; on someone else's GPU, give it a price.
 
 **Anything with an OpenAI-style chat API.** Give its address, and the model or agent to ask for. If its
 chat path isn't `/v1/chat/completions`, give the whole chat URL instead:
@@ -606,6 +620,33 @@ line or part-to-whole chart**, a process becomes a **flowchart**, numbers you'd 
   in the message box with your current numbers; nothing is sent until you send it.
 - In **Try it** answers are shown at once; on a run's page, press **Show it** on any answer. Apps get
   the same with `huddle: { present: true }` on `/v1` (as `huddle.view`), or `POST /api/present`.
+
+## The Linux app
+
+Huddle as a desktop app: it starts with your session and lives in the tray, so schedules, email and the
+other triggers keep going with the window closed. Download the `.deb` or the AppImage from
+[Releases](https://github.com/N-45div/huddle/releases).
+
+```bash
+sudo apt install ./Huddle_0.2.0_amd64.deb      # Debian, Ubuntu, Mint, Pop!_OS
+chmod +x Huddle_0.2.0_amd64.AppImage && ./Huddle_0.2.0_amd64.AppImage   # anywhere else
+```
+
+- **Ctrl+Alt+H** opens a quick-ask box over whatever you're doing: ask "auto" or any assistant, and the
+  answer comes back as text, a table, a chart or a calculator. (On Wayland desktops that keep global
+  shortcuts to themselves, use **Quick ask** in the tray.)
+- **Approvals come to you** as notifications with Yes and No, and the tray counts what's waiting.
+- **Your keys stay yours**: **Keys and settings…** in the tray opens `~/.config/dev.huddle.desktop/huddle.env`
+  (readable only by you); save it and choose **Restart Huddle**. Your data is in
+  `~/.local/share/dev.huddle.desktop/`.
+- Other apps reach it as usual at `http://127.0.0.1:7700` (the router's `/v1`, `/mcp`, A2A), with the
+  token in `~/.config/dev.huddle.desktop/token`.
+
+![The Linux app, with the Huddlers waiting for a first flow](docs/images/linux-app.png)
+
+It's a Rust shell ([Tauri](https://tauri.app)) around the same server, bundled with its own Node. Build it
+yourself with Docker: `docker build -t huddle-linux-build packages/desktop/linux`, then see the comment at
+the top of `packages/desktop/linux/Dockerfile`.
 
 ## Run it
 
