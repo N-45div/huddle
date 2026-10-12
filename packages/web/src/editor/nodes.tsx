@@ -4,6 +4,7 @@ import { triggerSummary } from "../format.ts";
 import { STEP_STATE_LABEL, type StepRunState } from "../run-state.ts";
 import type { Assistant, StepType, Trigger } from "../types.ts";
 import { isIncomplete, type StartNode, type StepNode } from "./graph.ts";
+import { Huddler } from "../huddlers/Huddler.tsx";
 
 /** What nodes need from the editor without copying it into every node's data. */
 export interface EditorView {
@@ -55,7 +56,10 @@ export const StepNodeView = memo(function StepNodeView({ id, data, selected }: N
       const assistant = assistants.get(data.agent);
       body = (
         <>
-          <p className="node-line">{assistant ? <strong>{assistant.name || assistant.id}</strong> : data.agent ? <Missing>{`No assistant "${data.agent}"`}</Missing> : <Missing>Pick an assistant</Missing>}</p>
+          <p className="node-line">
+            {assistant && <Huddler id={assistant.id} connector={assistant.connector} size={22} mood={state === "current" ? "thinking" : state === "waiting" ? "waiting" : state === "failed" ? "oops" : state === "done" ? "happy" : "idle"} />}
+            {assistant ? <strong>{assistant.name || assistant.id}</strong> : data.agent ? <Missing>{`No assistant "${data.agent}"`}</Missing> : <Missing>Pick an assistant</Missing>}
+          </p>
           <p className="node-text">{data.ask || <Missing>No ask yet</Missing>}</p>
         </>
       );

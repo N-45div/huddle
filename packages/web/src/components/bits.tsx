@@ -50,9 +50,10 @@ export function ErrorNote({ message, problems, onRetry }: { readonly message: st
   );
 }
 
-export function Empty({ title, children }: { readonly title: string; readonly children?: ReactNode }) {
+export function Empty({ title, art, children }: { readonly title: string; readonly art?: ReactNode; readonly children?: ReactNode }) {
   return (
-    <div className="empty">
+    <div className={art ? "empty huddle-empty" : "empty"}>
+      {art}
       <p className="empty-title">{title}</p>
       {children}
     </div>

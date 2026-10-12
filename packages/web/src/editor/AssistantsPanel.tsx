@@ -6,6 +6,7 @@ import { ErrorNote, Hint, Icon, Loading } from "../components/bits.tsx";
 import { plural } from "../format.ts";
 import type { Resource } from "../hooks.ts";
 import { type Assistant, type ConnectorField, type ConnectorId, type ConnectorInfo, EMAIL_PATTERN, ENV_PATTERN, ID_PATTERN, isSender } from "../types.ts";
+import { Huddler } from "../huddlers/Huddler.tsx";
 
 interface Props {
   readonly assistants: readonly Assistant[];
@@ -73,7 +74,8 @@ export function AssistantsPanel({ assistants, connectors, usage, slices, onChang
             return (
               <li key={assistant.id} className="card assistant-card">
                 <div className="assistant-head">
-                  <div>
+                  <Huddler id={assistant.id} connector={assistant.connector} size={44} />
+                  <div className="assistant-who">
                     <p className="assistant-name">{assistant.name || assistant.id}</p>
                     <p className="hint">
                       <code>{assistant.id}</code> · {connectorName(assistant.connector)} · {useLine ? useLine(assistant) : used ? `asked in ${plural(used, "step")}` : "not used yet"}

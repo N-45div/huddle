@@ -10,6 +10,7 @@ import { useDebounced, useResource } from "../hooks.ts";
 import { href } from "../router.ts";
 import type { Assistant, Info, RouterUsage, SpendView } from "../types.ts";
 import { AnswerView } from "../views/AnswerView.tsx";
+import { Huddler } from "../huddlers/Huddler.tsx";
 
 /**
  * Your assistants, set up once: flows add them from here, and the router reaches them by id through an
@@ -245,7 +246,8 @@ function TryIt({ assistants }: { readonly assistants: readonly Assistant[] }) {
       {error && <ErrorNote message={error} />}
       {reply && (
         <div className="try-reply" role="status">
-          <p className="eyebrow">
+          <p className="eyebrow reply-who">
+            <Huddler id={reply.model} connector={assistants.find((assistant) => assistant.id === reply.model)?.connector} mood="happy" size={30} live />
             {name(reply.model)} answered{took !== null ? ` in ${seconds(took)}` : ""}
           </p>
           <p className="try-answer">{reply.text}</p>

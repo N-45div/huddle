@@ -8,6 +8,7 @@ import { ago, fullTime, plural, triggerSummary } from "../format.ts";
 import { useDebounced, useResource } from "../hooks.ts";
 import { href } from "../router.ts";
 import type { Flow, FlowView } from "../types.ts";
+import { Huddler } from "../huddlers/Huddler.tsx";
 
 /** What "New flow" starts from: one approval step, so the flow is valid from the first save. */
 const NEW_FLOW: Flow = {
@@ -67,7 +68,16 @@ export function FlowsScreen() {
       {flows.loading && !flows.data && <Loading label="Loading flows…" />}
 
       {flows.data && list.length === 0 && (
-        <Empty title={info?.describe ? "No flows yet. Make one, or describe it." : "No flows yet. Make one to get started."}>
+        <Empty
+          title={info?.describe ? "No flows yet. Make one, or describe it." : "No flows yet. Make one to get started."}
+          art={
+            <div className="huddlers-row">
+              <Huddler id="sleepy-llama" connector="ollama" mood="sleepy" size={64} live />
+              <Huddler mood="waiting" size={84} live />
+              <Huddler id="nap-2" connector="hermes" mood="sleepy" size={64} live />
+            </div>
+          }
+        >
           <div className="empty-actions">
             <button type="button" className="btn btn-primary" disabled={creating} onClick={() => void create(false)}>
               New flow

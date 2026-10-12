@@ -8,6 +8,7 @@ import { ago, fullTime } from "../format.ts";
 import { useDebounced, useResource } from "../hooks.ts";
 import { href } from "../router.ts";
 import type { SandboxRequestView, SignIn } from "../types.ts";
+import { Huddler } from "../huddlers/Huddler.tsx";
 
 /** The inbox a person checks: everything a flow has stopped to ask, what OpenShell sandboxes need, and PACT sign-ins. */
 export function ApprovalsScreen() {
@@ -55,7 +56,7 @@ export function ApprovalsScreen() {
       )}
 
       {approvals.data && list.length === 0 && requests.length === 0 && waitingSignIns.length === 0 && (
-        <Empty title="Nothing is waiting on you.">
+        <Empty title="Nothing is waiting on you." art={<Huddler mood="happy" size={84} live />}>
           <p className="hint">When a flow reaches an approval step, or a sandboxed assistant needs to reach something new, it shows up here.</p>
         </Empty>
       )}
