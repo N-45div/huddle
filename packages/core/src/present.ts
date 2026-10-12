@@ -134,8 +134,23 @@ const ComparisonView = z
     });
   });
 
+/** A table a model fills in from an answer written as text. */
+const TableFill = z
+  .object({
+    kind: z.literal("table"),
+    title: label(120),
+    columns: z.array(label(40)).min(1).max(12),
+    rows: z.array(z.array(z.string().max(200))).min(1).max(200),
+    assumptions,
+  })
+  .superRefine((view, ctx) => {
+    view.rows.forEach((row, index) => {
+      if (row.length !== view.columns.length) ctx.addIssue({ code: "custom", path: ["rows", index], message: `has ${row.length} cells for ${view.columns.length} columns` });
+    });
+  });
+
 /** A view a model fills in, checked. */
-export const FilledView = z.union([ChartView, FlowchartView, CalculatorView, ComparisonView]);
+export const FilledView = z.union([ChartView, FlowchartView, CalculatorView, ComparisonView, TableFill]);
 export type FilledView = z.infer<typeof FilledView>;
 
 export interface Table {
@@ -149,7 +164,7 @@ export interface Table {
 export type View =
   | { readonly kind: "text" }
   | { readonly kind: "table"; readonly title: string; readonly table: Table; readonly source: string }
-  | (FilledView & { readonly source: string });
+  | (Exclude<FilledView, { kind: "table" }> & { readonly source: string });
 
 const MAX_COLUMNS = 12;
 const MAX_ROWS = 200;
@@ -301,7 +316,8 @@ export const rulesPresenter: Presenter = {
 // Filling a view -----------------------------------------------------------------------------------------
 
 /** What each kind's JSON looks like, for the model. */
-const SHAPES: Readonly<Record<Exclude<ViewKind, "text" | "table">, string>> = {
+const SHAPES: Readonly<Record<Exclude<ViewKind, "text">, string>> = {
+  table: `{"kind": "table", "title": "...", "columns": ["Item", "Amount"], "rows": [["Rent", "$1,200"], ["Food", "$410"]], "assumptions": []}  (one cell per column in every row, values as they appear in the answer)`,
   bar_chart: `{"kind": "bar_chart", "title": "...", "unit": "$", "labels": ["Jan", "Feb"], "series": [{"name": "Spend", "values": [120, 95]}], "assumptions": []}  (up to 6 series, one value per label)`,
   line_chart: `{"kind": "line_chart", "title": "...", "unit": "kg", "labels": ["Mon", "Tue", "Wed"], "series": [{"name": "Weight", "values": [71.2, 71.0, 70.8]}], "assumptions": []}  (labels in order)`,
   part_to_whole: `{"kind": "part_to_whole", "title": "...", "unit": "%", "labels": ["Rent", "Food", "Other"], "series": [{"name": "Budget", "values": [50, 30, 20]}], "assumptions": []}  (one series, up to 8 parts, no negatives)`,
@@ -325,7 +341,7 @@ export function viewWriter(options: ModelOptions): ViewWriter {
   return {
     model: options.model,
     async fill(answer, kind) {
-      if (kind === "text" || kind === "table") throw new Error(`A ${kind} isn't filled in by a model.`);
+      if (kind === "text") throw new Error("Text isn't filled in by a model.");
       const messages = [
         { role: "system", content: `${FILL_RULES}\n\nThe view: a ${kind.replaceAll("_", " ")} (${VIEWS[kind]}) Its shape:\n${SHAPES[kind]}` },
         { role: "user", content: contextOf(answer) },
@@ -350,10 +366,18 @@ export async function present(answer: Answer, options: { readonly presenter: Pre
   if (choice.kind === "text") return { choice, view: { kind: "text" } };
   if (choice.kind === "table") {
     const table = tableOf(answer.data);
-    if (!table) throw new Error("The answer has no records to put in a table.");
-    return { choice, view: { kind: "table", title: answer.ask?.slice(0, 120) ?? "The answer", table, source: sourceOf(answer) } };
+    if (table) return { choice, view: { kind: "table", title: answer.ask?.slice(0, 120) ?? "The answer", table, source: sourceOf(answer) } };
+    // Exact values written as text: a model can lay them out; without one, the answer stays as it is.
+    if (!options.writer) {
+      if (options.kind) throw new Error("The answer has no records to put in a table, and there's no model to lay its values out: set HUDDLE_LLM_URL and HUDDLE_LLM_MODEL.");
+      return { choice: { ...choice, kind: "text" }, view: { kind: "text" } };
+    }
+    const filled = await options.writer.fill(answer, "table");
+    if (filled.kind !== "table") throw new Error("The model filled in something other than a table.");
+    return { choice, view: { kind: "table", title: filled.title, table: { columns: filled.columns, rows: filled.rows, truncated: false }, source: sourceOf(answer) } };
   }
   if (!options.writer) throw new Error("Charts, flowcharts, calculators and comparisons need a model to fill them in: set HUDDLE_LLM_URL and HUDDLE_LLM_MODEL.");
   const filled = await options.writer.fill(answer, choice.kind);
+  if (filled.kind === "table") return { choice, view: { kind: "table", title: filled.title, table: { columns: filled.columns, rows: filled.rows, truncated: false }, source: sourceOf(answer) } };
   return { choice, view: { ...filled, source: sourceOf(answer) } };
 }

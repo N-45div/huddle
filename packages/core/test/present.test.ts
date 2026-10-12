@@ -102,11 +102,23 @@ describe("filling in a view", () => {
     await assert.rejects(writer.fill({ text: "Lots of things." }, "bar_chart"), /can't be shown as a bar chart: no amounts in the answer/);
   });
 
+  it("lays out exact values written as text as a table with a model, and leaves them as text without one", async () => {
+    const choosesTable = { name: "jev", choose: async () => ({ kind: "table" as const, by: "jev", confidence: 0.8 }) };
+    const { writer } = writerSaying('{"title": "Spend", "columns": ["Item", "Amount"], "rows": [["Rent", "$1,200"], ["Food", "$410"]]}');
+    const laid = await present({ text: "Rent 1,200, food 410." }, { presenter: choosesTable, writer });
+    assert.deepEqual([laid.view.kind, laid.view.kind === "table" && laid.view.table.rows.length], ["table", 2]);
+    const plain = await present({ text: "Rent 1,200, food 410." }, { presenter: choosesTable, writer: null });
+    assert.deepEqual([plain.choice.kind, plain.view.kind], ["text", "text"]);
+    const ragged = viewWriter({ url: "http://m.test/v1", model: "m", fetcher: (async () => Response.json({ choices: [{ message: { content: '{"title": "x", "columns": ["A", "B"], "rows": [["1"]]}' } }] })) as unknown as typeof fetch });
+    await assert.rejects(ragged.fill({ text: "x" }, "table"), /rows\.0: has 1 cells for 2 columns/);
+  });
+
   it("puts it together: a table needs no model, the rest need one, and every view says where its values came from", async () => {
     const records = { text: "Two invoices.", data: [{ vendor: "Northwind", amount: 450 }], ask: "My invoices", assistant: "finance" };
     const table = await present(records, { presenter: rulesPresenter, writer: null });
     assert.deepEqual([table.choice.kind, table.view.kind, "source" in table.view && table.view.source], ["table", "table", "finance's answer"]);
     await assert.rejects(present({ text: "Rent 1200" }, { presenter: rulesPresenter, writer: null, kind: "bar_chart" }), /need a model to fill them in: set HUDDLE_LLM_URL/);
+    await assert.rejects(present({ text: "Rent 1200" }, { presenter: rulesPresenter, writer: null, kind: "table" }), /no model to lay its values out/);
     const { writer } = writerSaying('{"title": "Spend", "labels": ["Rent"], "series": [{"name": "Oct", "values": [1200]}]}');
     const chart = await present({ text: "Rent 1200", assistant: "finance" }, { presenter: rulesPresenter, writer, kind: "bar_chart" });
     assert.deepEqual([chart.choice.by, chart.view.kind, "source" in chart.view && chart.view.source], ["you", "bar_chart", "finance's answer"]);

@@ -605,12 +605,15 @@ describe("the router (OpenAI-compatible)", () => {
     const chart = await (await presentIt({ text: "Rent 1200, food 400.", kind: "bar_chart", assistant: "finance" })).json();
     assert.deepEqual([chart.choice.by, chart.view.kind, chart.view.series[0].values], ["you", "bar_chart", [1200, 400]]);
     assert.equal((await presentIt({ text: "x", kind: "hologram" })).status, 400);
-    assert.equal((await presentIt({ text: "No records here.", kind: "table" })).status, 400);
+    const laidOut = await presentIt({ text: "No records here.", kind: "table" });
+    assert.equal(laidOut.status, 502, "asked to lay text out as a table, the stand-in model sends a chart: refused");
+    assert.match((await laidOut.json()).error, /couldn't fill in a table/);
     assert.equal((await (await app.request("/api/info")).json()).present.writer, "small");
 
     const noModel = createApp({ store, engine, version: "test", publicUrl: "http://huddle.test" });
     const refused = await noModel.request("/api/present", chat({ text: "Rent 1200", kind: "bar_chart" }));
     assert.equal(refused.status, 501);
+    assert.equal((await noModel.request("/api/present", chat({ text: "Rent 1200", kind: "table" }))).status, 501, "no records and no model to lay them out");
     assert.match((await refused.json()).error, /set HUDDLE_LLM_URL and HUDDLE_LLM_MODEL/);
   });
 
