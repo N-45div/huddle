@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { clockTime, fullTime, pretty } from "../format.ts";
 import type { LogLine } from "../types.ts";
 import { AnswerView } from "../views/AnswerView.tsx";
+import { Markdown } from "./Markdown.tsx";
 
 /**
  * A run's log, one line per thing that happened, in plain words. The engine writes:
@@ -154,7 +155,9 @@ export function RunLog({ log, compact = false }: { readonly log: readonly LogLin
                 {clockTime(line.at)}
               </time>
             </div>
-            {described.body && <p className="log-body">{described.body}</p>}
+            {described.body &&
+              // What assistants were asked and answered is Markdown more often than not; the rest stays as written.
+              (line.kind === "asked" || line.kind === "answered" ? <Markdown className="log-body" text={described.body} /> : <p className="log-body">{described.body}</p>)}
             {line.kind === "answered" && !compact && typeof field(line.detail, "text") === "string" && (
               <AnswerView text={text(line.detail, "text")} data={field(line.detail, "data")} ask={askBefore(log, index)} assistant={assistantBefore(log, index)} />
             )}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, describeError, type RouterReply } from "../api.ts";
 import { ErrorNote } from "../components/bits.tsx";
+import { Markdown } from "../components/Markdown.tsx";
 import { useResource } from "../hooks.ts";
 import { AnswerView } from "../views/AnswerView.tsx";
 import { Huddler } from "../huddlers/Huddler.tsx";
@@ -109,7 +110,7 @@ export function QuickScreen() {
             <Huddler id={reply.model} connector={assistants.data?.find((assistant) => assistant.id === reply.model)?.connector} mood="happy" size={30} live />
             {name(reply.model)}
           </p>
-          <p className="try-answer">{reply.text}</p>
+          <Markdown className="try-answer" text={reply.text} />
           <AnswerView key={`${reply.runId}-${reply.text.length}`} text={reply.text} data={reply.data} ask={asked} assistant={name(reply.model)} auto onAsk={(follow) => setText(follow)} />
         </section>
       )}

@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { ApiFailure, api, describeError, type Prefer, type RouterReply } from "../api.ts";
 import { useApp } from "../app-context.ts";
 import { ErrorNote, Hint, Icon, Link, Loading } from "../components/bits.tsx";
+import { Markdown } from "../components/Markdown.tsx";
 import { TabPanel, Tabs } from "../components/Tabs.tsx";
 import { AssistantsPanel } from "../editor/AssistantsPanel.tsx";
 import { useChanges } from "../events.ts";
@@ -250,7 +251,7 @@ function TryIt({ assistants }: { readonly assistants: readonly Assistant[] }) {
             <Huddler id={reply.model} connector={assistants.find((assistant) => assistant.id === reply.model)?.connector} mood="happy" size={30} live />
             {name(reply.model)} answered{took !== null ? ` in ${seconds(took)}` : ""}
           </p>
-          <p className="try-answer">{reply.text}</p>
+          <Markdown className="try-answer" text={reply.text} />
           <p className="hint try-cost">{costLine(reply)}</p>
           <AnswerView key={`${reply.runId}-${reply.text.length}`} text={reply.text} data={reply.data} ask={asked} assistant={name(reply.model)} auto onAsk={(follow) => setText(follow)} />
           {reply.route && (
