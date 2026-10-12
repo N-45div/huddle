@@ -189,7 +189,7 @@ interface Draft {
 type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies" | "scopes" | "to" | "from" | "price" | "maxTokens" | "reuseMinutes", string>>;
 
 /** Connectors whose answers Huddle can cap at a number of tokens. */
-const CAPPED = new Set(["openai", "ollama"]);
+const CAPPED = new Set(["openai", "ollama", "vllm"]);
 const amount = (text: string): number | null => (text.trim() === "" ? null : Number(text.trim().replace(/^\$/, "")));
 const shown = (value: number | undefined): string => (value === undefined ? "" : String(value));
 
@@ -614,7 +614,7 @@ function ModelField({
     setFound((previous) => ({ ...previous, looking: true }));
     // Wait for typing to pause before asking the address.
     const timer = window.setTimeout(() => {
-      api.models(draft.connector, url).then(
+      api.models(draft.connector, url, draft.keyEnv.trim()).then(
         ({ models }) => current && setFound({ models, problem: null, looking: false }),
         (failure: unknown) => current && setFound({ models: [], problem: describeError(failure), looking: false }),
       );
@@ -623,14 +623,16 @@ function ModelField({
       current = false;
       window.clearTimeout(timer);
     };
-  }, [draft.connector, url]);
+  }, [draft.connector, url, draft.keyEnv]);
 
   const note = found.looking
     ? "Looking for its models…"
     : found.problem
       ? `${found.problem} You can still type a model's name.`
       : found.models.length === 0
-        ? "It has no models yet. Pull one first, for example: ollama pull qwen3"
+        ? draft.connector === "vllm"
+          ? "It serves no models. Start one, for example: vllm serve Qwen/Qwen3-8B"
+          : "It has no models yet. Pull one first, for example: ollama pull qwen3"
         : `It has ${plural(found.models.length, "model")}. Type to pick one.`;
 
   return (

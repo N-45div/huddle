@@ -189,7 +189,10 @@ export const api = {
   removeContact: (contactId: string) => call<null>("DELETE", `/contacts/${id(contactId)}`),
   /** One chat through the router's OpenAI-compatible /v1, the way any app would call it. */
   chat: (model: string, text: string, prefer?: Prefer) => routerChat(model, text, prefer),
-  models: (connector: string, url: string) => call<{ models: string[] }>("GET", `/connectors/${id(connector)}/models` + (url ? `?url=${id(url)}` : "")),
+  models: (connector: string, url: string, keyEnv = "") => {
+    const query = new URLSearchParams({ ...(url ? { url } : {}), ...(keyEnv ? { keyEnv } : {}) }).toString();
+    return call<{ models: string[] }>("GET", `/connectors/${id(connector)}/models${query ? `?${query}` : ""}`);
+  },
 
   flows: () => call<FlowView[]>("GET", "/flows"),
   flow: (flowId: string) => call<FlowView>("GET", `/flows/${id(flowId)}`),

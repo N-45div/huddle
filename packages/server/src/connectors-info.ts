@@ -50,6 +50,16 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
     ],
   },
   {
+    id: "vllm",
+    name: "vLLM",
+    description: "Your own model served by vLLM (vllm serve <model>), on this machine or a GPU server. Pick one of the models it serves; if you started it with --api-key, give that key's variable.",
+    fields: [
+      { key: "url", label: "Address", required: false, placeholder: "http://127.0.0.1:8000" },
+      { key: "model", label: "Model", required: true, placeholder: "Qwen/Qwen3-8B", suggest: "models" },
+      { key: "keyEnv", label: "Key variable (if it has --api-key)", required: false, placeholder: "VLLM_API_KEY" },
+    ],
+  },
+  {
     id: "openshell",
     name: "Agent in an OpenShell sandbox",
     description:

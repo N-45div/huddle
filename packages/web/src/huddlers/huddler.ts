@@ -92,6 +92,12 @@ function accessory(connector: string, color: string, dark: string): { back: stri
     case "agentzero":
       // A halo, for agent zero.
       return { back: "", front: `<ellipse class="h-float" cx="32" cy="9" rx="11.5" ry="3.4" fill="none" stroke="#ffd23f" stroke-width="2.6"/>` };
+    case "vllm":
+      // A GPU chip with a V: your own model, served by vLLM.
+      return {
+        back: "",
+        front: `<line x1="32" y1="17.5" x2="32" y2="15" stroke="${dark}" stroke-width="2.4" stroke-linecap="round"/><g stroke="${dark}" stroke-width="1.4" stroke-linecap="round"><path d="M26 4v-2M30.7 4v-2M35.3 4v-2M40 4v-2M26 16v1M38 16v1"/></g><rect x="23" y="3.5" width="18" height="12" rx="2.4" fill="#2d3142" stroke="${dark}" stroke-width="1.2"/><path d="M27.8 6.8l4.2 6l4.2-6" fill="none" stroke="#ffd23f" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`,
+      };
     case "mock":
       return { back: "", front: antenna("#c9cbd6") };
     case "openai":

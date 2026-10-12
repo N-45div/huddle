@@ -1,4 +1,4 @@
-import { Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type MemoryHit, type Note, ollamaModels, type PactIdentity, periodStart, type Presenter, present, rulesPresenter, VIEW_KINDS, type ViewKind, type ViewWriter, type Router, type SavedFlow, SensitiveNote, type SignIns, type Store } from "@huddle/core";
+import { Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type MemoryHit, type Note, ollamaModels, type PactIdentity, vllmModels, periodStart, type Presenter, present, rulesPresenter, VIEW_KINDS, type ViewKind, type ViewWriter, type Router, type SavedFlow, SensitiveNote, type SignIns, type Store } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { a2aRoutes } from "./a2a.ts";
@@ -213,11 +213,15 @@ export function createApp(options: AppOptions): Hono {
     return c.json<RouterView>({ on: Boolean(options.router), baseUrl: `${options.publicUrl}/v1`, judge: options.router?.judge?.name ?? null, keyRequired: Boolean(options.token || options.routerKey), usage, spend });
   });
   app.get("/api/connectors/:id/models", async (c) => {
-    if (c.req.param("id") !== "ollama") return bad(c, "This connector doesn't list models.", 404);
+    const connector = c.req.param("id");
+    if (connector !== "ollama" && connector !== "vllm") return bad(c, "This connector doesn't list models.", 404);
     const url = c.req.query("url")?.trim() || undefined;
     if (url && !/^https?:\/\/[^\s]+$/i.test(url)) return bad(c, "The address should start with http:// or https://.");
+    // The key stays on the server: the canvas names the variable, never sends the key.
+    const keyEnv = c.req.query("keyEnv")?.trim();
+    if (keyEnv && !/^[A-Z][A-Z0-9_]*$/.test(keyEnv)) return bad(c, "The key variable is a name in capitals, like VLLM_API_KEY.");
     try {
-      return c.json({ models: await ollamaModels(url, options.fetcher) });
+      return c.json({ models: connector === "vllm" ? await vllmModels(url, keyEnv ? process.env[keyEnv]?.trim() || undefined : undefined, options.fetcher) : await ollamaModels(url, options.fetcher) });
     } catch (error) {
       return bad(c, error instanceof Error ? error.message : String(error), 502);
     }
