@@ -19,12 +19,16 @@ export function QuickScreen() {
   const [error, setError] = useState<string | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
 
-  // Ready to type whenever the window comes back.
+  // Ready to type whenever the window comes back, with the assistants as they are now.
   useEffect(() => {
-    const focus = () => box.current?.focus();
+    const focus = () => {
+      box.current?.focus();
+      void assistants.reload();
+    };
     focus();
     window.addEventListener("focus", focus);
     return () => window.removeEventListener("focus", focus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const ask = async () => {
