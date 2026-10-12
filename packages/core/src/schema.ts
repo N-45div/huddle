@@ -19,7 +19,7 @@ export const Assistant = z.object({
   /** What it's good at, in a sentence: what the router's judge reads to pick it. */
   description: z.string().max(500).optional(),
   /** How to reach it: openclaw and hermes are A2A with their usual local address filled in. */
-  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "openshell", "pact", "homeassistant", "agentzero", "instinct", "email"]),
+  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "vllm", "openshell", "pact", "homeassistant", "agentzero", "instinct", "email"]),
   /** The slices of shared memory this assistant may read. */
   memory: z.array(z.string().min(1)).default([]),
   /** http: where to POST. a2a: the agent's base address or its card. openai: the API base. sochen: if not https://sochen.dev. instinct: if not http://127.0.0.1:8080. */
@@ -28,7 +28,7 @@ export const Assistant = z.object({
   keyEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/, "an environment variable name, like SOCHEN_API_KEY").optional(),
   /** homeassistant: which conversation agent; agentzero: which agent profile; openshell: which sandbox. */
   agentId: z.string().min(1).optional(),
-  /** openai, ollama: the model to ask for (e.g. "openclaw/main" for an OpenClaw agent). */
+  /** openai, ollama, vllm: the model to ask for (e.g. "openclaw/main" for an OpenClaw agent, or what vLLM serves). */
   model: z.string().min(1).optional(),
   /** pact: the audience the business's Provider gave Huddle when it registered (goes in each token's aud). */
   audience: z.string().min(1).optional(),
@@ -49,7 +49,7 @@ export const Assistant = z.object({
       call: z.number().min(0).max(1_000).default(0),
     })
     .optional(),
-  /** openai, ollama: the most an answer may run to, in tokens (a cap on what one answer can cost). */
+  /** openai, ollama, vllm: the most an answer may run to, in tokens (a cap on what one answer can cost). */
   maxTokens: z.number().int().min(1).max(1_000_000).optional(),
   /** Router: answer the very same ask again from the last answer, for this many minutes. Only for answers safe to reuse. */
   reuseMinutes: z.number().int().min(1).max(10_080).optional(),
@@ -71,6 +71,9 @@ export function assistantProblems(assistant: Assistant): string[] {
   const problems: string[] = [];
   if (assistant.connector === "email" && (!assistant.to || !assistant.from)) {
     problems.push(`assistant "${assistant.id}" sends email: give who it goes to (to) and who it's from (from, on a domain you verified in Resend)`);
+  }
+  if (assistant.connector === "vllm" && !assistant.model) {
+    problems.push(`assistant "${assistant.id}" is a model served by vLLM: give the model's name as vLLM serves it (model)`);
   }
   if (assistant.connector === "openshell" && (!assistant.agentId || !assistant.command)) {
     problems.push(`assistant "${assistant.id}" runs in OpenShell: give its sandbox's name (agentId) and the command that runs its agent (command)`);

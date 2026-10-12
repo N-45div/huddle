@@ -10,6 +10,7 @@ export { instinct } from "./connectors/instinct.ts";
 export { mock } from "./connectors/mock.ts";
 export { OLLAMA_URL, ollama, ollamaModels } from "./connectors/ollama.ts";
 export { openai } from "./connectors/openai.ts";
+export { VLLM_URL, vllm, vllmModels } from "./connectors/vllm.ts";
 export { openshell } from "./connectors/openshell.ts";
 export { type PactDelegation, pact } from "./connectors/pact.ts";
 export { checkReceipt, type DelegationScheme, DeviceCode, delegationScheme, type Grant, OAuthError, type ReceiptCheck, type Scope } from "./pact/delegation.ts";

@@ -38,11 +38,11 @@ const local = (url: string | undefined): boolean => {
   }
 };
 
-/** What an assistant charges: its price if you gave one; stand-ins and Ollama on this machine are free; otherwise unknown. */
+/** What an assistant charges: its price if you gave one; stand-ins, and Ollama or vLLM on this machine, are free; otherwise unknown. */
 export function priceOf(assistant: Assistant): Price | null {
   if (assistant.price) return assistant.price;
   if (assistant.connector === "mock") return FREE;
-  if (assistant.connector === "ollama" && local(assistant.url)) return FREE;
+  if ((assistant.connector === "ollama" || assistant.connector === "vllm") && local(assistant.url)) return FREE;
   return null;
 }
 
