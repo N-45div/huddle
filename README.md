@@ -7,8 +7,9 @@ memory, and draw how they hand work to each other, with you approving anything t
 
 > Status: early, and self-hosted. The canvas, the flow engine, shared memory, approvals, schedules,
 > webhooks, email in and out, "describe it", and connectors for OpenClaw, Hermes Agent, any A2A agent,
-> OpenAI-style APIs, Ollama, vLLM, agents in NVIDIA OpenShell sandboxes, Home Assistant, Agent Zero and
-> Sochen all work today, from one command, one container, or the [Linux app](#the-linux-app). Approvals
+> OpenAI-style APIs, Ollama, vLLM, the agent CLIs on your computer (Claude Code, Codex, OpenCode), agents
+> in NVIDIA OpenShell sandboxes, Home Assistant, Agent Zero and Sochen all work today, from one command,
+> one container, or the [Linux app](#the-linux-app). Approvals
 > on your phone and the hosted version are next. See [Roadmap](#roadmap).
 
 ---
@@ -111,6 +112,7 @@ benchmarked yet.
 | **`openai`** | anything with an OpenAI-style chat API: Open WebUI, AnythingLLM, LibreChat's Agents API, Letta, and the API servers of OpenClaw and Hermes | ready |
 | **`ollama`** | a model in [Ollama](https://ollama.com), on your machine or on ollama.com | ready |
 | **`vllm`** | your own model served by [vLLM](https://github.com/vllm-project/vllm), on your machine or a GPU server | ready |
+| **`cli`** | the agent CLIs on the computer Huddle runs on, signed in as you use them: Claude Code, Codex, OpenCode | ready |
 | **`openshell`** | any agent with a one-shot command (Hermes, OpenCode, Claude Code, Codex…) inside an [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandbox | ready |
 | **`pact`** | a business's support agent over [PACT](https://github.com/openpactprotocol/openpactprotocol), with Huddle as your personal agent: its identity, and signing in to act for you | ready |
 | **`sochen`** | [Sochen](https://sochen.dev)'s agent and its pets, through the Agent API | ready |
@@ -208,6 +210,20 @@ serves (the canvas lists them), or in a flow file:
 Huddle finds vLLM at `http://127.0.0.1:8000` unless you give a `url` (a GPU server's, with or without
 `/v1`). If you started it with `--api-key`, put that key's variable in `keyEnv`. A model on your own
 machine counts as free, so the router's cheaper picks favour it; on someone else's GPU, give it a price.
+
+**Agent CLIs: Claude Code, Codex, OpenCode.** The ones on the computer Huddle runs on, signed in as you
+already use them ([Omarchy](#on-omarchy) sets them up). Add an assistant with **Agent CLI on this
+computer** and pick which one, or in a flow file:
+
+```json
+{ "id": "claude", "connector": "cli", "agentId": "claude", "model": "sonnet", "memory": ["work"] }
+```
+
+Huddle asks it the careful way: in an empty folder of its own, with the request on stdin, and without
+your MCP servers, whose tools would run outside the CLI's limits. Claude Code may search the web and
+nothing else; Codex runs in its read-only sandbox, so it can read files but not change them; OpenCode
+answers without tools. Codex's `config.toml` is left out with its MCP servers, so give it a model your
+plan includes (`gpt-5.5`); for the others, leave `model` out to get the CLI's default.
 
 **Anything with an OpenAI-style chat API.** Give its address, and the model or agent to ask for. If its
 chat path isn't `/v1/chat/completions`, give the whole chat URL instead:
@@ -629,13 +645,17 @@ other triggers keep going with the window closed. Download the `.deb` or the App
 
 ```bash
 sudo apt install ./Huddle_0.2.0_amd64.deb      # Debian, Ubuntu, Mint, Pop!_OS
+yay -S huddle-bin                               # Arch, Omarchy, Manjaro (from the AUR)
 chmod +x Huddle_0.2.0_amd64.AppImage && ./Huddle_0.2.0_amd64.AppImage   # anywhere else
 ```
 
 - **Ctrl+Alt+H** opens a quick-ask box over whatever you're doing: ask "auto" or any assistant, and the
   answer comes back as text, a table, a chart or a calculator. (On Wayland desktops that keep global
-  shortcuts to themselves, use **Quick ask** in the tray.)
-- **Approvals come to you** as notifications with Yes and No, and the tray counts what's waiting.
+  shortcuts to themselves, bind a key to `huddle --quick` instead, or use **Quick ask** in the tray.)
+- **Approvals come to you** as notifications with Yes and No (where the desktop draws no buttons,
+  clicking one opens them in Huddle), and the tray counts what's waiting.
+- **`huddle` again** brings the window back; `huddle --approvals` opens what's waiting, and
+  `huddle --restart` restarts its server. Where there's no tray, closing the window minimizes it.
 - **Your keys stay yours**: **Keys and settings…** in the tray opens `~/.config/dev.huddle.desktop/huddle.env`
   (readable only by you); save it and choose **Restart Huddle**. Your data is in
   `~/.local/share/dev.huddle.desktop/`.
@@ -647,6 +667,34 @@ chmod +x Huddle_0.2.0_amd64.AppImage && ./Huddle_0.2.0_amd64.AppImage   # anywhe
 It's a Rust shell ([Tauri](https://tauri.app)) around the same server, bundled with its own Node. Build it
 yourself with Docker: `docker build -t huddle-linux-build packages/desktop/linux`, then see the comment at
 the top of `packages/desktop/linux/Dockerfile`.
+
+### On Omarchy
+
+[Omarchy](https://omarchy.org) sets up a dozen agent CLIs and assistants on one machine; Huddle is where
+they work together. On Omarchy 4:
+
+- **Install** with `omarchy pkg aur add huddle-bin` (or Install > AUR). Use the package rather than the
+  AppImage, which needs `fuse2`.
+- **It wears your theme**, and changes with it when you switch: Huddle reads the theme's palette from
+  `~/.local/state/omarchy/current/theme/colors.toml`.
+- **Quick ask on a key.** Hyprland keeps global shortcuts to itself, so bind one in
+  `~/.config/hypr/bindings.lua`, and let the box float, in `~/.config/hypr/hyprland.lua`:
+
+  ```lua
+  o.bind("SUPER + H", "Huddle: quick ask", { launch = "huddle --quick" })
+  o.window({ title = "^Ask Huddle$" }, { float = true, center = true, size = { 700, 480 }, pin = true })
+  ```
+
+- **Approvals.** Omarchy's notifications have no buttons: click an approval's notification (or press
+  Super+Alt+, for the latest) and Huddle opens what's waiting. With Do Not Disturb on, they wait in the
+  notification history.
+- **The tray icon** is in the bar's tray drawer; pin it there to keep it in view.
+- **Its agent CLIs are assistants**: add Claude Code, Codex or OpenCode as an
+  [agent CLI](#bring-your-assistant). Hermes and OpenClaw, from Install > AI, connect as usual.
+
+On Omarchy 3, bindings go in `~/.config/hypr/bindings.conf`:
+`bindd = SUPER, H, Huddle quick ask, exec, huddle --quick`. All of this follows Omarchy's own source and
+is tested on Arch and under WSL, not yet on an Omarchy install: reports welcome.
 
 ## Run it
 
