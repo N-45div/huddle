@@ -67,14 +67,19 @@ pub fn watch(port: u16, token: String, count: impl Fn(usize) + Send + 'static, a
 /// A notification for one approval; what you press comes back to `chose` ("yes", "no", "held", "open").
 #[cfg(target_os = "linux")]
 pub fn notify(approval: &Waiting, chose: impl FnOnce(&str) + Send + 'static) {
-    use notify_rust::{Notification, Timeout};
+    use notify_rust::{Hint, Notification, Timeout};
+    // Where the body is read as markup, a flow's "<b>" or "&" must show as written.
+    let markup = notify_rust::get_capabilities().map(|caps| caps.iter().any(|cap| cap == "body-markup")).unwrap_or(false);
+    let body = if markup { escape(&approval.message) } else { approval.message.clone() };
     let mut notification = Notification::new();
     notification
         .appname("Huddle")
         .summary(&format!("{} is waiting for you", approval.flow_name))
-        .body(&approval.message)
+        .body(&body)
         .icon("huddle")
-        .timeout(Timeout::Never);
+        .timeout(Timeout::Never)
+        // Omarchy's notifications show no buttons; a click runs this instead, even from its history.
+        .hint(Hint::Custom("omarchy-exec-argv".into(), serde_json::json!([own_command(), "--approvals"]).to_string()));
     match &approval.held_by {
         Some(held) => {
             notification.action("held", &format!("Approve in {}", held.by));
@@ -94,6 +99,22 @@ pub fn notify(approval: &Waiting, chose: impl FnOnce(&str) + Send + 'static) {
             _ => {}
         });
     });
+}
+
+/// How to run this app again: the AppImage itself (its insides vanish when it quits), else this program.
+#[cfg(target_os = "linux")]
+fn own_command() -> String {
+    std::env::var("APPIMAGE")
+        .ok()
+        .filter(|path| !path.is_empty())
+        .or_else(|| std::env::current_exe().ok().map(|path| path.to_string_lossy().into_owned()))
+        .unwrap_or_else(|| "huddle".to_string())
+}
+
+/// Text that shows as written where notifications read markup.
+#[cfg(target_os = "linux")]
+fn escape(text: &str) -> String {
+    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
 #[cfg(not(target_os = "linux"))]

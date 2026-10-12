@@ -5,9 +5,11 @@
 //!   huddle            opens Huddle (or brings its window back, if it's running)
 //!   huddle --quick    opens the quick-ask box: bind it to a shortcut where Ctrl+Alt+H can't be had (Wayland)
 //!   huddle --restart  restarts Huddle's server, to pick up changed keys and settings
+//!   huddle --approvals  opens what's waiting for you (what clicking an approval's notification runs)
 //!   huddle --hidden   starts in the background (how it starts at login)
 
 mod approvals;
+mod omarchy;
 mod server;
 mod settings;
 
@@ -19,6 +21,7 @@ use std::time::{Duration, Instant};
 
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
+use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
@@ -44,10 +47,8 @@ struct Desktop {
     quick_shown: Mutex<Instant>,
     /// When the app opened: the opening screen plays out before the canvas takes over.
     opened: Instant,
-    /// The desktop shows tray icons; without one, closing the window minimizes it instead of hiding it.
-    has_tray: bool,
-    /// Closing minimized the main window (there's no tray).
-    minimized: AtomicBool,
+    /// Where the canvas opens once the server answers.
+    first_route: &'static str,
     /// Started with --quick: open the quick-ask box once the server answers.
     quick_at_start: AtomicBool,
 }
@@ -71,6 +72,11 @@ impl Desktop {
             token = self.token
         )
     }
+
+    /// What every page of Huddle's runs first: its token, and the desktop's theme if there is one.
+    fn page_script(&self) -> String {
+        format!("{}\n{}", self.token_script(), omarchy::theme_script(self.port))
+    }
 }
 
 pub fn run() {
@@ -81,10 +87,20 @@ pub fn run() {
                 toggle_quick(app);
             } else if args.iter().any(|arg| arg == "--restart") {
                 restart(app);
+            } else if args.iter().any(|arg| arg == "--approvals") {
+                show_main(app, Some("#/approvals"));
             } else {
                 show_main(app, None);
             }
         }))
+        // Every page of Huddle's wears the desktop's theme where there is one (Omarchy).
+        .on_page_load(|webview, payload| {
+            if payload.event() == PageLoadEvent::Finished {
+                if let Some(desktop) = webview.try_state::<Desktop>() {
+                    let _ = webview.eval(omarchy::theme_script(desktop.port));
+                }
+            }
+        })
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -120,18 +136,21 @@ pub fn run() {
                 approvals_item: Mutex::new(None),
                 quick_shown: Mutex::new(Instant::now()),
                 opened: Instant::now(),
-                has_tray: tray_host(),
-                minimized: AtomicBool::new(false),
+                first_route: if std::env::args().any(|arg| arg == "--approvals") { "#/approvals" } else { "#/flows" },
                 quick_at_start: AtomicBool::new(quick),
             };
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Huddle")
                 .inner_size(1280.0, 860.0)
                 .min_inner_size(420.0, 520.0)
-                .initialization_script(&desktop.token_script())
+                .initialization_script(&desktop.page_script())
                 .visible(!hidden)
                 .build()?;
-            eprintln!("[huddle] tray: {}", if desktop.has_tray { "shown" } else { "none here, so closing the window minimizes it" });
+            eprintln!("[huddle] tray: {}", if tray_host() { "shown" } else { "none here (yet), so closing the window minimizes it" });
+            if omarchy::stamp().is_some() {
+                eprintln!("[huddle] wearing the Omarchy theme");
+            }
+            watch_theme(app.handle().clone(), desktop.port);
             app.manage(desktop);
 
             // Always on is the point: start at login, from the first run on (the tray can turn it off).
@@ -157,9 +176,8 @@ pub fn run() {
             // Closing the window keeps Huddle running: in the tray, or minimized where there's no tray.
             WindowEvent::CloseRequested { api, .. } if window.label() == "main" || window.label() == "quick" => {
                 api.prevent_close();
-                let desktop = window.state::<Desktop>();
-                if window.label() == "main" && !desktop.has_tray {
-                    desktop.minimized.store(true, Ordering::SeqCst);
+                // Asked now rather than at start: at login Huddle can start before the bar that hosts the tray.
+                if window.label() == "main" && !tray_host() {
                     let _ = window.minimize();
                 } else {
                     let _ = window.hide();
@@ -216,7 +234,7 @@ fn run_server(app: &AppHandle, inbox: mpsc::Receiver<Order>) {
             if first && main.is_visible().unwrap_or(false) {
                 thread::sleep(Duration::from_millis(2600).saturating_sub(desktop.opened.elapsed()));
             }
-            let _ = main.navigate(desktop.url("#/flows"));
+            let _ = main.navigate(desktop.url(if first { desktop.first_route } else { "#/flows" }));
         }
         if first {
             watch_approvals(app);
@@ -319,6 +337,24 @@ fn watch_approvals(app: &AppHandle) {
     );
 }
 
+/// Checks every two seconds whether the desktop's theme changed, and recolours the open windows if so.
+fn watch_theme(app: AppHandle, port: u16) {
+    thread::spawn(move || {
+        let mut last = omarchy::stamp();
+        loop {
+            thread::sleep(Duration::from_secs(2));
+            let now = omarchy::stamp();
+            if now != last {
+                last = now;
+                let script = omarchy::theme_script(port);
+                for window in app.webview_windows().values() {
+                    let _ = window.eval(&script);
+                }
+            }
+        }
+    });
+}
+
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open Huddle", true, None::<&str>)?;
     let quick = MenuItem::with_id(app, "quick", "Quick ask   (Ctrl+Alt+H)", true, None::<&str>)?;
@@ -384,10 +420,9 @@ fn show_main(app: &AppHandle, route: Option<&str>) {
             let _ = main.navigate(desktop.url(route));
         }
     }
-    // Wayland gives an app no way to un-minimize its own window, but a window shown afresh always appears.
-    if app.state::<Desktop>().minimized.swap(false, Ordering::SeqCst) {
-        let _ = main.hide();
-    }
+    // Wayland gives an app no way to un-minimize its own window or bring it forward, nor tells it the window
+    // was minimized; a window shown afresh always appears on top. This only runs when you ask for Huddle.
+    let _ = main.hide();
     let _ = main.unminimize();
     let _ = main.show();
     let _ = main.set_focus();
@@ -422,7 +457,7 @@ fn toggle_quick(app: &AppHandle) {
         .skip_taskbar(true)
         .center()
         .focused(true)
-        .initialization_script(&format!("{}\n{escape}", desktop.token_script()))
+        .initialization_script(&format!("{}\n{escape}", desktop.page_script()))
         .build();
     if let Err(error) = built {
         eprintln!("[huddle] couldn't open quick ask: {error}");
