@@ -19,6 +19,8 @@ export { DEFAULT_CERT_DIR, type ExecResult, OpenShell, type OpenShellOptions, ty
 export { sochen } from "./connectors/sochen.ts";
 export { Engine, type EngineOptions, HeldElsewhere, MAX_STEPS, OverBudget, type RunView, type StartedBy } from "./engine.ts";
 export { type AgentStep, type Guard, type HandOff, type Outcome, type Verdict } from "./guard.ts";
+export { GUARDS, guardFromEnv } from "./guards/index.ts";
+export { httpGuard, type HttpGuardOptions } from "./guards/http.ts";
 export { ARMORIQ_API, armoriq, type ArmorIQOptions, armoriqPlan, type ArmorIQRegistration, type ArmorIQSdk, armoriqTool, registerWithArmorIQ, type RegisterResult } from "./guards/armoriq.ts";
 export { type Embedder, embedder, type EmbedderOptions } from "./memory/embeddings.ts";
 export { Memory, type MemoryHit, type MemoryOptions, NOTE_CLIP, RECALL_BUDGET } from "./memory/memory.ts";
