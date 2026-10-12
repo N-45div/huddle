@@ -3049,3 +3049,215 @@ h1 .badge {
     animation: none;
   }
 }
+
+/* ---------- Quick ask (the desktop app's shortcut window) ---------- */
+
+.main-quick {
+  padding: 14px 16px;
+  min-height: 100vh;
+}
+
+.quick {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.quick-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.quick-form textarea {
+  font-size: 16px;
+  border: 0;
+  padding: 4px 2px;
+  resize: none;
+  background: transparent;
+}
+
+.quick-form textarea:focus {
+  outline: none;
+}
+
+.quick-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.quick-bar select {
+  width: auto;
+  font-size: 13px;
+  padding: 4px 8px;
+}
+
+.quick-bar .hint {
+  flex: 1;
+}
+
+.quick-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---------- The Huddlers ---------- */
+
+.huddler-wrap {
+  display: inline-flex;
+  flex: none;
+  line-height: 0;
+}
+
+.huddler {
+  display: block;
+  overflow: visible;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .huddler-wrap.live .h-body {
+    transform-box: fill-box;
+    transform-origin: center bottom;
+    animation: h-bob 2.8s ease-in-out infinite;
+  }
+
+  .huddler-wrap.live .h-eyes {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: h-blink 4.6s infinite;
+  }
+
+  .huddler-wrap.live .mood-happy .h-arm-r {
+    transform-box: fill-box;
+    transform-origin: center top;
+    animation: h-wave 0.9s ease-in-out infinite;
+  }
+
+  .huddler-wrap.live .h-float {
+    animation: h-float 2.4s ease-in-out infinite;
+  }
+
+  .huddler-wrap.live .h-bulb {
+    animation: h-glow 2.2s ease-in-out infinite;
+  }
+
+  .huddler-wrap.live .h-dots circle {
+    animation: h-dot 1.4s ease-in-out infinite;
+  }
+
+  .huddler-wrap.live .h-dots circle:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+
+  .huddler-wrap.live .h-dots circle:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+}
+
+@keyframes h-bob {
+  50% {
+    transform: translateY(-1.6px) scaleY(1.015);
+  }
+}
+
+@keyframes h-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.12);
+  }
+}
+
+@keyframes h-wave {
+  50% {
+    transform: rotate(-38deg);
+  }
+}
+
+@keyframes h-float {
+  50% {
+    transform: translateY(-1.8px);
+  }
+}
+
+@keyframes h-glow {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes h-dot {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* An empty screen, with company. */
+.huddle-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 16px;
+  text-align: center;
+}
+
+.huddle-empty .huddlers-row {
+  display: flex;
+  align-items: flex-end;
+}
+
+.huddle-empty .huddlers-row > .huddler-wrap + .huddler-wrap {
+  margin-left: -10px;
+}
+
+.huddle-empty p {
+  max-width: 44ch;
+  color: var(--muted);
+}
+
+.huddle-empty strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.assistant-head .huddler-wrap {
+  margin-top: 2px;
+}
+
+.assistant-head {
+  align-items: flex-start;
+}
+
+.assistant-who {
+  flex: 1;
+  min-width: 0;
+}
+
+.node-line .huddler-wrap {
+  vertical-align: -5px;
+  margin-right: 6px;
+}
+
+.reply-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
