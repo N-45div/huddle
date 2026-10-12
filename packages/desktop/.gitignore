@@ -1,0 +1,7 @@
+# Made by scripts/bundle.mjs and the build
+launcher/index.html
+src-tauri/resources/
+src-tauri/binaries/
+src-tauri/target/
+src-tauri/gen/
+dist/

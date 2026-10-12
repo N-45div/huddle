@@ -1,0 +1,17 @@
+{
+  "name": "@huddle/desktop",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "description": "Huddle as a desktop app for Linux: always on in the tray, a quick-ask shortcut, approvals as notifications.",
+  "scripts": {
+    "bundle": "node scripts/bundle.mjs",
+    "build": "node scripts/bundle.mjs && tauri build",
+    "dev": "node scripts/bundle.mjs && tauri dev"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.5",
+    "esbuild": "0.28.2"
+  }
+}
