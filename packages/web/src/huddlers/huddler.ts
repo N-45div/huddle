@@ -92,6 +92,12 @@ function accessory(connector: string, color: string, dark: string): { back: stri
     case "agentzero":
       // A halo, for agent zero.
       return { back: "", front: `<ellipse class="h-float" cx="32" cy="9" rx="11.5" ry="3.4" fill="none" stroke="#ffd23f" stroke-width="2.6"/>` };
+    case "cli":
+      // A little terminal with its prompt: an agent CLI on this computer.
+      return {
+        back: "",
+        front: `<line x1="32" y1="17.5" x2="32" y2="15" stroke="${dark}" stroke-width="2.4" stroke-linecap="round"/><rect x="22" y="2.5" width="20" height="13" rx="2.6" fill="#1e2030" stroke="${dark}" stroke-width="1.2"/><circle cx="25" cy="5" r=".8" fill="#ff6b6b"/><circle cx="27.5" cy="5" r=".8" fill="#ffd23f"/><path d="M25.5 8.2l2.8 2.2l-2.8 2.2" fill="none" stroke="#7cf0c9" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><line x1="30.5" y1="12.6" x2="36" y2="12.6" stroke="#7cf0c9" stroke-width="1.7" stroke-linecap="round"/>`,
+      };
     case "vllm":
       // A GPU chip with a V: your own model, served by vLLM.
       return {

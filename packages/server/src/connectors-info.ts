@@ -60,6 +60,25 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
     ],
   },
   {
+    id: "cli",
+    name: "Agent CLI on this computer",
+    description:
+      "Claude Code, Codex or OpenCode, as you've signed in to it here (Omarchy sets these up). Huddle asks it in its careful mode, in an empty folder, without your MCP servers: it can't change anything on this computer. Claude Code may search the web; Codex may read files; OpenCode just answers.",
+    fields: [
+      {
+        key: "agentId",
+        label: "Which one",
+        required: true,
+        choices: [
+          { value: "claude", label: "Claude Code (claude)" },
+          { value: "codex", label: "Codex (codex)" },
+          { value: "opencode", label: "OpenCode (opencode)" },
+        ],
+      },
+      { key: "model", label: "Model (or its default)", required: false, placeholder: "sonnet, gpt-5.5, openai/gpt-5.4-mini" },
+    ],
+  },
+  {
     id: "openshell",
     name: "Agent in an OpenShell sandbox",
     description:

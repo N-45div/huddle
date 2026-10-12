@@ -142,6 +142,8 @@ export interface ConnectorField {
   readonly placeholder?: string;
   /** "models": the server can list the choices (GET /api/connectors/:id/models?url=). */
   readonly suggest?: "models";
+  /** The only values it takes, to pick from. */
+  readonly choices?: readonly { readonly value: string; readonly label: string }[];
 }
 
 /** GET /api/connectors */

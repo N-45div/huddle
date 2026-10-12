@@ -564,6 +564,29 @@ function ConnectorFieldInput({
   if (field.suggest === "models") return <ModelField field={field} draft={draft} error={error} onChange={onChange} />;
 
   const key = field.key;
+  if (field.choices) {
+    const picked = field.choices.some((choice) => choice.value === draft[key]) ? draft[key] : "";
+    return (
+      <div className="field">
+        <label htmlFor={id}>{label}</label>
+        <select id={id} value={picked} aria-invalid={error ? true : undefined} aria-describedby={hintId} onChange={(event) => onChange(key, event.target.value)}>
+          {!picked && <option value="">Choose one</option>}
+          {field.choices.map((choice) => (
+            <option key={choice.value} value={choice.value}>
+              {choice.label}
+            </option>
+          ))}
+        </select>
+        {error ? (
+          <p className="error-text" id={hintId}>
+            {error}
+          </p>
+        ) : (
+          <span id={hintId} hidden />
+        )}
+      </div>
+    );
+  }
   return (
     <div className="field">
       <label htmlFor={id}>{label}</label>
