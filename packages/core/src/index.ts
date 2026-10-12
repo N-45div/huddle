@@ -12,6 +12,7 @@ export { OLLAMA_URL, ollama, ollamaModels } from "./connectors/ollama.ts";
 export { openai } from "./connectors/openai.ts";
 export { VLLM_URL, vllm, vllmModels } from "./connectors/vllm.ts";
 export { openshell } from "./connectors/openshell.ts";
+export { cli, type Ran, type Runner, type RunOptions, runProgram } from "./connectors/cli.ts";
 export { type PactDelegation, pact } from "./connectors/pact.ts";
 export { checkReceipt, type DelegationScheme, DeviceCode, delegationScheme, type Grant, OAuthError, type ReceiptCheck, type Scope } from "./pact/delegation.ts";
 export { type GrantStore, type SignIn, SignIns, storedGrants } from "./pact/signins.ts";
@@ -32,6 +33,6 @@ export { evaluateFormula, FormulaError, namesIn, parseFormula } from "./formula.
 export { type Answer, type Choice, FILLED, FilledView, jevPresenter, type JevPresenterOptions, type ModelOptions, modelPresenter, obviousChoice, present, type Presenter, rulesPresenter, type Table, tableOf, type View, VIEW_KINDS, type ViewKind, VIEWS, type ViewWriter, viewWriter } from "./present.ts";
 export { type Budget, CHARS_PER_TOKEN, costOf, dollars, estimateTokens, parseBudget, periodStart, type Price, priceOf, type Spend, spendOf, type Usage } from "./cost.ts";
 export { type Candidate, jevJudge, type JevOptions, type Judge, modelJudge, type ModelJudgeOptions, type Ranking } from "./judge.ts";
-export { askFirst, Assistant, assistantProblems, Assistants, type Caller, callerDecision, Callers, CONTACT_TIERS, type ContactTier, EMAIL_PATTERN, everyMs, Flow, parseFlow, Step, TIERS, type Tier, Trigger } from "./schema.ts";
+export { askFirst, Assistant, assistantProblems, Assistants, type Caller, callerDecision, Callers, CLI_AGENTS, type CliAgent, CONTACT_TIERS, type ContactTier, EMAIL_PATTERN, everyMs, Flow, parseFlow, Step, TIERS, type Tier, Trigger } from "./schema.ts";
 export { type Approval, type Change, type Contact, type HeldBy, type KeptAnswer, type LogLine, type Note, type Run, type RunState, type SavedFlow, type SpendTotal, Store } from "./store.ts";
 export { lookup, render, type RunContext, type StepAnswer } from "./template.ts";

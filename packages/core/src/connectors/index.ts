@@ -1,6 +1,7 @@
 import type { Connector } from "../connector.ts";
 import { a2a } from "./a2a.ts";
 import { agentzero } from "./agentzero.ts";
+import { cli } from "./cli.ts";
 import { email } from "./email.ts";
 import { homeassistant } from "./homeassistant.ts";
 import { http } from "./http.ts";
@@ -26,6 +27,7 @@ export function defaultConnectors(): Readonly<Record<string, Connector>> {
     openai: openai(),
     ollama: ollama(),
     vllm: vllm(),
+    cli: cli(),
     openshell: openshell(),
     pact: pact(() => null),
     homeassistant: homeassistant(),
