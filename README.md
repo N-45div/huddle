@@ -116,6 +116,7 @@ benchmarked yet.
 | **`openshell`** | any agent with a one-shot command (Hermes, OpenCode, Claude Code, Codex…) inside an [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandbox | ready |
 | **`pact`** | a business's support agent over [PACT](https://github.com/openpactprotocol/openpactprotocol), with Huddle as your personal agent: its identity, and signing in to act for you | ready |
 | **`sochen`** | [Sochen](https://sochen.dev)'s agent and its pets, through the Agent API | ready |
+| **`monid`** | one paid data tool from [Monid](https://monid.ai)'s catalog (job listings, reviews, prices, search results), within a spend cap per run | ready |
 | **`homeassistant`** | [Home Assistant](https://github.com/home-assistant/core)'s Assist, through its conversation API | ready |
 | **`agentzero`** | [Agent Zero](https://github.com/agent0ai/agent-zero), through its external API | ready |
 | **`instinct`** | [Open Instinct](https://github.com/mariagorskikh/open-instinct), the personal agent you text, through its owner chat | ready |
@@ -128,7 +129,8 @@ benchmarked yet.
 Agent (0.21.6) and Ollama (0.40) are also tested against real installs: a flow where OpenClaw plans, you
 approve, and Hermes follows up, each reading only its own slice of memory, and a local model answering
 from the slice it was given. PACT is tested against its reference Provider: Skyline Airways checked a flight,
-asked for more permission to rebook it, and Huddle checked the signed receipt of each. The others haven't been run against a
+asked for more permission to rebook it, and Huddle checked the signed receipt of each. Monid is tested against its live API: a
+Google Jobs search came back with ten postings in 26 seconds, for $0.0024. The others haven't been run against a
 live install yet, so reports of what breaks are very welcome. Assistants with no way in from outside
 (some consumer apps have none) can't be connected yet, unless they read email (see [Email](#email));
 reaching them by a messaging channel is on the roadmap.
@@ -233,6 +235,28 @@ chat path isn't `/v1/chat/completions`, give the whole chat URL instead:
 ```
 
 **Sochen.** Set `SOCHEN_API_KEY` (a Pro plan's `sk_sochen_…` key) and add `{ "id": "sochen", "connector": "sochen" }`.
+
+**Monid.** [Monid](https://monid.ai) puts a catalog of paid data tools behind one key and one balance:
+Google's job listings, reviews, prices, search results. Set `MONID_API_KEY`, find a tool, and see what it
+takes:
+
+```sh
+npm run huddle -- monid find "job listings by keyword and location"
+npm run huddle -- monid show dataforseo/serp/google-jobs
+```
+
+`show` prints an assistant to paste in. A Monid assistant is that one tool: the step's request becomes its
+input, either as JSON or through the `input` template wherever it says `{{ask}}`:
+
+```json
+{ "id": "jobs", "connector": "monid", "tool": "dataforseo/serp/google-jobs", "input": { "body": { "keyword": "{{ask}}", "location_name": "India", "language_code": "en" } }, "maxUsd": 0.05 }
+```
+
+Before each run Huddle checks Monid's price against `maxUsd` (10 cents when left out; a tool Monid can't
+price ahead runs only with it set), and it never runs tools that scrape sites whose terms forbid it, find
+people's personal contact details, or contact people. What Monid charged goes in the run's spend, and
+memory isn't sent. [examples/job-hunt.json](examples/job-hunt.json) searches Google's job listings and has a
+model shortlist the ones that fit you.
 
 **Home Assistant.** Make a long-lived access token (your profile → Security), set it as `HASS_TOKEN`
 where Huddle runs, and add Assist. `agentId` picks one of its conversation agents. Memory isn't sent to
