@@ -7,6 +7,7 @@ import { plural } from "../format.ts";
 import type { Resource } from "../hooks.ts";
 import { type Assistant, type ConnectorField, type ConnectorId, type ConnectorInfo, EMAIL_PATTERN, ENV_PATTERN, ID_PATTERN, isSender } from "../types.ts";
 import { Huddler } from "../huddlers/Huddler.tsx";
+import { MonidSearch } from "./MonidSearch.tsx";
 
 interface Props {
   readonly assistants: readonly Assistant[];
@@ -190,9 +191,11 @@ interface Draft {
   input: string;
   /** monid: the most a run may cost, in dollars. */
   maxUsd: string;
+  /** monid: how long a run waits for a slow tool, in seconds. */
+  waitSeconds: string;
 }
 
-type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies" | "scopes" | "to" | "from" | "price" | "maxTokens" | "reuseMinutes" | "tool" | "input" | "maxUsd", string>>;
+type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies" | "scopes" | "to" | "from" | "price" | "maxTokens" | "reuseMinutes" | "tool" | "input" | "maxUsd" | "waitSeconds", string>>;
 
 /** Connectors whose answers Huddle can cap at a number of tokens. */
 const CAPPED = new Set(["openai", "ollama", "vllm"]);
@@ -258,6 +261,7 @@ function draftOf(assistant: Assistant | undefined): Draft {
     tool: assistant?.tool ?? "",
     input: assistant?.input ? JSON.stringify(assistant.input, null, 2) : "",
     maxUsd: shown(assistant?.maxUsd),
+    waitSeconds: shown(assistant?.waitSeconds),
   };
 }
 
@@ -351,6 +355,8 @@ function AssistantForm({
     if (fields.some((field) => field.key === "input") && draft.input.trim() && !templateOf(draft.input)) found.input = 'That isn\'t a JSON object. It looks like { "body": { "keyword": "{{ask}}" } }.';
     const spend = amount(draft.maxUsd);
     if (spend !== null && !(Number.isFinite(spend) && spend >= 0 && spend <= 100)) found.maxUsd = "Dollars, from 0 to 100, like 0.10.";
+    const wait = amount(draft.waitSeconds);
+    if (wait !== null && !(Number.isInteger(wait) && wait >= 5 && wait <= 600)) found.waitSeconds = "Whole seconds, from 5 to 600.";
     return found;
   };
 
@@ -394,6 +400,8 @@ function AssistantForm({
     if (template) assistant.input = template;
     const spend = shown.has("maxUsd") ? amount(draft.maxUsd) : (kept?.maxUsd ?? null);
     if (spend !== null) assistant.maxUsd = spend;
+    const wait = shown.has("waitSeconds") ? amount(draft.waitSeconds) : (kept?.waitSeconds ?? null);
+    if (wait !== null) assistant.waitSeconds = wait;
     onSave(assistant);
   };
 
@@ -476,6 +484,18 @@ function AssistantForm({
         {connector && <Hint>{connector.description}</Hint>}
       </div>
 
+      {draft.connector === "monid" && (
+        <MonidSearch
+          onPick={(details) =>
+            setDraft((current) => ({
+              ...current,
+              tool: details.tool,
+              // A template already written stays; an empty one starts from the tool's own fields.
+              input: current.input.trim() ? current.input : JSON.stringify(details.starter, null, 2),
+            }))
+          }
+        />
+      )}
       {fields.map((field) => (
         <ConnectorFieldInput key={field.key} field={field} draft={draft} error={errors[field.key]} onChange={set} />
       ))}

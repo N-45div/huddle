@@ -6,6 +6,7 @@ import type {
   ConnectorInfo,
   Flow,
   FlowView,
+  FoundTool,
   Info,
   MemoryHit,
   Note,
@@ -16,6 +17,7 @@ import type {
   SandboxRequests,
   SignIn,
   WaitingApproval,
+  ToolDetails,
 } from "./types.ts";
 
 /**
@@ -174,6 +176,8 @@ async function routerChat(model: string, text: string, prefer?: Prefer): Promise
 export const api = {
   info: () => call<Info>("GET", "/info"),
   connectors: () => call<ConnectorInfo[]>("GET", "/connectors"),
+  monidFind: (need: string) => call<FoundTool[]>("GET", `/monid/find?q=${encodeURIComponent(need)}`),
+  monidShow: (tool: string) => call<ToolDetails>("GET", `/monid/show?tool=${encodeURIComponent(tool)}`),
   assistants: () => call<Assistant[]>("GET", "/assistants"),
   saveAssistants: (assistants: readonly Assistant[]) => call<Assistant[]>("PUT", "/assistants", { assistants }),
   router: () => call<RouterView>("GET", "/router"),
