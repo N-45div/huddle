@@ -10,11 +10,11 @@ describe("the add-assistant form's connectors", () => {
     assert.deepEqual([...offered].sort(), [...named].sort());
   });
 
-  it("ask a Monid tool for its tool, and offer its input template, spend cap and key", () => {
+  it("ask a Monid tool for its tool, and offer its input template, spend cap, wait and key", () => {
     const monid = CONNECTORS.find((connector) => connector.id === "monid");
     assert.deepEqual(
       monid?.fields.map((field) => `${field.key}${field.required ? "*" : ""}`),
-      ["tool*", "input", "maxUsd", "keyEnv"],
+      ["tool*", "input", "maxUsd", "waitSeconds", "keyEnv"],
     );
   });
 });

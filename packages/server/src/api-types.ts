@@ -6,6 +6,7 @@
 import type { Assistant, Choice, Contact, HeldBy, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger, View } from "@huddle/core";
 
 export type { Assistant, Choice, Contact, HeldBy, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger, View };
+export type { FoundTool, ToolDetails } from "./monid.ts";
 
 /** GET /api/info: what this Huddle can do. */
 export interface Info {
@@ -136,7 +137,7 @@ export interface RouterView {
 
 /** A field an assistant of this connector needs, for the "add assistant" form. */
 export interface ConnectorField {
-  readonly key: "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies" | "scopes" | "to" | "from" | "tool" | "input" | "maxUsd";
+  readonly key: "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies" | "scopes" | "to" | "from" | "tool" | "input" | "maxUsd" | "waitSeconds";
   readonly label: string;
   readonly required: boolean;
   readonly placeholder?: string;

@@ -143,6 +143,7 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
       { key: "tool", label: "Tool (provider/endpoint)", required: true, placeholder: "dataforseo/serp/google-jobs" },
       { key: "input", label: "Input template (JSON)", required: false, placeholder: '{ "body": { "keyword": "{{ask}}" } }' },
       { key: "maxUsd", label: "Most a run may cost, in dollars", required: false, placeholder: "0.10" },
+      { key: "waitSeconds", label: "Wait for a slow tool, in seconds", required: false, placeholder: "120" },
       { key: "keyEnv", label: "Key variable", required: false, placeholder: "MONID_API_KEY" },
     ],
   },

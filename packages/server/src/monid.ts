@@ -1,4 +1,4 @@
-import { blockedReason, type Engine, inputFields, type MonidField, monidClient, parseFlow, parseTool, priceText, starterInput, toolId } from "@huddle/core";
+import { blockedReason, type Engine, FINISHED, inputFields, type MonidField, monidClient, parseFlow, parseTool, priceText, starterInput, toolId } from "@huddle/core";
 
 /**
  * Monid's catalog of paid data tools (monid.ai) for the canvas's tool search and for the owner's MCP
@@ -35,7 +35,12 @@ export interface ToolRun {
   readonly runId: string;
   readonly text: string;
   readonly costUsd: number | null;
+  /** Monid's run, when the tool was still working: monid_result picks its output up later. */
+  readonly pending?: string;
 }
+
+/** How long an MCP run waits for the tool: under the minute MCP clients wait by default. */
+const MCP_WAIT_SECONDS = 45;
 
 /** How much of a run's answer an MCP client is handed; the whole of it stays in the run. */
 const ANSWER_LIMIT = 20_000;
@@ -44,6 +49,9 @@ export function monidCatalog(options: MonidOptions) {
   const client = monidClient(options.key, options.fetcher);
   return {
     maxUsd: options.maxUsd,
+
+    /** A run's output once Monid has finished it. */
+    result: (runId: string) => monidResult(options, runId),
 
     async find(need: string): Promise<FoundTool[]> {
       const found = await client.find(need.slice(0, 1000), 8);
@@ -77,7 +85,7 @@ export function monidCatalog(options: MonidOptions) {
       }
       const flow = parseFlow({
         name: `Monid: ${tool}`,
-        assistants: [{ id: "monid", name: `Monid ${tool}`, connector: "monid", tool, maxUsd: options.maxUsd }],
+        assistants: [{ id: "monid", name: `Monid ${tool}`, connector: "monid", tool, maxUsd: options.maxUsd, waitSeconds: MCP_WAIT_SECONDS }],
         steps: [{ id: "reply", type: "agent", agent: "monid", ask: "{{input}}" }],
       });
       const view = await engine.start(flow, JSON.stringify(input));
@@ -88,9 +96,23 @@ export function monidCatalog(options: MonidOptions) {
         return { ok: true, runId: view.id, text, costUsd: typeof cost === "number" ? cost : null };
       }
       if (view.state === "waiting") return { ok: true, runId: view.id, text: `It's waiting for the owner's approval in Huddle (run ${view.id}).`, costUsd: null };
+      // A slow tool goes on working at Monid (and is charged when it finishes): say where to pick it up.
+      const pending = /still working after \d+ s \(Monid run ([\w-]+)\)/.exec(view.error ?? "")?.[1];
+      if (pending) {
+        return { ok: true, runId: view.id, pending, text: `Monid is still working on it. Ask monid_result for run ${pending} in a minute or two; it's charged once it finishes.`, costUsd: null };
+      }
       return { ok: false, runId: view.id, text: view.error ?? `The run ended ${view.state}.`, costUsd: null };
     },
   };
 }
 
 export type MonidCatalog = ReturnType<typeof monidCatalog>;
+
+/** A Monid run's output once it's done, for monid_result: still working, failed, or its answer. */
+export async function monidResult(options: MonidOptions, runId: string): Promise<{ readonly done: boolean; readonly ok: boolean; readonly text: string; readonly costUsd: number | null }> {
+  const run = await monidClient(options.key, options.fetcher).result(runId);
+  if (!FINISHED.has(run.status)) return { done: false, ok: true, text: "Monid is still working on it; ask again in a minute.", costUsd: null };
+  if (run.status !== "COMPLETED" || run.providerStatus >= 400) return { done: true, ok: false, text: `The run failed: ${run.error ?? run.status.toLowerCase().replaceAll("_", " ")}.`, costUsd: run.costUsd };
+  const output = JSON.stringify(run.output, null, 2) ?? "null";
+  return { done: true, ok: true, text: output.length > ANSWER_LIMIT ? `${output.slice(0, ANSWER_LIMIT)}\n… (cut here)` : output, costUsd: run.costUsd };
+}

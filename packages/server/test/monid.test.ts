@@ -15,9 +15,12 @@ const JOBS = {
 };
 const SCRAPER = { description: "Scrape LinkedIn job listings.", tags: ["linkedin"], price: { type: "PER_RESULT", amount: { value: 0.001 } }, input: {} };
 
-/** A stand-in Monid: two tools in its catalog, and every run finishing at once. */
-function fakeMonid() {
+const DONE = { runId: "run_m1", status: "COMPLETED", output: { items: [{ title: "Staff nurse", company: "Apollo" }] }, providerResponse: { httpStatus: 200 }, billing: { reportedCost: { value: 2400, unit: "MICRO_DOLLAR" } } };
+
+/** A stand-in Monid: two tools in its catalog, and every run finishing at once, or later when `slow`. */
+function fakeMonid(slow = false) {
   const runs: unknown[] = [];
+  let finished = false;
   const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
     const path = new URL(String(url)).pathname;
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
@@ -31,19 +34,21 @@ function fakeMonid() {
     }
     if (path === "/v1/run") {
       runs.push(body);
-      return Response.json({ runId: "run_m1", status: "COMPLETED", output: { items: [{ title: "Staff nurse", company: "Apollo" }] }, providerResponse: { httpStatus: 200 }, billing: { reportedCost: { value: 2400, unit: "MICRO_DOLLAR" } } });
+      return Response.json(slow ? { runId: "run_m1", status: "RUNNING" } : DONE);
     }
+    if (path === "/v1/runs/run_m1") return Response.json(finished ? DONE : { runId: "run_m1", status: "RUNNING" });
     return Response.json({ error: "no such path" }, { status: 404 });
   }) as typeof fetch;
-  return { fetcher, runs };
+  return { fetcher, runs, finish: () => (finished = true) };
 }
 
-function setup(withMonid = true) {
-  const { fetcher, runs } = fakeMonid();
+function setup(withMonid = true, slow = false) {
+  const { fetcher, runs, finish } = fakeMonid(slow);
   const store = new Store();
-  const engine = new Engine(store, { mock, monid: monid(fetcher, { pollMs: 1 }) });
+  // A slow tool's run gives up at once here, as it would after its wait.
+  const engine = new Engine(store, { mock, monid: monid(fetcher, { pollMs: 1, ...(slow ? { waitMs: 5 } : {}) }) });
   const app = createApp({ store, engine, version: "test", publicUrl: "http://huddle.test", a2aToken: OWNER, ...(withMonid ? { monid: monidCatalog({ key: KEY, maxUsd: 0.1, fetcher }) } : {}) });
-  return { store, app, runs };
+  return { store, app, runs, finish };
 }
 
 type App = ReturnType<typeof setup>["app"];
@@ -66,7 +71,7 @@ describe("Monid tools over MCP", () => {
 
   it("are the owner's, and only when Monid is set up", async () => {
     const names = async (app: App, token: string | null = OWNER) => (await rpc(app, "tools/list", {}, token)).result?.tools?.map((tool) => tool.name) ?? [];
-    assert.deepEqual((await names(setup().app)).filter((name) => name.startsWith("monid_")), ["monid_find", "monid_show", "monid_run"]);
+    assert.deepEqual((await names(setup().app)).filter((name) => name.startsWith("monid_")), ["monid_find", "monid_show", "monid_run", "monid_result"]);
     assert.deepEqual((await names(setup(false).app)).filter((name) => name.startsWith("monid_")), []);
     const listed = (await rpc(setup().app, "tools/list")).result?.tools?.find((tool) => tool.name === "monid_run");
     assert.match(listed?.description ?? "", /up to \$0\.1 a run/);
@@ -109,6 +114,19 @@ describe("Monid tools over MCP", () => {
     const bare = await call(app, "monid_run", { tool: "dataforseo/serp/google-jobs", input: "nurse" });
     assert.equal(bare.result?.isError, true);
     assert.equal(runs.length, 0);
+  });
+
+  it("hand a slow tool's run back to pick up later, instead of failing it", async () => {
+    const { app, finish } = setup(true, true);
+    const started = await call(app, "monid_run", { tool: "dataforseo/serp/google-jobs", input: { body: { keyword: "staff nurse" } } });
+    assert.equal(started.result?.isError, undefined);
+    assert.match(started.result?.content?.[0]?.text ?? "", /still working on it\. Ask monid_result for run run_m1/);
+    const early = await call(app, "monid_result", { run: "run_m1" });
+    assert.match(early.result?.content?.[0]?.text ?? "", /still working on it; ask again/);
+    finish();
+    const done = await call(app, "monid_result", { run: "run_m1" });
+    assert.match(done.result?.content?.[0]?.text ?? "", /Staff nurse[\s\S]*\(Monid charged \$0\.0024\.\)/);
+    assert.equal((await call(app, "monid_result", { run: "../x" })).result?.isError, true);
   });
 
   it("aren't there for anyone but the owner", async () => {

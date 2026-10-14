@@ -120,6 +120,13 @@ function monidTools(maxUsd: number): Json[] {
       },
       annotations: { readOnlyHint: false, openWorldHint: true },
     },
+    {
+      name: "monid_result",
+      title: "Pick up a data tool's result",
+      description: "The output of a monid_run that was still working when it answered: give the Monid run id it named. Free to call.",
+      inputSchema: { type: "object", properties: { run: { type: "string", description: "The Monid run id monid_run answered with." } }, required: ["run"], additionalProperties: false },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
   ];
 }
 
@@ -300,9 +307,17 @@ export function mcpRoutes(options: AppOptions): Hono {
         const id = typeof args.tool === "string" ? args.tool.trim() : "";
         if (!id || !isObject(args.input)) return text("Give the tool (provider/endpoint) and its input as an object, grouped as monid_show says (body, queryParams, pathParams).", true);
         const ran = await catalog.run(engine, id, args.input);
+        if (ran.pending) return text(ran.text);
         const cost = ran.costUsd !== null && ran.costUsd > 0 ? `, Monid charged $${Number(ran.costUsd.toPrecision(3))}` : "";
         const where = ran.runId ? `\n\n(Huddle run ${ran.runId}${cost}.)` : "";
         return text(`${ran.text}${where}`, !ran.ok);
+      }
+      if (name === "monid_result") {
+        const run = typeof args.run === "string" ? args.run.trim() : "";
+        if (!/^[\w-]{6,80}$/.test(run)) return text("Give the Monid run id monid_run answered with, in run.", true);
+        const result = await catalog.result(run);
+        const cost = result.costUsd !== null && result.costUsd > 0 ? `\n\n(Monid charged $${Number(result.costUsd.toPrecision(3))}.)` : "";
+        return text(`${result.text}${cost}`, !result.ok);
       }
     } catch (error) {
       return text(`Monid didn't answer: ${error instanceof Error ? error.message : String(error)}`, true);
