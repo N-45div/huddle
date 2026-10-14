@@ -7,6 +7,7 @@ import { homeassistant } from "./homeassistant.ts";
 import { http } from "./http.ts";
 import { instinct } from "./instinct.ts";
 import { mock } from "./mock.ts";
+import { monid } from "./monid.ts";
 import { ollama } from "./ollama.ts";
 import { openshell } from "./openshell.ts";
 import { pact } from "./pact.ts";
@@ -34,5 +35,6 @@ export function defaultConnectors(): Readonly<Record<string, Connector>> {
     agentzero: agentzero(),
     instinct: instinct(),
     email: email(),
+    monid: monid(),
   };
 }

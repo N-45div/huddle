@@ -25,7 +25,7 @@ export const Assistant = z.object({
   /** What it's good at, in a sentence: what the router's judge reads to pick it. */
   description: z.string().max(500).optional(),
   /** How to reach it: openclaw and hermes are A2A with their usual local address filled in. */
-  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "vllm", "cli", "openshell", "pact", "homeassistant", "agentzero", "instinct", "email"]),
+  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "vllm", "cli", "openshell", "pact", "homeassistant", "agentzero", "instinct", "email", "monid"]),
   /** The slices of shared memory this assistant may read. */
   memory: z.array(z.string().min(1)).default([]),
   /** http: where to POST. a2a: the agent's base address or its card. openai: the API base. sochen: if not https://sochen.dev. instinct: if not http://127.0.0.1:8080. */
@@ -69,6 +69,16 @@ export const Assistant = z.object({
     .max(320)
     .refine((value) => EMAIL_PATTERN.test(value) || EMAIL_PATTERN.test(/^[^<>]*<([^<>]+)>$/.exec(value.trim())?.[1] ?? ""), 'an email address, or "Name <address>"')
     .optional(),
+  /** monid: the tool, as its provider and endpoint in Monid's catalog (find one with `huddle monid find`), like "dataforseo/serp/google-jobs". */
+  tool: z
+    .string()
+    .max(200)
+    .regex(/^[A-Za-z0-9][\w.-]*\/\S+$/, 'a Monid tool, as provider/endpoint, like "dataforseo/serp/google-jobs"')
+    .optional(),
+  /** monid: the tool's input as Monid takes it ({ "body": … } or { "queryParams": … }); "{{ask}}" anywhere in its text becomes the step's request. */
+  input: z.record(z.string(), z.unknown()).optional(),
+  /** monid: the most one run may cost, in US dollars (0.10 when left out). A tool Monid can't price ahead runs only with this set. */
+  maxUsd: z.number().min(0).max(100).optional(),
 });
 export type Assistant = z.infer<typeof Assistant>;
 
@@ -91,6 +101,9 @@ export function assistantProblems(assistant: Assistant): string[] {
   }
   if (assistant.connector === "openshell" && (!assistant.agentId || !assistant.command)) {
     problems.push(`assistant "${assistant.id}" runs in OpenShell: give its sandbox's name (agentId) and the command that runs its agent (command)`);
+  }
+  if (assistant.connector === "monid" && !assistant.tool) {
+    problems.push(`assistant "${assistant.id}" is a Monid tool: say which one (tool), as provider/endpoint; \`huddle monid find\` lists them`);
   }
   if (assistant.connector === "pact" && (!assistant.url || !assistant.audience)) {
     problems.push(`assistant "${assistant.id}" is a business's agent over PACT: give its Agent Card URL (url) and the Provider's audience (audience)`);
