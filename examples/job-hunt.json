@@ -1,0 +1,36 @@
+{
+  "name": "Job hunt",
+  "assistants": [
+    {
+      "id": "jobs",
+      "name": "Google Jobs (Monid)",
+      "connector": "monid",
+      "tool": "dataforseo/serp/google-jobs",
+      "input": { "body": { "keyword": "{{ask}}", "location_name": "India", "language_code": "en", "depth": 20 } },
+      "maxUsd": 0.05,
+      "description": "Open jobs from Google's job listings, through Monid: about $0.0025 a search."
+    },
+    {
+      "id": "picker",
+      "name": "Shortlister",
+      "connector": "openai",
+      "url": "https://api.openai.com",
+      "model": "gpt-5.4-mini",
+      "keyEnv": "OPENAI_API_KEY",
+      "memory": ["career"],
+      "description": "Picks the openings that fit what it knows about my work.",
+      "price": { "input": 0.75, "output": 4.5 },
+      "maxTokens": 900
+    }
+  ],
+  "steps": [
+    { "id": "find", "type": "agent", "agent": "jobs", "ask": "{{input}}" },
+    {
+      "id": "pick",
+      "type": "agent",
+      "agent": "picker",
+      "ask": "I'm looking for: {{input}}\n\nThese jobs are open now (Google's listings, as JSON):\n{{find.text}}\n\nPick up to five that fit what you know about my work. One line each: the role, the company, where, and why it fits. Then a line of JSON: {\"items\": [\"<role> at <company>\"]}."
+    },
+    { "id": "keep", "type": "memory", "slice": "career", "note": "Searched for {{input}}; shortlisted {{pick.data.items}}." }
+  ]
+}
