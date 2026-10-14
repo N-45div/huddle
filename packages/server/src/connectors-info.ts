@@ -135,6 +135,18 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
     fields: [{ key: "keyEnv", label: "Key variable", required: false, placeholder: "SOCHEN_API_KEY" }],
   },
   {
+    id: "monid",
+    name: "Monid tool",
+    description:
+      "One paid data tool from Monid's catalog: Google's job listings, reviews, prices, search results. Find one with huddle monid find, and see what it takes with huddle monid show. Each run is checked against the spend cap first, and tools that scrape forbidden sites, dig up personal contacts or contact people never run. Memory isn't sent.",
+    fields: [
+      { key: "tool", label: "Tool (provider/endpoint)", required: true, placeholder: "dataforseo/serp/google-jobs" },
+      { key: "input", label: "Input template (JSON)", required: false, placeholder: '{ "body": { "keyword": "{{ask}}" } }' },
+      { key: "maxUsd", label: "Most a run may cost, in dollars", required: false, placeholder: "0.10" },
+      { key: "keyEnv", label: "Key variable", required: false, placeholder: "MONID_API_KEY" },
+    ],
+  },
+  {
     id: "email",
     name: "Email (Resend)",
     description:

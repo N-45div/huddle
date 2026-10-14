@@ -184,9 +184,15 @@ interface Draft {
   priceCall: string;
   maxTokens: string;
   reuseMinutes: string;
+  /** monid: the tool as provider/endpoint. */
+  tool: string;
+  /** monid: the input template, as JSON text. */
+  input: string;
+  /** monid: the most a run may cost, in dollars. */
+  maxUsd: string;
 }
 
-type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies" | "scopes" | "to" | "from" | "price" | "maxTokens" | "reuseMinutes", string>>;
+type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies" | "scopes" | "to" | "from" | "price" | "maxTokens" | "reuseMinutes" | "tool" | "input" | "maxUsd", string>>;
 
 /** Connectors whose answers Huddle can cap at a number of tokens. */
 const CAPPED = new Set(["openai", "ollama", "vllm"]);
@@ -249,7 +255,23 @@ function draftOf(assistant: Assistant | undefined): Draft {
     priceCall: assistant?.price?.call ? String(assistant.price.call) : "",
     maxTokens: shown(assistant?.maxTokens),
     reuseMinutes: shown(assistant?.reuseMinutes),
+    tool: assistant?.tool ?? "",
+    input: assistant?.input ? JSON.stringify(assistant.input, null, 2) : "",
+    maxUsd: shown(assistant?.maxUsd),
   };
+}
+
+/** A Monid tool's id: provider/endpoint. */
+const TOOL_PATTERN = /^[A-Za-z0-9][\w.-]*\/\S+$/;
+
+/** An input template's JSON as an object, or null when it isn't one. */
+function templateOf(text: string): Record<string, unknown> | null {
+  try {
+    const value: unknown = JSON.parse(text);
+    return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }
 
 const slug = (text: string) =>
@@ -325,6 +347,10 @@ function AssistantForm({
     if (cap !== null && !(Number.isInteger(cap) && cap >= 1 && cap <= 1_000_000)) found.maxTokens = "A whole number of tokens, like 800.";
     const minutes = amount(draft.reuseMinutes);
     if (minutes !== null && !(Number.isInteger(minutes) && minutes >= 1 && minutes <= 10_080)) found.reuseMinutes = "Whole minutes, from 1 to 10080 (a week).";
+    if (fields.some((field) => field.key === "tool") && draft.tool.trim() && !TOOL_PATTERN.test(draft.tool.trim())) found.tool = 'Give it as provider/endpoint, like dataforseo/serp/google-jobs.';
+    if (fields.some((field) => field.key === "input") && draft.input.trim() && !templateOf(draft.input)) found.input = 'That isn\'t a JSON object. It looks like { "body": { "keyword": "{{ask}}" } }.';
+    const spend = amount(draft.maxUsd);
+    if (spend !== null && !(Number.isFinite(spend) && spend >= 0 && spend <= 100)) found.maxUsd = "Dollars, from 0 to 100, like 0.10.";
     return found;
   };
 
@@ -340,7 +366,7 @@ function AssistantForm({
     if (name) assistant.name = name;
     const description = draft.description.trim();
     if (description) assistant.description = description.slice(0, 500);
-    for (const key of ["url", "keyEnv", "model", "agentId", "audience", "from"] as const) {
+    for (const key of ["url", "keyEnv", "model", "agentId", "audience", "from", "tool"] as const) {
       const value = shown.has(key) ? draft[key].trim() : (kept?.[key] ?? "");
       if (value) assistant[key] = value;
     }
@@ -364,6 +390,10 @@ function AssistantForm({
     if (cap !== null && CAPPED.has(draft.connector)) assistant.maxTokens = cap;
     const minutes = amount(draft.reuseMinutes);
     if (minutes !== null) assistant.reuseMinutes = minutes;
+    const template = shown.has("input") ? (draft.input.trim() ? templateOf(draft.input) : null) : (kept?.input ?? null);
+    if (template) assistant.input = template;
+    const spend = shown.has("maxUsd") ? amount(draft.maxUsd) : (kept?.maxUsd ?? null);
+    if (spend !== null) assistant.maxUsd = spend;
     onSave(assistant);
   };
 
@@ -563,6 +593,32 @@ function ConnectorFieldInput({
 
   if (field.suggest === "models") return <ModelField field={field} draft={draft} error={error} onChange={onChange} />;
 
+  if (field.key === "input") {
+    return (
+      <div className="field">
+        <label htmlFor={id}>{label}</label>
+        <textarea
+          id={id}
+          className="mono"
+          rows={5}
+          value={draft.input}
+          placeholder={field.placeholder}
+          spellCheck={false}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={hintId}
+          onChange={(event) => onChange("input", event.target.value)}
+        />
+        {error ? (
+          <p className="error-text" id={hintId}>
+            {error}
+          </p>
+        ) : (
+          <Hint id={hintId}>The tool's input as Monid takes it; "{"{{ask}}"}" anywhere becomes the step's request. The command huddle monid show prints one to start from.</Hint>
+        )}
+      </div>
+    );
+  }
+
   const key = field.key;
   if (field.choices) {
     const picked = field.choices.some((choice) => choice.value === draft[key]) ? draft[key] : "";
@@ -592,7 +648,7 @@ function ConnectorFieldInput({
       <label htmlFor={id}>{label}</label>
       <input
         id={id}
-        className={key === "keyEnv" || key === "command" || key === "scopes" ? "mono" : undefined}
+        className={key === "keyEnv" || key === "command" || key === "scopes" || key === "tool" ? "mono" : undefined}
         value={draft[key]}
         placeholder={field.placeholder}
         autoComplete="off"
