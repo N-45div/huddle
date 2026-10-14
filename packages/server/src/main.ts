@@ -40,7 +40,7 @@ import { webApp } from "./static.ts";
  *   RESEND_WEBHOOK_SECRET  the signing secret of Resend's inbound webhook, pointed at /hooks/email
  *   HUDDLE_OWNER_EMAILS    your addresses, comma-separated: mail from them counts as you
  *   MONID_API_KEY      Monid's paid data tools (monid.ai): the monid connector's key, the canvas's tool
- *                      search, and monid_find, monid_show and monid_run for your MCP clients
+ *                      search, and monid_find, monid_show, monid_run and monid_result for your MCP clients
  *   HUDDLE_MONID_MAX_USD  the most one of those MCP runs may cost, in US dollars (default 0.10)
  *   HUDDLE_BUDGET      a cap on what hand-offs to priced assistants may spend, in US dollars: "20/month"
  *                      or "5/day"; past 80% the router's "auto" goes for the cheapest that fits
@@ -167,7 +167,7 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   if (!built) console.log(`  The canvas isn't built (no ${join(web, "index.html")}): run npm run build.`);
   if (!llmUrl || !llmModel) console.log('  "Describe it" is off: set HUDDLE_LLM_URL and HUDDLE_LLM_MODEL to turn it on.');
   console.log(`  Answers as views: ${presenter.name === "rules" ? "tables only (set TYPESAFE_API_KEY or HUDDLE_LLM_* to choose views)" : `chosen by ${presenter.name}`}${writer ? `, charts, flowcharts, calculators and comparisons filled in by ${writer.model}` : ""}`);
-  if (monidKey) console.log(`  Monid: tool search in the canvas, and monid_find, monid_show and monid_run on /mcp (up to $${monidMaxUsd} a run)`);
+  if (monidKey) console.log(`  Monid: tool search in the canvas, and monid_find, monid_show, monid_run and monid_result on /mcp (up to $${monidMaxUsd} a run)`);
   if (guard) console.log(`  ${guard.name} checks every hand-off first (HUDDLE_GUARD=${env("HUDDLE_GUARD")}): a blocked one fails its run, a held one waits for your yes`);
   else if (env("ARMORIQ_API_KEY")) console.log("  ARMORIQ_API_KEY is set but no guard is on: set HUDDLE_GUARD=armoriq to have ArmorIQ check every hand-off.");
   const finds = [memory.embedder ? `words and meaning (${memory.embedder.model})` : "words", ...(memory.reranker ? [`reranked by ${memory.reranker.model}`] : [])];
