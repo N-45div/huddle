@@ -16,6 +16,14 @@ describe("the mock connector", () => {
     assert.deepEqual(await mock.send({ assistant, ask: "Read this INVOICE", memory: [] }), { text: '{"amount": 5}', data: { amount: 5 } });
     assert.deepEqual(await mock.send({ assistant, ask: "something else", memory: [] }), { text: "fallback" });
   });
+
+  it("finds data on an answer's last line when the words come first", async () => {
+    const text = 'Two fit:\n- Backend Engineer at IDFC\n- SRE at Zerodha\n\n{"items": ["Backend Engineer at IDFC", "SRE at Zerodha"]}';
+    const assistant = Assistant.parse({ id: "m", connector: "mock", replies: { "*": text } });
+    assert.deepEqual((await mock.send({ assistant, ask: "pick", memory: [] })).data, { items: ["Backend Engineer at IDFC", "SRE at Zerodha"] });
+    const plain = Assistant.parse({ id: "p", connector: "mock", replies: { "*": "No JSON here.\n{not json" } });
+    assert.equal((await mock.send({ assistant: plain, ask: "pick", memory: [] })).data, undefined);
+  });
 });
 
 describe("the http connector", () => {

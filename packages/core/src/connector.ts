@@ -26,7 +26,7 @@ export interface Connector {
   send(request: ConnectorRequest): Promise<Reply>;
 }
 
-/** Structured data inside an answer: the whole answer if it's JSON, else the first ```json block. */
+/** Structured data inside an answer: the whole answer if it's JSON, else the first ```json block, else a last line that's a JSON object. */
 export function dataIn(text: string): unknown {
   const tryParse = (raw: string): unknown => {
     try {
@@ -39,7 +39,9 @@ export function dataIn(text: string): unknown {
   const whole = tryParse(text.trim());
   if (whole !== undefined) return whole;
   const fenced = /```(?:json)?\s*\n([\s\S]*?)\n```/i.exec(text);
-  return fenced?.[1] ? tryParse(fenced[1]) : undefined;
+  if (fenced?.[1]) return tryParse(fenced[1]);
+  const last = text.trim().split("\n").at(-1)?.trim() ?? "";
+  return last.startsWith("{") ? tryParse(last) : undefined;
 }
 
 /** The key an assistant names in keyEnv, read from the environment; an error says which variable is missing. */
