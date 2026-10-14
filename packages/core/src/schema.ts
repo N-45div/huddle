@@ -79,6 +79,8 @@ export const Assistant = z.object({
   input: z.record(z.string(), z.unknown()).optional(),
   /** monid: the most one run may cost, in US dollars (0.10 when left out). A tool Monid can't price ahead runs only with this set. */
   maxUsd: z.number().min(0).max(100).optional(),
+  /** monid: how long a run waits for a slow tool before giving up on it, in seconds (120 when left out). */
+  waitSeconds: z.number().int().min(5).max(600).optional(),
 });
 export type Assistant = z.infer<typeof Assistant>;
 

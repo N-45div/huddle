@@ -23,6 +23,7 @@ export { DEFAULT_MAX_USD, monid, monidInput } from "./connectors/monid.ts";
 export {
   blockedReason,
   estimateUsd,
+  FINISHED,
   inputFields,
   MONID_API,
   type MonidClient,

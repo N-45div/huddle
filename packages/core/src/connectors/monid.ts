@@ -67,9 +67,9 @@ export function monid(fetcher: typeof fetch = globalThis.fetch, timing: { readon
         if (estimate !== null && estimate > cap) {
           throw new Error(`${id} may cost about $${estimate.toFixed(4)} (${priceText(details.price)}), over this assistant's $${cap} a run. Raise its spend cap (maxUsd) to allow it.`);
         }
-        const waitMs = timing.waitMs ?? 120_000;
+        const waitMs = timing.waitMs ?? (assistant.waitSeconds ?? 120) * 1000;
         const run = await client.run(tool.provider, tool.endpoint, input, { waitMs, pollMs: timing.pollMs, signal });
-        if (run.status === "RUNNING") throw new Error(`${id} is still working after ${Math.round(waitMs / 1000)} s (Monid run ${run.runId}).`);
+        if (run.status === "RUNNING") throw new Error(`${id} is still working after ${Math.round(waitMs / 1000)} s (Monid run ${run.runId}); a slower tool needs a longer wait (waitSeconds).`);
         if (run.status !== "COMPLETED" || run.providerStatus >= 400) throw new Error(`${id} failed: ${run.error ?? run.status.toLowerCase().replaceAll("_", " ")}.`);
         const output = JSON.stringify(run.output, null, 2) ?? "null";
         const cost = run.costUsd > 0 ? ` (Monid charged $${Number(run.costUsd.toPrecision(3))})` : "";

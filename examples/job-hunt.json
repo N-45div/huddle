@@ -8,6 +8,7 @@
       "tool": "dataforseo/serp/google-jobs",
       "input": { "body": { "keyword": "{{ask}}", "location_name": "India", "language_code": "en", "depth": 20 } },
       "maxUsd": 0.05,
+      "waitSeconds": 240,
       "description": "Open jobs from Google's job listings, through Monid: about $0.0025 a search."
     },
     {

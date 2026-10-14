@@ -192,6 +192,8 @@ export interface MonidClient {
   find(need: string, limit?: number): Promise<MonidFound[]>;
   /** One tool's details, or null when it isn't in the catalog. */
   details(provider: string, endpoint: string): Promise<MonidDetails | null>;
+  /** A run's state now: its output once it has finished (free to ask). */
+  result(runId: string): Promise<MonidRun>;
   /** Runs a tool, polling a slow one until it finishes or `waitMs` passes (it's then still RUNNING). */
   run(provider: string, endpoint: string, input: Readonly<Record<string, unknown>>, options?: { readonly waitMs?: number; readonly pollMs?: number; readonly signal?: AbortSignal }): Promise<MonidRun>;
 }
@@ -222,6 +224,7 @@ export function monidClient(key: string, fetcher: typeof fetch = globalThis.fetc
       const results = ((body as { results?: (Partial<MonidFound> & { summary?: string })[] } | null)?.results ?? []).filter((entry) => entry.provider && entry.endpoint);
       return results.map((entry) => ({ ...toolOf(entry), score: typeof entry.score === "number" ? entry.score : 0 }));
     },
+    result: (runId) => status(runId),
     async details(provider, endpoint) {
       const { status: code, body } = await call("/v1/inspect", { method: "POST", body: JSON.stringify({ provider, endpoint }) });
       if (code === 404) return null;
