@@ -19,6 +19,25 @@ export { type GrantStore, type SignIn, SignIns, storedGrants } from "./pact/sign
 export { newKey, PactIdentity, type PrivateJwk, type PublicJwk, thumbprint } from "./pact/identity.ts";
 export { DEFAULT_CERT_DIR, type ExecResult, OpenShell, type OpenShellOptions, type SandboxRequest } from "./openshell/client.ts";
 export { sochen } from "./connectors/sochen.ts";
+export { DEFAULT_MAX_USD, monid, monidInput } from "./connectors/monid.ts";
+export {
+  blockedReason,
+  estimateUsd,
+  inputFields,
+  MONID_API,
+  type MonidClient,
+  monidClient,
+  type MonidDetails,
+  type MonidField,
+  type MonidFound,
+  type MonidPrice,
+  type MonidRun,
+  type MonidTool,
+  parseTool,
+  priceText,
+  starterInput,
+  toolId,
+} from "./monid.ts";
 export { Engine, type EngineOptions, HeldElsewhere, MAX_STEPS, OverBudget, type RunView, type StartedBy } from "./engine.ts";
 export { type AgentStep, type Guard, type HandOff, type Outcome, type Verdict } from "./guard.ts";
 export { GUARDS, guardFromEnv } from "./guards/index.ts";

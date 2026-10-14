@@ -8,6 +8,7 @@ import { routerRoutes } from "./router.ts";
 import { bearerOf, same } from "./auth.ts";
 import type { ApiError, FlowView, Info, PresentedView, RouterUsage, RouterView, RunDetail, RunSummary, SpendView, WaitingApproval } from "./api-types.ts";
 import { CONNECTORS } from "./connectors-info.ts";
+import type { MonidCatalog } from "./monid.ts";
 import { noSandboxes, type SandboxInbox, Stale } from "./sandbox-requests.ts";
 
 /**
@@ -50,6 +51,8 @@ export interface AppOptions {
   readonly email?: EmailOptions;
   /** Showing answers as views: who chooses, and a model to fill charts and the like in (default: rules, no model). */
   readonly present?: { readonly presenter: Presenter; readonly writer: ViewWriter | null };
+  /** Monid's catalog of paid data tools, when MONID_API_KEY is set: the canvas's tool search and the owner's MCP tools. */
+  readonly monid?: MonidCatalog;
 }
 
 /** A flow from a request body, or the problems with it, one line each. */
@@ -121,6 +124,29 @@ export function createApp(options: AppOptions): Hono {
     }
   });
   app.get("/api/connectors", (c) => c.json(CONNECTORS));
+
+  // Monid's catalog, for setting up a Monid tool: finding one, and what it takes --------------------
+  const noMonid = "Set MONID_API_KEY where Huddle runs to search Monid's tools here.";
+  app.get("/api/monid/find", async (c) => {
+    if (!options.monid) return bad(c, noMonid, 501);
+    const need = (c.req.query("q") ?? "").trim();
+    if (need.length < 2) return bad(c, "Say what the tool should do.");
+    try {
+      return c.json(await options.monid.find(need));
+    } catch (error) {
+      return bad(c, error instanceof Error ? error.message : String(error), 502);
+    }
+  });
+  app.get("/api/monid/show", async (c) => {
+    if (!options.monid) return bad(c, noMonid, 501);
+    const tool = (c.req.query("tool") ?? "").trim();
+    try {
+      const details = await options.monid.show(tool);
+      return details ? c.json(details) : bad(c, `Monid has no tool called "${tool}".`, 404);
+    } catch (error) {
+      return bad(c, error instanceof Error ? error.message : String(error), 502);
+    }
+  });
 
   // Your assistants, set up once: what the router reaches by id ---------------------------------------
   app.get("/api/assistants", (c) => c.json(store.assistants()));

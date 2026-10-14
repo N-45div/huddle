@@ -3,6 +3,7 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { AppOptions } from "./app.ts";
 import { answerOf, callerKey, callerOf, mayRead, refusal, settled, startFor } from "./callers.ts";
+import type { MonidCatalog } from "./monid.ts";
 
 /**
  * Huddle as an MCP server (https://modelcontextprotocol.io), so Claude Code, Claude Desktop, Cursor or
@@ -12,7 +13,8 @@ import { answerOf, callerKey, callerOf, mayRead, refusal, settled, startFor } fr
  * open with initialize (2025-11-25, 2025-06-18), which most clients still send.
  *
  * The tools: one per flow this caller may start (flow_ and its name), get_run to follow a run, and for
- * you only, ask_assistant and list_assistants through the router. Callers are told apart as on A2A
+ * you only, ask_assistant and list_assistants through the router, and with MONID_API_KEY set,
+ * monid_find, monid_show and monid_run for Monid's paid data tools (each run checked and kept in Runs). Callers are told apart as on A2A
  * (your token, a contact's own token, or a stranger), and each flow's callers rule applies.
  */
 
@@ -86,6 +88,41 @@ function headerValue(value: string | undefined): string | undefined {
 
 const text = (said: string, isError = false) => ({ content: [{ type: "text", text: said }], ...(isError ? { isError: true } : {}) });
 
+/** The owner's Monid tools: find a paid data tool, read what it takes, run it within the spend cap. */
+function monidTools(maxUsd: number): Json[] {
+  return [
+    {
+      name: "monid_find",
+      title: "Find a data tool",
+      description: "Searches Monid's catalog of paid data tools (job listings, reviews, prices, search results, SEO numbers) for a need described in words. Lists each tool's id and price; free to call.",
+      inputSchema: { type: "object", properties: { need: { type: "string", description: 'What the tool should do, like "Google job listings by keyword and location".' } }, required: ["need"], additionalProperties: false },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    {
+      name: "monid_show",
+      title: "Read a data tool",
+      description: "What one of Monid's tools does, costs and takes: its input fields, and an input to start from for monid_run. Free to call.",
+      inputSchema: { type: "object", properties: { tool: { type: "string", description: 'The tool as provider/endpoint, like "dataforseo/serp/google-jobs".' } }, required: ["tool"], additionalProperties: false },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    {
+      name: "monid_run",
+      title: "Run a data tool",
+      description: `Runs one of Monid's paid tools with an input and answers with its output. Huddle checks it first: it may cost up to $${maxUsd} a run, Huddle's budget must have room, and tools that scrape sites whose terms forbid it, find personal contact details or contact people never run. The run and what it cost show in Huddle's Runs.`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          tool: { type: "string", description: "The tool as provider/endpoint." },
+          input: { type: "object", description: 'Its input, grouped as monid_show says, like { "body": { "keyword": "nurse", "location_name": "India", "language_code": "en" } }.' },
+        },
+        required: ["tool", "input"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, openWorldHint: true },
+    },
+  ];
+}
+
 export function mcpRoutes(options: AppOptions): Hono {
   const { store, engine, router } = options;
   const token = options.a2aToken ?? options.token;
@@ -135,7 +172,8 @@ export function mcpRoutes(options: AppOptions): Hono {
       inputSchema: { type: "object", properties: { run_id: { type: "string", description: "The run's id, like run_1a2b3c4d5e6f." } }, required: ["run_id"], additionalProperties: false },
       annotations: { readOnlyHint: true, openWorldHint: false },
     };
-    if (caller.tier !== "owner" || !router) return [...flows, getRun];
+    const monid = caller.tier === "owner" && options.monid ? monidTools(options.monid.maxUsd) : [];
+    if (caller.tier !== "owner" || !router) return [...flows, getRun, ...monid];
     const yours = store.assistants();
     const judged = router.judge ? `judged by ${router.judge.name}` : "no judge set up, so the list's order";
     const listed = yours.map((assistant) => `${assistant.id}${assistant.description ? ` (${assistant.description})` : ""}`).join("; ");
@@ -160,7 +198,7 @@ export function mcpRoutes(options: AppOptions): Hono {
       inputSchema: { type: "object", additionalProperties: false },
       annotations: { readOnlyHint: true, openWorldHint: false },
     };
-    return [...flows, getRun, ask, list];
+    return [...flows, getRun, ask, list, ...monid];
   };
 
   /** A run as a tool's answer: what it answered once done; else where it stands, with its id for get_run. */
@@ -226,6 +264,48 @@ export function mcpRoutes(options: AppOptions): Hono {
       if (yours.length === 0) return text("There are no assistants yet: add them on Huddle's Assistants page.");
       const lines = yours.map((assistant) => `- ${assistant.id}: ${assistant.name ?? assistant.id}, through ${assistant.connector}${assistant.description ? `. ${assistant.description}` : ""}`);
       return text([`- ${AUTO}: Huddle picks the one that fits (${router.judge ? `judged by ${router.judge.name}` : "no judge set up, so the list's order"})`, ...lines].join("\n"));
+    }
+    if (caller.tier === "owner" && options.monid && name.startsWith("monid_")) return monidCall(options.monid, name, args);
+    throw new RpcError(INVALID_PARAMS, `There's no tool "${name}".`);
+  }
+
+  async function monidCall(catalog: MonidCatalog, name: string, args: Json) {
+    try {
+      if (name === "monid_find") {
+        const need = typeof args.need === "string" ? args.need.trim() : "";
+        if (need.length < 2) return text("Say in need what the tool should do.", true);
+        const found = await catalog.find(need);
+        if (!found.length) return text("Nothing in Monid's catalog fits that; try other words.");
+        const lines = found.map((tool) => `- ${tool.tool} (${tool.price}): ${tool.description}${tool.blocked ? ` Huddle won't run it: ${tool.blocked}.` : ""}`);
+        return text(`${lines.join("\n")}\n\nRead what one takes with monid_show, then run it with monid_run.`);
+      }
+      if (name === "monid_show") {
+        const id = typeof args.tool === "string" ? args.tool.trim() : "";
+        const details = id ? await catalog.show(id) : null;
+        if (!details) return text(`Monid has no tool called "${id}". Find one with monid_find.`, true);
+        const fields = details.fields.map((field) => `- ${field.group}.${field.name} (${field.required ? "required, " : ""}${field.type})${field.description ? `: ${field.description}` : ""}`);
+        return text(
+          [
+            `${details.tool} (${details.price}): ${details.description}`,
+            ...(details.blocked ? [`Huddle won't run it: ${details.blocked}.`] : []),
+            "",
+            "It takes:",
+            ...fields,
+            "",
+            `An input for monid_run to start from (put real values where it says {{ask}} or <…>): ${JSON.stringify(details.starter)}`,
+          ].join("\n"),
+        );
+      }
+      if (name === "monid_run") {
+        const id = typeof args.tool === "string" ? args.tool.trim() : "";
+        if (!id || !isObject(args.input)) return text("Give the tool (provider/endpoint) and its input as an object, grouped as monid_show says (body, queryParams, pathParams).", true);
+        const ran = await catalog.run(engine, id, args.input);
+        const cost = ran.costUsd !== null && ran.costUsd > 0 ? `, Monid charged $${Number(ran.costUsd.toPrecision(3))}` : "";
+        const where = ran.runId ? `\n\n(Huddle run ${ran.runId}${cost}.)` : "";
+        return text(`${ran.text}${where}`, !ran.ok);
+      }
+    } catch (error) {
+      return text(`Monid didn't answer: ${error instanceof Error ? error.message : String(error)}`, true);
     }
     throw new RpcError(INVALID_PARAMS, `There's no tool "${name}".`);
   }

@@ -2,9 +2,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { type Budget, defaultConnectors, dollars, embedder, Engine, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, reranker, Router, rulesPresenter, type Guard, guardFromEnv, SignIns, Store, storedGrants, viewWriter } from "@huddle/core";
+import { type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, reranker, Router, rulesPresenter, type Guard, guardFromEnv, SignIns, Store, storedGrants, viewWriter } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
+import { monidCatalog } from "./monid.ts";
 import { SandboxWatcher } from "./sandbox-requests.ts";
 import { Scheduler } from "./scheduler.ts";
 import { webApp } from "./static.ts";
@@ -38,6 +39,9 @@ import { webApp } from "./static.ts";
  *                      reading needs a full-access key
  *   RESEND_WEBHOOK_SECRET  the signing secret of Resend's inbound webhook, pointed at /hooks/email
  *   HUDDLE_OWNER_EMAILS    your addresses, comma-separated: mail from them counts as you
+ *   MONID_API_KEY      Monid's paid data tools (monid.ai): the monid connector's key, the canvas's tool
+ *                      search, and monid_find, monid_show and monid_run for your MCP clients
+ *   HUDDLE_MONID_MAX_USD  the most one of those MCP runs may cost, in US dollars (default 0.10)
  *   HUDDLE_BUDGET      a cap on what hand-offs to priced assistants may spend, in US dollars: "20/month"
  *                      or "5/day"; past 80% the router's "auto" goes for the cheapest that fits
  *   HUDDLE_GUARD       something to check every hand-off first, if you want one (none by default):
@@ -125,6 +129,11 @@ else if (llmUrl && llmModel) judge = modelJudge({ url: llmUrl, model: llmModel, 
 const presenter = typesafeKey ? jevPresenter({ key: typesafeKey, model: env("HUDDLE_JEV_MODEL") }) : llmUrl && llmModel ? modelPresenter({ url: llmUrl, model: llmModel, key: env("HUDDLE_LLM_KEY") }) : rulesPresenter;
 const writer = llmUrl && llmModel ? viewWriter({ url: llmUrl, model: llmModel, key: env("HUDDLE_LLM_KEY") }) : null;
 
+// Monid's catalog: the canvas's tool search and the owner's MCP tools, within a cap per run.
+const monidKey = env("MONID_API_KEY");
+const monidCap = Number(env("HUDDLE_MONID_MAX_USD") ?? DEFAULT_MAX_USD);
+const monidMaxUsd = Number.isFinite(monidCap) && monidCap >= 0 && monidCap <= 100 ? monidCap : DEFAULT_MAX_USD;
+
 const app = createApp({
   store,
   engine,
@@ -140,6 +149,7 @@ const app = createApp({
   routerKey: env("HUDDLE_ROUTER_KEY"),
   present: { presenter, writer },
   email: { webhookSecret: env("RESEND_WEBHOOK_SECRET"), apiKey: env("RESEND_API_KEY"), ownerEmails: (env("HUDDLE_OWNER_EMAILS") ?? "").split(",").filter((address) => address.trim()) },
+  monid: monidKey ? monidCatalog({ key: monidKey, maxUsd: monidMaxUsd }) : undefined,
 });
 const web = env("HUDDLE_WEB") ?? fileURLToPath(new URL("../../web/dist", import.meta.url));
 const built = existsSync(join(web, "index.html"));
@@ -157,6 +167,7 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   if (!built) console.log(`  The canvas isn't built (no ${join(web, "index.html")}): run npm run build.`);
   if (!llmUrl || !llmModel) console.log('  "Describe it" is off: set HUDDLE_LLM_URL and HUDDLE_LLM_MODEL to turn it on.');
   console.log(`  Answers as views: ${presenter.name === "rules" ? "tables only (set TYPESAFE_API_KEY or HUDDLE_LLM_* to choose views)" : `chosen by ${presenter.name}`}${writer ? `, charts, flowcharts, calculators and comparisons filled in by ${writer.model}` : ""}`);
+  if (monidKey) console.log(`  Monid: tool search in the canvas, and monid_find, monid_show and monid_run on /mcp (up to $${monidMaxUsd} a run)`);
   if (guard) console.log(`  ${guard.name} checks every hand-off first (HUDDLE_GUARD=${env("HUDDLE_GUARD")}): a blocked one fails its run, a held one waits for your yes`);
   else if (env("ARMORIQ_API_KEY")) console.log("  ARMORIQ_API_KEY is set but no guard is on: set HUDDLE_GUARD=armoriq to have ArmorIQ check every hand-off.");
   const finds = [memory.embedder ? `words and meaning (${memory.embedder.model})` : "words", ...(memory.reranker ? [`reranked by ${memory.reranker.model}`] : [])];
