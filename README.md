@@ -237,8 +237,8 @@ chat path isn't `/v1/chat/completions`, give the whole chat URL instead:
 **Sochen.** Set `SOCHEN_API_KEY` (a Pro plan's `sk_sochen_…` key) and add `{ "id": "sochen", "connector": "sochen" }`.
 
 **Monid.** [Monid](https://monid.ai) puts a catalog of paid data tools behind one key and one balance:
-Google's job listings, reviews, prices, search results. Set `MONID_API_KEY`, find a tool, and see what it
-takes:
+Google's job listings, reviews, prices, search results. Set `MONID_API_KEY`, then find a tool in the canvas
+(add an assistant, pick Monid tool, and describe what it should do), or from the command line:
 
 ```sh
 npm run huddle -- monid find "job listings by keyword and location"
@@ -255,8 +255,15 @@ input, either as JSON or through the `input` template wherever it says `{{ask}}`
 Before each run Huddle checks Monid's price against `maxUsd` (10 cents when left out; a tool Monid can't
 price ahead runs only with it set), and it never runs tools that scrape sites whose terms forbid it, find
 people's personal contact details, or contact people. What Monid charged goes in the run's spend, and
-memory isn't sent. [examples/job-hunt.json](examples/job-hunt.json) searches Google's job listings and has a
-model shortlist the ones that fit you.
+memory isn't sent. A slow tool gets `waitSeconds` (120 when left out; Google Jobs can take three minutes).
+[examples/job-hunt.json](examples/job-hunt.json) searches Google's job listings and has a model shortlist the
+ones that fit you.
+
+**Monid for your other assistants.** With `MONID_API_KEY` set, Huddle's MCP server (`/mcp`) also gives you
+`monid_find`, `monid_show`, `monid_run` and `monid_result`, so Claude Code, Hermes or anything that speaks MCP can
+find and run Monid's tools on your one key. Each run goes through Huddle like any hand-off: the same blocklist,
+a cap per run (`HUDDLE_MONID_MAX_USD`, 10 cents by default), your budget and guard if you set them, and a
+line in Runs with what it cost. A tool still working after 45 seconds hands back its run, for `monid_result`.
 
 **Home Assistant.** Make a long-lived access token (your profile → Security), set it as `HASS_TOKEN`
 where Huddle runs, and add Assist. `agentId` picks one of its conversation agents. Memory isn't sent to
