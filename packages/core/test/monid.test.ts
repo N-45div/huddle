@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 import { monid, monidInput } from "../src/connectors/monid.ts";
-import { blockedReason, estimateUsd, monidClient, parseTool, priceText, toolId } from "../src/monid.ts";
+import { blockedReason, estimateUsd, inputFields, monidClient, parseTool, priceText, starterInput, toolId } from "../src/monid.ts";
 import { Assistant, assistantProblems } from "../src/schema.ts";
 
 const KEY = "mk_test_secret_key";
@@ -150,6 +150,27 @@ describe("Monid's catalog", () => {
     assert.equal(toolId(found[0]!), "dataforseo/serp/google-jobs");
     assert.equal(found[0]?.score, 0.82);
     assert.equal((calls[0]?.body as { query: string }).query, "job listings in India");
+  });
+
+  it("lists a tool's fields from its schema, and starts an input template with the request in the first required text", () => {
+    const input = {
+      body: {
+        type: "object",
+        properties: {
+          keyword: { type: "string", description: "Search query, up to 700 characters." },
+          location_code: { type: "integer", description: "Numeric location code, e.g. 2840 (United States)." },
+          depth: { type: "integer", description: "Results to collect (1-200, default 10)." },
+        },
+        required: ["keyword", "location_code"],
+      },
+      bodyType: "json",
+    };
+    assert.deepEqual(
+      inputFields(input).map((field) => `${field.group}.${field.name}:${field.type}${field.required ? "*" : ""}`),
+      ["body.keyword:string*", "body.location_code:integer*", "body.depth:integer"],
+    );
+    assert.deepEqual(starterInput(input), { body: { keyword: "{{ask}}", location_code: "<location_code: integer>" } });
+    assert.deepEqual(starterInput({}), {});
   });
 
   it("reads ids, prices and costs the way people write them", () => {

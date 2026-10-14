@@ -105,6 +105,56 @@ export function priceText(price: MonidPrice): string {
   return `from ${amount}, set per run`;
 }
 
+/** One field a tool takes, from its input's JSON Schema. */
+export interface MonidField {
+  /** Where it goes: body, queryParams or pathParams. */
+  readonly group: string;
+  readonly name: string;
+  readonly type: string;
+  readonly required: boolean;
+  readonly description: string;
+}
+
+const GROUPS = ["pathParams", "queryParams", "body"] as const;
+
+/** The fields a tool takes, group by group, required ones first. */
+export function inputFields(input: unknown): MonidField[] {
+  const fields: MonidField[] = [];
+  for (const group of GROUPS) {
+    const schema = (input as Record<string, unknown> | null)?.[group] as { properties?: Record<string, { type?: unknown; description?: unknown }>; required?: unknown } | undefined;
+    if (!schema?.properties) continue;
+    const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
+    const entries = Object.entries(schema.properties).map(([name, property]) => ({
+      group,
+      name,
+      type: Array.isArray(property.type) ? property.type.join("|") : String(property.type ?? "any"),
+      required: required.has(name),
+      description: String(property.description ?? "").slice(0, 200),
+    }));
+    fields.push(...entries.filter((field) => field.required), ...entries.filter((field) => !field.required));
+  }
+  return fields;
+}
+
+/**
+ * A starting input template: each required field, the first text one taking the step's request
+ * ("{{ask}}") and the others a note of what to put there.
+ */
+export function starterInput(input: unknown): Record<string, Record<string, unknown>> {
+  const template: Record<string, Record<string, unknown>> = {};
+  let asked = false;
+  for (const field of inputFields(input).filter((candidate) => candidate.required)) {
+    const group = (template[field.group] ??= {});
+    if (!asked && field.type === "string") {
+      group[field.name] = "{{ask}}";
+      asked = true;
+    } else {
+      group[field.name] = `<${field.name}: ${field.type}>`;
+    }
+  }
+  return template;
+}
+
 /** Monid reports costs in micro-dollars (unit MICRO_DOLLAR), or in dollars when no unit is given. */
 const dollars = (value: number, unit?: string): number => (unit === "MICRO_DOLLAR" ? value / 1_000_000 : value);
 

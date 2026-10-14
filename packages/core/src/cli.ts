@@ -3,6 +3,7 @@ import { defaultConnectors } from "./connectors/index.ts";
 import { Engine, type RunView } from "./engine.ts";
 import { registerWithArmorIQ } from "./guards/armoriq.ts";
 import { guardFromEnv } from "./guards/index.ts";
+import { blockedReason, inputFields, monidClient, parseTool, priceText, starterInput, toolId } from "./monid.ts";
 import { parseFlow } from "./schema.ts";
 import { Store } from "./store.ts";
 
@@ -20,6 +21,9 @@ import { Store } from "./store.ts";
  *                                  tell ArmorIQ about Huddle: its agent, and a policy allowing every connector
  *                                  but the ones you deny, the ones you hold waiting for your yes in ArmorIQ
  *                                  (ARMORIQ_API_KEY; HUDDLE_ARMORIQ_AGENT, default huddle)
+ *   huddle monid find <what you need…>   tools in Monid's catalog for a need, with their prices
+ *   huddle monid show <provider/endpoint> a tool's fields, and an assistant to paste into a flow
+ *                                  (MONID_API_KEY)
  */
 
 
@@ -119,8 +123,44 @@ async function main(): Promise<void> {
       else console.log("  To have a hand-off wait for your yes in ArmorIQ, add --hold <connector> (say --hold email).");
       return;
     }
+    case "monid": {
+      const usage = 'huddle monid find "<what you need>" | show <provider/endpoint>';
+      const key = process.env.MONID_API_KEY?.trim();
+      if (!key) throw new Error("Set MONID_API_KEY first (your API key from monid.ai).");
+      const client = monidClient(key);
+      if (args[0] === "find" && args.length > 1) {
+        const found = await client.find(args.slice(1).join(" "), 8);
+        if (!found.length) console.log("Nothing in Monid's catalog fits that; try other words.");
+        for (const tool of found) {
+          const blocked = blockedReason(tool);
+          console.log(`${toolId(tool)}  ${priceText(tool.price)}${blocked ? `  (Huddle won't run it: ${blocked})` : ""}`);
+          console.log(`  ${tool.description}`);
+        }
+        if (found.length) console.log("\nSee what one takes:  huddle monid show <provider/endpoint>");
+        return;
+      }
+      if (args[0] === "show" && args[1]) {
+        const tool = parseTool(args[1]);
+        if (!tool) throw new Error(`"${args[1]}" isn't a Monid tool; give it as provider/endpoint. ${usage}`);
+        const details = await client.details(tool.provider, tool.endpoint);
+        if (!details) throw new Error(`Monid has no tool called ${args[1]}. Find one with: huddle monid find "<what you need>"`);
+        const blocked = blockedReason(details);
+        console.log(`${toolId(details)}  ${priceText(details.price)}`);
+        console.log(`  ${details.description}`);
+        if (blocked) console.log(`  Huddle won't run it: ${blocked}.`);
+        console.log("\nIt takes:");
+        for (const field of inputFields(details.input)) {
+          console.log(`  ${field.group}.${field.name}${field.required ? " (required)" : ""}  ${field.type}${field.description ? `  ${field.description}` : ""}`);
+        }
+        const name = tool.endpoint.split("/").filter(Boolean).at(-1) ?? tool.provider;
+        const assistant = { id: name.replace(/[^\w-]+/g, "-").slice(0, 64), connector: "monid", tool: toolId(details), input: starterInput(details.input), maxUsd: 0.1 };
+        console.log(`\nAn assistant for a flow (fill in the <…> parts; "{{ask}}" becomes the step's request):\n${JSON.stringify(assistant, null, 2)}`);
+        return;
+      }
+      throw new Error(usage);
+    }
     default:
-      console.log("huddle run <flow.json> [--input <text>|@<file>] | approve <id> yes|no | runs | show <run-id> | memory [suggested|kept|add|keep|forget] | armoriq register");
+      console.log("huddle run <flow.json> [--input <text>|@<file>] | approve <id> yes|no | runs | show <run-id> | memory [suggested|kept|add|keep|forget] | armoriq register | monid find|show");
   }
 }
 
