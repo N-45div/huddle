@@ -263,7 +263,7 @@ ones that fit you.
 `monid_find`, `monid_show`, `monid_run` and `monid_result`, so Claude Code, Hermes or anything that speaks MCP can
 find and run Monid's tools on your one key. Each run goes through Huddle like any hand-off: the same blocklist,
 a cap per run (`HUDDLE_MONID_MAX_USD`, 10 cents by default), your budget and guard if you set them, and a
-line in Runs with what it cost. A tool still working after 45 seconds hands back its run, for `monid_result`.
+line in Runs with what it cost. A tool still working after 45 seconds hands back its run, and `monid_result` waits up to another 45 for it.
 
 **Home Assistant.** Make a long-lived access token (your profile → Security), set it as `HASS_TOKEN`
 where Huddle runs, and add Assist. `agentId` picks one of its conversation agents. Memory isn't sent to

@@ -42,12 +42,13 @@ function fakeMonid(slow = false) {
   return { fetcher, runs, finish: () => (finished = true) };
 }
 
-function setup(withMonid = true, slow = false) {
+function setup(withMonid = true, slow = false, resultWaitMs = 0) {
   const { fetcher, runs, finish } = fakeMonid(slow);
   const store = new Store();
-  // A slow tool's run gives up at once here, as it would after its wait.
+  // A slow tool's run gives up at once here, as it would after its wait; so does monid_result, unless told to wait.
   const engine = new Engine(store, { mock, monid: monid(fetcher, { pollMs: 1, ...(slow ? { waitMs: 5 } : {}) }) });
-  const app = createApp({ store, engine, version: "test", publicUrl: "http://huddle.test", a2aToken: OWNER, ...(withMonid ? { monid: monidCatalog({ key: KEY, maxUsd: 0.1, fetcher }) } : {}) });
+  const catalog = monidCatalog({ key: KEY, maxUsd: 0.1, fetcher, resultWait: { waitMs: resultWaitMs, pollMs: 1 } });
+  const app = createApp({ store, engine, version: "test", publicUrl: "http://huddle.test", a2aToken: OWNER, ...(withMonid ? { monid: catalog } : {}) });
   return { store, app, runs, finish };
 }
 
@@ -127,6 +128,14 @@ describe("Monid tools over MCP", () => {
     const done = await call(app, "monid_result", { run: "run_m1" });
     assert.match(done.result?.content?.[0]?.text ?? "", /Staff nurse[\s\S]*\(Monid charged \$0\.0024\.\)/);
     assert.equal((await call(app, "monid_result", { run: "../x" })).result?.isError, true);
+  });
+
+  it("result waits for a run that finishes while it's asked, so a client needn't keep asking", async () => {
+    const { app, finish } = setup(true, true, 5000);
+    await call(app, "monid_run", { tool: "dataforseo/serp/google-jobs", input: { body: { keyword: "staff nurse" } } });
+    setTimeout(finish, 30);
+    const done = await call(app, "monid_result", { run: "run_m1" });
+    assert.match(done.result?.content?.[0]?.text ?? "", /Staff nurse[\s\S]*\(Monid charged \$0\.0024\.\)/);
   });
 
   it("aren't there for anyone but the owner", async () => {

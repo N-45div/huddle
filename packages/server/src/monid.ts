@@ -14,6 +14,8 @@ export interface MonidOptions {
   readonly maxUsd: number;
   /** For reaching Monid; tests pass a stand-in. */
   readonly fetcher?: typeof fetch;
+  /** How long monid_result waits for a run that's still working, and how often it looks (default 45 s, every 3 s). */
+  readonly resultWait?: { readonly waitMs: number; readonly pollMs: number };
 }
 
 export interface FoundTool {
@@ -50,8 +52,8 @@ export function monidCatalog(options: MonidOptions) {
   return {
     maxUsd: options.maxUsd,
 
-    /** A run's output once Monid has finished it. */
-    result: (runId: string) => monidResult(options, runId),
+    /** A run's output once Monid has finished it, waiting a while for one that's still working. */
+    result: (runId: string) => monidResult(options, runId, options.resultWait ?? { waitMs: MCP_WAIT_SECONDS * 1000, pollMs: 3000 }),
 
     async find(need: string): Promise<FoundTool[]> {
       const found = await client.find(need.slice(0, 1000), 8);
@@ -99,7 +101,7 @@ export function monidCatalog(options: MonidOptions) {
       // A slow tool goes on working at Monid (and is charged when it finishes): say where to pick it up.
       const pending = /still working after \d+ s \(Monid run ([\w-]+)\)/.exec(view.error ?? "")?.[1];
       if (pending) {
-        return { ok: true, runId: view.id, pending, text: `Monid is still working on it. Ask monid_result for run ${pending} in a minute or two; it's charged once it finishes.`, costUsd: null };
+        return { ok: true, runId: view.id, pending, text: `Monid is still working on it. Ask monid_result for run ${pending}: it waits up to ${MCP_WAIT_SECONDS} s for the output, and can be asked again. It's charged once it finishes.`, costUsd: null };
       }
       return { ok: false, runId: view.id, text: view.error ?? `The run ended ${view.state}.`, costUsd: null };
     },
@@ -108,9 +110,19 @@ export function monidCatalog(options: MonidOptions) {
 
 export type MonidCatalog = ReturnType<typeof monidCatalog>;
 
-/** A Monid run's output once it's done, for monid_result: still working, failed, or its answer. */
-export async function monidResult(options: MonidOptions, runId: string): Promise<{ readonly done: boolean; readonly ok: boolean; readonly text: string; readonly costUsd: number | null }> {
-  const run = await monidClient(options.key, options.fetcher).result(runId);
+/** A Monid run's output once it's done, for monid_result: still working (after the wait, if any), failed, or its answer. */
+export async function monidResult(
+  options: MonidOptions,
+  runId: string,
+  { waitMs = 0, pollMs = 3000 }: { readonly waitMs?: number; readonly pollMs?: number } = {},
+): Promise<{ readonly done: boolean; readonly ok: boolean; readonly text: string; readonly costUsd: number | null }> {
+  const client = monidClient(options.key, options.fetcher);
+  const deadline = Date.now() + waitMs;
+  let run = await client.result(runId);
+  while (!FINISHED.has(run.status) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+    run = await client.result(runId);
+  }
   if (!FINISHED.has(run.status)) return { done: false, ok: true, text: "Monid is still working on it; ask again in a minute.", costUsd: null };
   if (run.status !== "COMPLETED" || run.providerStatus >= 400) return { done: true, ok: false, text: `The run failed: ${run.error ?? run.status.toLowerCase().replaceAll("_", " ")}.`, costUsd: run.costUsd };
   const output = JSON.stringify(run.output, null, 2) ?? "null";
