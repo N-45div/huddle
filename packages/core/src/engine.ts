@@ -1,6 +1,7 @@
 import { evaluate } from "./condition.ts";
 import { type Connector, memoryText, type Reply } from "./connector.ts";
 import { type Budget, budgetName, dollars, periodStart, priceOf, spendOf } from "./cost.ts";
+import type { FactCheck, FactChecker } from "./factcheck.ts";
 import type { Guard } from "./guard.ts";
 import { Memory } from "./memory/memory.ts";
 import type { Flow, Step } from "./schema.ts";
@@ -43,6 +44,8 @@ export interface EngineOptions {
   readonly guard?: Guard;
   /** A cap on what hand-offs to paid assistants may spend; none by default. */
   readonly budget?: Budget | null;
+  /** Checks the facts in an approval's message on the web, for steps that ask (`check: true`); none by default. */
+  readonly checker?: FactChecker;
 }
 
 /** A hand-off to a paid assistant when the budget is spent. */
@@ -63,6 +66,7 @@ export class Engine {
   readonly memory: Memory;
   readonly guard: Guard | null;
   readonly budget: Budget | null;
+  readonly checker: FactChecker | null;
 
   constructor(store: Store, connectors: Readonly<Record<string, Connector>>, options: EngineOptions = {}) {
     this.store = store;
@@ -70,6 +74,7 @@ export class Engine {
     this.memory = options.memory ?? new Memory(store);
     this.guard = options.guard ?? null;
     this.budget = options.budget ?? null;
+    this.checker = options.checker ?? null;
   }
 
   /** What hand-offs with a known cost have spent in the budget's period (this month without one). */
@@ -230,7 +235,8 @@ export class Engine {
       }
       case "approval": {
         const message = render(step.message, context);
-        const approval = this.store.addApproval(run.id, step.id, message);
+        const checks = step.check ? await this.checkFacts(run, step.id, message) : null;
+        const approval = this.store.addApproval(run.id, step.id, message, null, checks);
         this.store.log(run.id, step.id, "waiting", { approval: approval.id, message });
         return { wait: true };
       }
@@ -266,6 +272,27 @@ export class Engine {
       })
       .catch((error: unknown) => console.error(`[huddle] waiting on ${heldBy.by} for approval ${approval.id}:`, error))
       .finally(() => this.watching.delete(approval.id));
+  }
+
+  /**
+   * What the web says about the facts in an approval's message, before the person is asked. A check that
+   * can't run never stops the approval: the person is still asked, and the log says why it wasn't checked.
+   */
+  private async checkFacts(run: Run, stepId: string, message: string): Promise<FactCheck | null> {
+    if (!this.checker) {
+      this.store.log(run.id, stepId, "unchecked", { reason: "Checking facts needs TAVILY_API_KEY and a model (NEBIUS_API_KEY, or HUDDLE_LLM_URL and HUDDLE_LLM_MODEL)." });
+      return null;
+    }
+    try {
+      const checks = await this.checker(message);
+      const count = (verdict: string) => checks.facts.filter((fact) => fact.verdict === verdict).length;
+      this.store.log(run.id, stepId, "fact-checked", { facts: checks.facts.length, supported: count("supported"), contradicted: count("contradicted"), unclear: count("unclear"), by: checks.checkedBy, costUsd: checks.costUsd });
+      if (checks.costUsd > 0) this.store.addSpend(run, stepId, "fact-check", { inputTokens: 0, outputTokens: 0, costUsd: checks.costUsd, estimated: false });
+      return checks;
+    } catch (error) {
+      this.store.log(run.id, stepId, "unchecked", { reason: `Couldn't check the facts: ${error instanceof Error ? error.message : String(error)}` });
+      return null;
+    }
   }
 
   private fail(runId: string, stepId: string, context: RunContext, error: string): RunView {

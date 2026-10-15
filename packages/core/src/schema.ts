@@ -25,7 +25,7 @@ export const Assistant = z.object({
   /** What it's good at, in a sentence: what the router's judge reads to pick it. */
   description: z.string().max(500).optional(),
   /** How to reach it: openclaw and hermes are A2A with their usual local address filled in. */
-  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "vllm", "nebius", "cli", "openshell", "pact", "homeassistant", "agentzero", "instinct", "email", "monid"]),
+  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "vllm", "nebius", "tavily", "cli", "openshell", "pact", "homeassistant", "agentzero", "instinct", "email", "monid"]),
   /** The slices of shared memory this assistant may read. */
   memory: z.array(z.string().min(1)).default([]),
   /** http: where to POST. a2a: the agent's base address or its card. openai: the API base. sochen: if not https://sochen.dev. instinct: if not http://127.0.0.1:8080. */
@@ -149,6 +149,8 @@ const ApprovalStep = z.object({
   id,
   type: z.literal("approval"),
   message: z.string().min(1),
+  /** Check the facts in the message on the web first (Tavily), and show what the sources say beside it. */
+  check: z.boolean().optional(),
   next: target.optional(),
   /** Where a "no" goes; without it, the run ends as declined. */
   onNo: target.optional(),

@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { DatabaseSync } from "node:sqlite";
 import type { Spend } from "./cost.ts";
+import type { FactCheck } from "./factcheck.ts";
 import { findSecret, redactSecrets, SensitiveNote } from "./memory/sensitive.ts";
 import type { Assistant, ContactTier, Flow } from "./schema.ts";
 import type { RunContext } from "./template.ts";
@@ -38,6 +39,8 @@ export interface Approval {
   readonly decidedAt: string | null;
   /** Held by a guard's own approver (ArmorIQ): only a yes there lets it go ahead; a no here still stops it. */
   readonly heldBy: HeldBy | null;
+  /** What the web says about the facts in the message, when the step asked for a check. */
+  readonly checks: FactCheck | null;
 }
 
 /** Where a held hand-off is approved: who holds it, their id for it, and the page to approve it on. */
@@ -162,6 +165,8 @@ export class Store {
     // Databases from before guards could hold a hand-off for their own approver.
     const approvalColumns = this.db.prepare("PRAGMA table_info(approvals)").all() as Row[];
     if (!approvalColumns.some((column) => column.name === "held_by")) this.db.exec("ALTER TABLE approvals ADD COLUMN held_by TEXT");
+    // ...and from before approvals could carry a check of their facts.
+    if (!approvalColumns.some((column) => column.name === "checks")) this.db.exec("ALTER TABLE approvals ADD COLUMN checks TEXT");
     this.db.exec("CREATE INDEX IF NOT EXISTS runs_flow ON runs (flow_id, created_at)");
   }
 
@@ -370,9 +375,11 @@ export class Store {
 
   // Approvals --------------------------------------------------------------------------------------
 
-  addApproval(runId: string, stepId: string, message: string, heldBy: HeldBy | null = null): Approval {
-    const approval: Approval = { id: newId("ok"), runId, stepId, message, status: "waiting", createdAt: now(), decidedAt: null, heldBy };
-    this.db.prepare("INSERT INTO approvals (id, run_id, step_id, message, status, created_at, held_by) VALUES (?, ?, ?, ?, ?, ?, ?)").run(approval.id, runId, stepId, message, approval.status, approval.createdAt, heldBy ? JSON.stringify(heldBy) : null);
+  addApproval(runId: string, stepId: string, message: string, heldBy: HeldBy | null = null, checks: FactCheck | null = null): Approval {
+    const approval: Approval = { id: newId("ok"), runId, stepId, message, status: "waiting", createdAt: now(), decidedAt: null, heldBy, checks };
+    this.db
+      .prepare("INSERT INTO approvals (id, run_id, step_id, message, status, created_at, held_by, checks) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(approval.id, runId, stepId, message, approval.status, approval.createdAt, heldBy ? JSON.stringify(heldBy) : null, checks ? JSON.stringify(checks) : null);
     this.changed({ kind: "approval", runId });
     return approval;
   }
@@ -577,6 +584,7 @@ function toApproval(row: Row): Approval {
     status: String(row.status) as Approval["status"],
     createdAt: String(row.created_at),
     heldBy: row.held_by ? (JSON.parse(String(row.held_by)) as HeldBy) : null,
+    checks: row.checks ? (JSON.parse(String(row.checks)) as FactCheck) : null,
     decidedAt: row.decided_at === null ? null : String(row.decided_at),
   };
 }

@@ -79,6 +79,12 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
     ],
   },
   {
+    id: "tavily",
+    name: "Web search (Tavily)",
+    description: "Searches the web with Tavily: the step's request is the query, and the answer comes with its sources. Set TAVILY_API_KEY where Huddle runs (1,000 free searches a month). Memory isn't sent.",
+    fields: [{ key: "keyEnv", label: "Key variable", required: false, placeholder: "TAVILY_API_KEY" }],
+  },
+  {
     id: "cli",
     name: "Agent CLI on this computer",
     description:
