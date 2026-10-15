@@ -169,6 +169,8 @@ interface Draft {
   url: string;
   keyEnv: string;
   model: string;
+  /** nebius: "on" when the model should think first. */
+  thinking: string;
   agentId: string;
   audience: string;
   /** A command line, split into the command's parts on save. */
@@ -198,7 +200,7 @@ interface Draft {
 type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies" | "scopes" | "to" | "from" | "price" | "maxTokens" | "reuseMinutes" | "tool" | "input" | "maxUsd" | "waitSeconds", string>>;
 
 /** Connectors whose answers Huddle can cap at a number of tokens. */
-const CAPPED = new Set(["openai", "ollama", "vllm"]);
+const CAPPED = new Set(["openai", "ollama", "vllm", "nebius"]);
 const amount = (text: string): number | null => (text.trim() === "" ? null : Number(text.trim().replace(/^\$/, "")));
 const shown = (value: number | undefined): string => (value === undefined ? "" : String(value));
 
@@ -246,6 +248,7 @@ function draftOf(assistant: Assistant | undefined): Draft {
     url: assistant?.url ?? "",
     keyEnv: assistant?.keyEnv ?? "",
     model: assistant?.model ?? "",
+    thinking: assistant?.thinking ? "on" : "",
     agentId: assistant?.agentId ?? "",
     audience: assistant?.audience ?? "",
     command: joinCommand(assistant?.command),
@@ -376,6 +379,7 @@ function AssistantForm({
       const value = shown.has(key) ? draft[key].trim() : (kept?.[key] ?? "");
       if (value) assistant[key] = value;
     }
+    if (shown.has("thinking") ? draft.thinking === "on" : kept?.thinking) assistant.thinking = true;
     const command = shown.has("command") ? splitCommand(draft.command) : kept?.command;
     if (command?.length) assistant.command = command;
     const scopes = shown.has("scopes") ? draft.scopes.split(/[\s,]+/).filter(Boolean) : kept?.scopes;

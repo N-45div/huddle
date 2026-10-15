@@ -60,6 +60,25 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
     ],
   },
   {
+    id: "nebius",
+    name: "NVIDIA Nemotron on Nebius",
+    description:
+      "NVIDIA's open Nemotron models on Nebius Token Factory, paid per token: Lightning or Nano for quick everyday answers, Super for most work, Ultra for hard reasoning. Set NEBIUS_API_KEY where Huddle runs. Thinking is off unless you turn it on: it helps on hard problems, but it's slower and billed.",
+    fields: [
+      { key: "model", label: "Model", required: true, placeholder: "nvidia/nemotron-3-super-120b-a12b", suggest: "models" },
+      {
+        key: "thinking",
+        label: "Think before answering",
+        required: false,
+        choices: [
+          { value: "", label: "No: faster and cheaper" },
+          { value: "on", label: "Yes: for hard problems" },
+        ],
+      },
+      { key: "keyEnv", label: "Key variable", required: false, placeholder: "NEBIUS_API_KEY" },
+    ],
+  },
+  {
     id: "cli",
     name: "Agent CLI on this computer",
     description:

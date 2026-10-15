@@ -11,6 +11,8 @@ export { mock } from "./connectors/mock.ts";
 export { OLLAMA_URL, ollama, ollamaModels } from "./connectors/ollama.ts";
 export { openai } from "./connectors/openai.ts";
 export { VLLM_URL, vllm, vllmModels } from "./connectors/vllm.ts";
+export { nebius } from "./connectors/nebius.ts";
+export { isTokenFactory, NEMOTRON, refreshTokenFactoryPrices, thinkingFor, TOKEN_FACTORY_URL, tokenFactoryModels, tokenFactoryPrice } from "./tokenfactory.ts";
 export { openshell } from "./connectors/openshell.ts";
 export { cli, type Ran, type Runner, type RunOptions, runProgram } from "./connectors/cli.ts";
 export { type PactDelegation, pact } from "./connectors/pact.ts";

@@ -1,5 +1,6 @@
 import { type Connector, dataIn, keyFor, memoryText } from "../connector.ts";
 import type { Usage } from "../cost.ts";
+import type { Assistant } from "../schema.ts";
 
 /**
  * Assistants that answer the OpenAI chat-completions format, which many self-hosted ones serve:
@@ -11,7 +12,8 @@ import type { Usage } from "../cost.ts";
 
 const TIMEOUT_MS = 300_000;
 
-export function openai(fetcher: typeof fetch = globalThis.fetch): Connector {
+/** `extra` adds a provider's own fields to each request (Token Factory's thinking switch, for one). */
+export function openai(fetcher: typeof fetch = globalThis.fetch, extra?: (assistant: Assistant) => Record<string, unknown>): Connector {
   return {
     async send({ assistant, ask, memory, signal }) {
       if (!assistant.url) throw new Error(`Assistant "${assistant.id}" uses the openai connector but has no url.`);
@@ -29,7 +31,7 @@ export function openai(fetcher: typeof fetch = globalThis.fetch): Connector {
         fetcher(url, {
           method: "POST",
           headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
-          body: JSON.stringify({ model: assistant.model ?? "default", messages, stream: false, ...(cap ? { [cap]: assistant.maxTokens } : {}) }),
+          body: JSON.stringify({ model: assistant.model ?? "default", messages, stream: false, ...(cap ? { [cap]: assistant.maxTokens } : {}), ...extra?.(assistant) }),
           signal: signal ?? AbortSignal.timeout(TIMEOUT_MS),
         });
       const read = async (response: Response) =>

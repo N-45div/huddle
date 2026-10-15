@@ -1,4 +1,5 @@
 import type { Assistant } from "./schema.ts";
+import { isTokenFactory, tokenFactoryPrice } from "./tokenfactory.ts";
 
 /**
  * What hand-offs cost. Connectors that can say report tokens (and OpenRouter the cost itself); for the
@@ -38,9 +39,13 @@ const local = (url: string | undefined): boolean => {
   }
 };
 
-/** What an assistant charges: its price if you gave one; stand-ins, and Ollama or vLLM on this machine, are free; otherwise unknown. */
+/** What an assistant charges: its price if you gave one; a model on Token Factory at its listed price; stand-ins, and Ollama or vLLM on this machine, are free; otherwise unknown. */
 export function priceOf(assistant: Assistant): Price | null {
   if (assistant.price) return assistant.price;
+  if (assistant.connector === "nebius" || (assistant.connector === "openai" && isTokenFactory(assistant.url))) {
+    const listed = tokenFactoryPrice(assistant.model);
+    if (listed) return listed;
+  }
   if (assistant.connector === "mock") return FREE;
   if ((assistant.connector === "ollama" || assistant.connector === "vllm") && local(assistant.url)) return FREE;
   return null;

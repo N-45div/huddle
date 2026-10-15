@@ -25,7 +25,7 @@ export const Assistant = z.object({
   /** What it's good at, in a sentence: what the router's judge reads to pick it. */
   description: z.string().max(500).optional(),
   /** How to reach it: openclaw and hermes are A2A with their usual local address filled in. */
-  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "vllm", "cli", "openshell", "pact", "homeassistant", "agentzero", "instinct", "email", "monid"]),
+  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "vllm", "nebius", "cli", "openshell", "pact", "homeassistant", "agentzero", "instinct", "email", "monid"]),
   /** The slices of shared memory this assistant may read. */
   memory: z.array(z.string().min(1)).default([]),
   /** http: where to POST. a2a: the agent's base address or its card. openai: the API base. sochen: if not https://sochen.dev. instinct: if not http://127.0.0.1:8080. */
@@ -34,8 +34,10 @@ export const Assistant = z.object({
   keyEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/, "an environment variable name, like SOCHEN_API_KEY").optional(),
   /** homeassistant: which conversation agent; agentzero: which agent profile; openshell: which sandbox; cli: which agent CLI. */
   agentId: z.string().min(1).optional(),
-  /** openai, ollama, vllm, cli: the model to ask for (e.g. "openclaw/main" for an OpenClaw agent, what vLLM serves, or "sonnet" for Claude Code). */
+  /** openai, ollama, vllm, nebius, cli: the model to ask for (e.g. "openclaw/main" for an OpenClaw agent, what vLLM serves, "nvidia/nemotron-3-super-120b-a12b" on Token Factory, or "sonnet" for Claude Code). */
   model: z.string().min(1).optional(),
+  /** nebius: let the model think before it answers. Better on hard problems; slower, and the thinking is billed. Off when left out. */
+  thinking: z.boolean().optional(),
   /** pact: the audience the business's Provider gave Huddle when it registered (goes in each token's aud). */
   audience: z.string().min(1).optional(),
   /** pact: what to ask the business to let Huddle do for you (scope ids from its Agent Card), signed in once. */
@@ -92,6 +94,9 @@ export function assistantProblems(assistant: Assistant): string[] {
   }
   if (assistant.connector === "vllm" && !assistant.model) {
     problems.push(`assistant "${assistant.id}" is a model served by vLLM: give the model's name as vLLM serves it (model)`);
+  }
+  if (assistant.connector === "nebius" && !assistant.model) {
+    problems.push(`assistant "${assistant.id}" is a model on Nebius Token Factory: say which one (model), like nvidia/nemotron-3-super-120b-a12b`);
   }
   if (assistant.connector === "cli") {
     if (!(CLI_AGENTS as readonly string[]).includes(assistant.agentId ?? "")) {
