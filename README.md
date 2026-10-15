@@ -213,6 +213,28 @@ Huddle finds vLLM at `http://127.0.0.1:8000` unless you give a `url` (a GPU serv
 `/v1`). If you started it with `--api-key`, put that key's variable in `keyEnv`. A model on your own
 machine counts as free, so the router's cheaper picks favour it; on someone else's GPU, give it a price.
 
+**NVIDIA Nemotron on Nebius Token Factory.** NVIDIA's open models, paid per token, with no GPU of your
+own. Set `NEBIUS_API_KEY`, add an assistant with **NVIDIA Nemotron on Nebius** and pick a model (the
+canvas lists the ones your key can use), or in a flow file:
+
+```json
+{ "id": "planner", "connector": "nebius", "model": "nvidia/Nemotron-3-Ultra-550b-a55b", "thinking": true, "memory": ["me"] }
+```
+
+Pick the size for the job: `nvidia/Nemotron-3_5-Lightning` or `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` for
+quick everyday answers ($0.06 in, $0.24 out per million tokens), `nvidia/nemotron-3-super-120b-a12b` for
+most work ($0.30 / $0.90), `nvidia/Nemotron-3-Ultra-550b-a55b` for hard reasoning ($1 / $3). Huddle knows
+these prices (it reads the current ones from Token Factory's catalog when it starts), so the router's
+`"auto"` sends each ask to the cheapest model that fits it. Nemotron thinks before it answers unless told
+not to, and the thinking is slow and billed: asked which assistant should plan a trip, Lightning took 5.8 s
+and 1,344 tokens thinking, against 0.4 s and 16 tokens without. So it's off unless you set `"thinking": true`
+for the assistants whose problems need it. `examples/weekend-plan.json` uses all three sizes: Ultra plans,
+Lightning checks the plan against your budget, Super writes the message once you approve.
+
+With `NEBIUS_API_KEY` set and no `HUDDLE_LLM_URL`, Huddle's own model calls run on Nemotron too, each on the
+size its job needs: Lightning judges `"auto"` and picks how answers are shown, Super fills charts and
+tables in, and Ultra drafts flows from a sentence, using the assistants you've saved.
+
 **Agent CLIs: Claude Code, Codex, OpenCode.** The ones on the computer Huddle runs on, signed in as you
 already use them ([Omarchy](#on-omarchy) sets them up). Add an assistant with **Agent CLI on this
 computer** and pick which one, or in a flow file:
@@ -760,7 +782,8 @@ docker compose up -d   # http://localhost:7700, data in the huddle-data volume
 | `HUDDLE_DB` | `huddle.db` | where everything is kept (`/data/huddle.db` in Docker) |
 | `HUDDLE_PUBLIC_URL` | `http://localhost:7700` | how others reach this Huddle, for webhook and A2A addresses |
 | `HUDDLE_A2A_TOKEN` | `HUDDLE_TOKEN` | a separate token for assistants and MCP clients calling Huddle over A2A or MCP |
-| `HUDDLE_LLM_URL`, `HUDDLE_LLM_MODEL`, `HUDDLE_LLM_KEY` | none | any OpenAI-compatible chat API (OpenAI, OpenRouter, Ollama, LM Studio) for "describe it" |
+| `NEBIUS_API_KEY` | none | NVIDIA Nemotron on Nebius Token Factory: the `nebius` connector's key, and, without `HUDDLE_LLM_URL`, Huddle's own model calls |
+| `HUDDLE_LLM_URL`, `HUDDLE_LLM_MODEL`, `HUDDLE_LLM_KEY` | none | any OpenAI-compatible chat API (OpenAI, OpenRouter, Ollama, LM Studio) for "describe it", judging `"auto"` and showing answers as views |
 | `HUDDLE_MEMORY_BUDGET` | `4000` | characters of kept notes each request carries; past that, the notes that match it go first |
 | `HUDDLE_EMBED_URL`, `HUDDLE_EMBED_MODEL`, `HUDDLE_EMBED_KEY` | none | any OpenAI-compatible embeddings API, so memory finds notes by meaning too |
 | `HUDDLE_RERANK_URL`, `HUDDLE_RERANK_MODEL`, `HUDDLE_RERANK_KEY` | none | a rerank API (Voyage, Cohere, Jina) that orders the notes memory finds |

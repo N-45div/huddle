@@ -1,0 +1,57 @@
+{
+  "name": "Weekend plan",
+  "description": "NVIDIA Nemotron on Nebius Token Factory in three sizes: Ultra plans the weekend (thinking first), Lightning checks it against the budget, and Super writes the message to your partner once you approve. Needs NEBIUS_API_KEY.",
+  "assistants": [
+    {
+      "id": "planner",
+      "name": "Planner (Nemotron Ultra)",
+      "connector": "nebius",
+      "model": "nvidia/Nemotron-3-Ultra-550b-a55b",
+      "thinking": true,
+      "memory": ["me"],
+      "maxTokens": 4000,
+      "description": "Plans with several steps or trade-offs: trips, budgets, schedules, decisions."
+    },
+    {
+      "id": "checker",
+      "name": "Budget check (Nemotron Lightning)",
+      "connector": "nebius",
+      "model": "nvidia/Nemotron-3_5-Lightning",
+      "maxTokens": 300,
+      "description": "Quick checks, sums and yes-or-no answers."
+    },
+    {
+      "id": "writer",
+      "name": "Writer (Nemotron Super)",
+      "connector": "nebius",
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "memory": ["me"],
+      "maxTokens": 600,
+      "description": "Writes emails, messages and posts in the person's voice."
+    }
+  ],
+  "steps": [
+    {
+      "id": "plan",
+      "type": "agent",
+      "agent": "planner",
+      "ask": "Plan this weekend for me: {{input}}\n\nDay by day, with times and costs in rupees. Then a last line of JSON: {\"summary\": \"<the plan in one line>\", \"total\": <the total cost in rupees, a number>}"
+    },
+    {
+      "id": "check",
+      "type": "agent",
+      "agent": "checker",
+      "ask": "What I asked for: {{input}}\nThe plan's total: {{plan.data.total}} rupees.\n\nDoes the plan fit the budget I asked for? Answer with JSON only: {\"fits\": true or false, \"why\": \"<one short line>\"}"
+    },
+    { "id": "fits", "type": "condition", "if": "{{check.data.fits}} == true", "then": "ok", "else": "over" },
+    { "id": "over", "type": "approval", "message": "This plan may be over budget ({{check.data.why}}). Send it to your partner anyway?\n\n{{plan.text}}", "next": "message", "onNo": "end" },
+    { "id": "ok", "type": "approval", "message": "Send this plan to your partner?\n\n{{plan.text}}", "next": "message", "onNo": "end" },
+    {
+      "id": "message",
+      "type": "agent",
+      "agent": "writer",
+      "ask": "Write a short, warm message to my partner about this weekend plan, ready to send:\n\n{{plan.text}}"
+    },
+    { "id": "remember", "type": "memory", "slice": "me", "note": "Weekend plan: {{plan.data.summary}}" }
+  ]
+}
