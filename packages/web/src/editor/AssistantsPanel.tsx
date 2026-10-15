@@ -197,7 +197,7 @@ interface Draft {
   waitSeconds: string;
 }
 
-type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "agentId" | "audience" | "command" | "replies" | "scopes" | "to" | "from" | "price" | "maxTokens" | "reuseMinutes" | "tool" | "input" | "maxUsd" | "waitSeconds", string>>;
+type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "thinking" | "agentId" | "audience" | "command" | "replies" | "scopes" | "to" | "from" | "price" | "maxTokens" | "reuseMinutes" | "tool" | "input" | "maxUsd" | "waitSeconds", string>>;
 
 /** Connectors whose answers Huddle can cap at a number of tokens. */
 const CAPPED = new Set(["openai", "ollama", "vllm", "nebius"]);
