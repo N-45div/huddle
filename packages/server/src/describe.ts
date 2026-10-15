@@ -27,14 +27,14 @@ A flow:
   "steps": [ ... ]
 }
 
-Connectors: "openclaw" (OpenClaw), "hermes" (Hermes Agent), "sochen" (Sochen), "homeassistant" (Home Assistant, for lights, heating and devices), "agentzero" (Agent Zero, needs "url"), "a2a" (any A2A agent, needs "url"), "openai" (any OpenAI-style chat API, needs "url"), "nebius" (an NVIDIA Nemotron model on Nebius Token Factory, needs "model": "nvidia/Nemotron-3_5-Lightning" for quick answers, "nvidia/nemotron-3-super-120b-a12b" for most work, "nvidia/Nemotron-3-Ultra-550b-a55b" for hard reasoning; "thinking": true makes it think first),"http" (needs "url"), "email" (sends the step's text as an email; needs "to": ["address", ...] and "from": "an address on the person's own domain"; a first line "Subject: ..." is the subject), "mock" (a stand-in with "replies": {"keyword": "answer", "*": "otherwise"}).
+Connectors: "openclaw" (OpenClaw), "hermes" (Hermes Agent), "sochen" (Sochen), "homeassistant" (Home Assistant, for lights, heating and devices), "agentzero" (Agent Zero, needs "url"), "a2a" (any A2A agent, needs "url"), "openai" (any OpenAI-style chat API, needs "url"), "nebius" (an NVIDIA Nemotron model on Nebius Token Factory, needs "model": "nvidia/Nemotron-3_5-Lightning" for quick answers, "nvidia/nemotron-3-super-120b-a12b" for most work, "nvidia/Nemotron-3-Ultra-550b-a55b" for hard reasoning; "thinking": true makes it think first),"tavily" (searches the web; the step's ask is the query), "http" (needs "url"), "email" (sends the step's text as an email; needs "to": ["address", ...] and "from": "an address on the person's own domain"; a first line "Subject: ..." is the subject), "mock" (a stand-in with "replies": {"keyword": "answer", "*": "otherwise"}).
 Use the assistants the description names. If it names none for a job, use "mock" with sensible replies so the flow can be tried, and say so in the description.
 "memory" lists the slices of the person's shared memory the assistant may read, e.g. "home", "money", "work". Give each assistant only what its job needs.
 
 Steps (each has a unique "id": lowercase letters, numbers, - and _):
 - { "id": "read", "type": "agent", "agent": "<assistant id>", "ask": "what to ask, may use {{input}} and {{other-step.text}} or {{other-step.data.field}}", "next": "<step id or end>" }
 - { "id": "big", "type": "condition", "if": "{{read.data.amount}} > 200", "then": "<step id>", "else": "<step id or end>" }   (operators: == != > >= < <= contains)
-- { "id": "ok", "type": "approval", "message": "what the person is asked to approve", "next": "<step id>", "onNo": "<step id or end>" }
+- { "id": "ok", "type": "approval", "message": "what the person is asked to approve", "check": true, "next": "<step id>", "onNo": "<step id or end>" }   ("check": true looks up the facts in the message on the web first; use it when the message states facts the person relies on: times, prices, places)
 - { "id": "note", "type": "memory", "slice": "money", "note": "what to remember (the person approves it later)", "next": "<step id or end>" }
 "next" may be left out to go to the following step. Put an approval before anything that spends money, sends messages for the person, or changes something hard to undo.
 

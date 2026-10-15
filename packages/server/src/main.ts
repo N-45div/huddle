@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, SignIns, Store, storedGrants, viewWriter } from "@huddle/core";
+import { type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, factChecker, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, SignIns, Store, storedGrants, viewWriter } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
 import { monidCatalog } from "./monid.ts";
@@ -43,6 +43,8 @@ import { webApp } from "./static.ts";
  *                      reading needs a full-access key
  *   RESEND_WEBHOOK_SECRET  the signing secret of Resend's inbound webhook, pointed at /hooks/email
  *   HUDDLE_OWNER_EMAILS    your addresses, comma-separated: mail from them counts as you
+ *   TAVILY_API_KEY     web search (tavily.com): the tavily connector's key, and, with a model set up, the facts
+ *                      in approvals that ask for it (check: true) checked on the web before you're asked
  *   MONID_API_KEY      Monid's paid data tools (monid.ai): the monid connector's key, the canvas's tool
  *                      search, and monid_find, monid_show, monid_run and monid_result for your MCP clients
  *   HUDDLE_MONID_MAX_USD  the most one of those MCP runs may cost, in US dollars (default 0.10)
@@ -125,7 +127,10 @@ try {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
-const engine = new Engine(store, { ...defaultConnectors(), openshell: openshell(() => shell), pact: pact(() => identity, undefined, { signIns, grants: storedGrants(store) }) }, { memory, guard: guard ?? undefined, budget: spendCap });
+// Approvals that ask (check: true) have their facts checked on the web first: the quick model lists them, Tavily searches, the other model weighs the sources.
+const tavilyKey = env("TAVILY_API_KEY");
+const checker = tavilyKey && llmUrl && quickModel && fillModel ? factChecker({ tavilyKey, lister: { url: llmUrl, model: quickModel, key: llmKey }, judge: { url: llmUrl, model: fillModel, key: llmKey } }) : undefined;
+const engine = new Engine(store, { ...defaultConnectors(), openshell: openshell(() => shell), pact: pact(() => identity, undefined, { signIns, grants: storedGrants(store) }) }, { memory, guard: guard ?? undefined, budget: spendCap, checker });
 const sandboxes = shell ? new SandboxWatcher(shell, store) : undefined;
 // Hand-offs ArmorIQ held before a restart: wait on them again, so they carry on once approved there.
 const held = engine.resumeHolds();
@@ -182,6 +187,8 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   if (onNemotron) console.log(`  Huddle's own model calls: NVIDIA Nemotron on Nebius Token Factory (${llmModel ?? "Lightning judges and picks views, Super fills them in, Ultra drafts flows"})`);
   if (!llmUrl || !draftModel) console.log('  "Describe it" is off: set NEBIUS_API_KEY, or HUDDLE_LLM_URL and HUDDLE_LLM_MODEL, to turn it on.');
   console.log(`  Answers as views: ${presenter.name === "rules" ? "tables only (set TYPESAFE_API_KEY or HUDDLE_LLM_* to choose views)" : `chosen by ${presenter.name}`}${writer ? `, charts, flowcharts, calculators and comparisons filled in by ${writer.model}` : ""}`);
+  if (checker) console.log(`  Approvals that ask for it (check: true) have their facts checked on the web first: Tavily searches, ${fillModel} weighs the sources`);
+  else if (tavilyKey) console.log("  TAVILY_API_KEY is set, but checking facts also needs a model: NEBIUS_API_KEY, or HUDDLE_LLM_URL and HUDDLE_LLM_MODEL.");
   if (monidKey) console.log(`  Monid: tool search in the canvas, and monid_find, monid_show, monid_run and monid_result on /mcp (up to $${monidMaxUsd} a run)`);
   if (guard) console.log(`  ${guard.name} checks every hand-off first (HUDDLE_GUARD=${env("HUDDLE_GUARD")}): a blocked one fails its run, a held one waits for your yes`);
   else if (env("ARMORIQ_API_KEY")) console.log("  ARMORIQ_API_KEY is set but no guard is on: set HUDDLE_GUARD=armoriq to have ArmorIQ check every hand-off.");

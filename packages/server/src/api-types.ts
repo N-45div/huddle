@@ -3,7 +3,7 @@
  * can't drift apart. All routes are under /api; when the server has a token, every call carries
  * `Authorization: Bearer <token>` (the event stream takes `?token=` instead).
  */
-import type { Assistant, Choice, Contact, HeldBy, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger, View } from "@huddle/core";
+import type { Assistant, Choice, Contact, FactCheck, HeldBy, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger, View } from "@huddle/core";
 
 export type { Assistant, Choice, Contact, HeldBy, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger, View };
 export type { FoundTool, ToolDetails } from "./monid.ts";
@@ -85,6 +85,8 @@ export interface WaitingApproval {
   readonly createdAt: string;
   /** Held by a guard's own approver (ArmorIQ): approve it there; a no here still stops it. */
   readonly heldBy: HeldBy | null;
+  /** What the web says about the facts in the message, when the step asked for a check. */
+  readonly checks: FactCheck | null;
 }
 
 /** How one assistant has done through the router lately (from its runs). */

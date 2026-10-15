@@ -304,7 +304,7 @@ export function createApp(options: AppOptions): Hono {
   });
   app.get("/api/approvals", (c) =>
     c.json<WaitingApproval[]>(
-      store.waitingApprovals().map((approval) => ({ id: approval.id, runId: approval.runId, stepId: approval.stepId, flowName: store.run(approval.runId)?.flow.name ?? "", message: approval.message, createdAt: approval.createdAt, heldBy: approval.heldBy })),
+      store.waitingApprovals().map((approval) => ({ id: approval.id, runId: approval.runId, stepId: approval.stepId, flowName: store.run(approval.runId)?.flow.name ?? "", message: approval.message, createdAt: approval.createdAt, heldBy: approval.heldBy, checks: approval.checks })),
     ),
   );
   app.post("/api/approvals/:id", async (c) => {

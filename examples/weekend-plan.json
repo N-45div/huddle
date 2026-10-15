@@ -1,6 +1,6 @@
 {
   "name": "Weekend plan",
-  "description": "NVIDIA Nemotron on Nebius Token Factory in three sizes: Ultra plans the weekend (thinking first), Lightning checks it against the budget, and Super writes the message to your partner once you approve. Needs NEBIUS_API_KEY.",
+  "description": "NVIDIA Nemotron on Nebius Token Factory in three sizes: Ultra plans the weekend (thinking first), Lightning checks it against the budget, and Super writes the message to your partner once you approve. With TAVILY_API_KEY set, the plan's facts (train times, prices, opening hours) are checked on the web before you're asked. Needs NEBIUS_API_KEY.",
   "assistants": [
     {
       "id": "planner",
@@ -44,8 +44,8 @@
       "ask": "What I asked for: {{input}}\nThe plan's total: {{plan.data.total}} rupees.\n\nDoes the plan fit the budget I asked for? Answer with JSON only: {\"fits\": true or false, \"why\": \"<one short line>\"}"
     },
     { "id": "fits", "type": "condition", "if": "{{check.data.fits}} == true", "then": "ok", "else": "over" },
-    { "id": "over", "type": "approval", "message": "This plan may be over budget ({{check.data.why}}). Send it to your partner anyway?\n\n{{plan.text}}", "next": "message", "onNo": "end" },
-    { "id": "ok", "type": "approval", "message": "Send this plan to your partner?\n\n{{plan.text}}", "next": "message", "onNo": "end" },
+    { "id": "over", "type": "approval", "check": true, "message": "This plan may be over budget ({{check.data.why}}). Send it to your partner anyway?\n\n{{plan.text}}", "next": "message", "onNo": "end" },
+    { "id": "ok", "type": "approval", "check": true, "message": "Send this plan to your partner?\n\n{{plan.text}}", "next": "message", "onNo": "end" },
     {
       "id": "message",
       "type": "agent",
