@@ -1,4 +1,4 @@
-import { Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type MemoryHit, type Note, ollamaModels, type PactIdentity, tokenFactoryModels, vllmModels, periodStart, type Presenter, present, rulesPresenter, VIEW_KINDS, type ViewKind, type ViewWriter, type Router, type SavedFlow, SensitiveNote, type SignIns, type Store } from "@huddle/core";
+import { type Assistant, Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type MemoryHit, type Note, ollamaModels, type PactIdentity, tokenFactoryModels, vllmModels, periodStart, type Presenter, present, rulesPresenter, VIEW_KINDS, type ViewKind, type ViewWriter, type Router, type SavedFlow, SensitiveNote, type SignIns, type Store } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { a2aRoutes } from "./a2a.ts";
@@ -29,8 +29,8 @@ export interface AppOptions {
   readonly token?: string;
   /** The token other assistants use on /a2a and /mcp; defaults to `token`. */
   readonly a2aToken?: string;
-  /** Drafts a flow from a sentence, when an AI model is set up. */
-  readonly describe?: (text: string) => Promise<Flow>;
+  /** Drafts a flow from a sentence, when an AI model is set up, using the saved assistants that fit. */
+  readonly describe?: (text: string, saved: readonly Assistant[]) => Promise<Flow>;
   /** How long an A2A message waits for its run before answering "still working" (default 100 s). */
   readonly a2aWaitMs?: number;
   /** How long an MCP tool call waits for its run before answering "still running" (default 50 s). */
@@ -377,7 +377,7 @@ export function createApp(options: AppOptions): Hono {
     const text = (await body(c)).text;
     if (typeof text !== "string" || !text.trim()) return bad(c, "Describe the flow in a sentence.");
     try {
-      return c.json({ flow: await options.describe(text.trim()) });
+      return c.json({ flow: await options.describe(text.trim(), store.assistants()) });
     } catch (error) {
       return bad(c, error instanceof Error ? error.message : String(error));
     }

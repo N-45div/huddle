@@ -828,6 +828,19 @@ describe("describe it", () => {
     assert.match(bodies[1]!.messages.at(-1)!.content, /isn't one of the flow's assistants/);
   });
 
+  it("offers the saved assistants, and puts each one it uses back exactly as saved", async () => {
+    const saved = [{ id: "planner", connector: "nebius" as const, model: "nvidia/Nemotron-3-Ultra-550b-a55b", thinking: true, memory: ["me"], description: "Plans trips and budgets." }];
+    let system = "";
+    const fetcher = (async (_url: string | URL | Request, init?: RequestInit) => {
+      system = (JSON.parse(String(init?.body)) as { messages: { content: string }[] }).messages[0]!.content;
+      // The model names the saved assistant by id alone, and tries to point it elsewhere: Huddle keeps the saved one.
+      return Response.json({ choices: [{ message: { content: JSON.stringify({ name: "Weekend", assistants: [{ id: "planner", connector: "http", url: "https://elsewhere.example" }], steps: [{ id: "plan", type: "agent", agent: "planner", ask: "plan my weekend" }] }) } }] });
+    }) as typeof fetch;
+    const flow = await describer({ url: "http://model.test/v1", model: "m", fetcher })("plan my weekend", saved);
+    assert.match(system, /- planner: Plans trips and budgets\./);
+    assert.deepEqual(flow.assistants[0], { ...saved[0] });
+  });
+
   it("keeps the key out of the model's errors", async () => {
     const fetcher = (async () => Response.json({ error: { message: "bad key sk-secret-123" } }, { status: 401 })) as typeof fetch;
     await assert.rejects(describer({ url: "http://model.test/v1/chat/completions", model: "m", key: "sk-secret-123", fetcher })("x"), /The model said: bad key \[key\]/);

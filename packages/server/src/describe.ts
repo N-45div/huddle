@@ -1,4 +1,4 @@
-import { type Flow, thinkingFor } from "@huddle/core";
+import { type Assistant, type Flow, thinkingFor } from "@huddle/core";
 import { checkFlow } from "./app.ts";
 
 /**
@@ -53,7 +53,22 @@ function jsonIn(reply: string): unknown {
   }
 }
 
-export function describer(options: DescribeOptions): (text: string) => Promise<Flow> {
+/** The saved assistants, one line each, for the model to pick from. */
+const savedList = (saved: readonly Assistant[]): string =>
+  `\n\nThe person's saved assistants. Use them for any job they fit, and in "assistants" list each one you use as just {"id": "<its id>"}: Huddle fills in the rest.\n${saved.map((assistant) => `- ${assistant.id}: ${assistant.description ?? assistant.name ?? assistant.connector}`).join("\n")}`;
+
+/** The flow with each saved assistant it names put back exactly as saved, so a model can't change how one is reached. */
+function withSaved(draft: unknown, saved: readonly Assistant[]): unknown {
+  if (!draft || typeof draft !== "object" || !Array.isArray((draft as { assistants?: unknown }).assistants)) return draft;
+  const byId = new Map(saved.map((assistant) => [assistant.id, assistant]));
+  const assistants = (draft as { assistants: unknown[] }).assistants.map((entry) => {
+    const id = entry && typeof entry === "object" ? (entry as { id?: unknown }).id : undefined;
+    return (typeof id === "string" && byId.get(id)) || entry;
+  });
+  return { ...draft, assistants };
+}
+
+export function describer(options: DescribeOptions): (text: string, saved?: readonly Assistant[]) => Promise<Flow> {
   const fetcher = options.fetcher ?? globalThis.fetch;
   const endpoint = /\/chat\/completions\/?$/.test(options.url) ? options.url : `${options.url.replace(/\/$/, "")}/chat/completions`;
 
@@ -75,21 +90,21 @@ export function describer(options: DescribeOptions): (text: string) => Promise<F
     return content;
   }
 
-  return async (text) => {
+  return async (text, saved = []) => {
     const messages = [
-      { role: "system", content: GUIDE },
+      { role: "system", content: saved.length ? GUIDE + savedList(saved) : GUIDE },
       { role: "user", content: text },
     ];
     const first = await ask(messages);
     let checked: ReturnType<typeof checkFlow>;
     try {
-      checked = checkFlow(jsonIn(first));
+      checked = checkFlow(withSaved(jsonIn(first), saved));
     } catch (error) {
       checked = { problems: [error instanceof Error ? error.message : String(error)] };
     }
     if ("flow" in checked) return checked.flow;
     const second = await ask([...messages, { role: "assistant", content: first }, { role: "user", content: `That flow has problems:\n- ${checked.problems.join("\n- ")}\nSend the whole corrected flow, JSON only.` }]);
-    const retried = checkFlow(jsonIn(second));
+    const retried = checkFlow(withSaved(jsonIn(second), saved));
     if ("flow" in retried) return retried.flow;
     throw new Error(`The model's flow still has problems: ${retried.problems.join("; ")}`);
   };
