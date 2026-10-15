@@ -22,6 +22,7 @@ export type {
   MemoryHit,
   Note,
   PresentedView,
+  Receipt,
   RunDetail,
   RunState,
   RunSummary,

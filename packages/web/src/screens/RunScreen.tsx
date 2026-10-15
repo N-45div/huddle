@@ -2,6 +2,7 @@ import { api } from "../api.ts";
 import { useApp } from "../app-context.ts";
 import { AnswerButtons } from "../components/Answer.tsx";
 import { ErrorNote, Icon, Link, Loading, StateBadge } from "../components/bits.tsx";
+import { ReceiptPanel } from "../components/ReceiptPanel.tsx";
 import { RunLog } from "../components/RunLog.tsx";
 import { useChanges } from "../events.ts";
 import { fullTime } from "../format.ts";
@@ -84,6 +85,13 @@ export function RunScreen({ runId }: { readonly runId: string }) {
             <h2>Input</h2>
             {run.context.input ? <pre className="block">{run.context.input}</pre> : <p className="hint">This run had no input.</p>}
           </section>
+
+          {data.receipt && (
+            <section className="section">
+              <h2>Where your data went</h2>
+              <ReceiptPanel receipt={data.receipt} />
+            </section>
+          )}
 
           <section className="section">
             <h2>What happened</h2>

@@ -3502,3 +3502,60 @@ h1 .badge {
   color: var(--text, inherit);
   font-weight: 600;
 }
+
+/* A run's privacy receipt: one line per hand-off, what went where. */
+.receipt-summary {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.receipt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.receipt-line {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.receipt-line.local {
+  border-left-color: var(--ok);
+}
+
+.receipt-to,
+.receipt-what {
+  margin: 0;
+  font-size: 14px;
+}
+
+.receipt-what {
+  font-size: 13px;
+}
+
+.receipt-notes {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.slice-chip {
+  display: inline-block;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
