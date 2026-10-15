@@ -53,6 +53,8 @@ export interface FlowView {
   readonly a2aUrl: string;
   /** The tool that starts it over MCP (flow_ and its name), for whoever its callers rule lets in. */
   readonly mcpTool: string;
+  /** When a schedule at a time of day runs next; null for other triggers. */
+  readonly nextRunAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
 }

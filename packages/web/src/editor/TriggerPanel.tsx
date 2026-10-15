@@ -10,6 +10,8 @@ interface Props {
   readonly flowId: string;
   readonly trigger: Trigger;
   readonly savedTrigger: Trigger | undefined;
+  /** When the saved schedule runs next, if it's at a time of day. */
+  readonly nextRunAt?: string | null;
   readonly webhookUrl: string;
   readonly a2aUrl: string;
   /** Huddle's MCP address and token (from /api/info), and the tool that starts this flow there. */
@@ -35,14 +37,14 @@ function absolute(address: string): string {
   }
 }
 
-export function TriggerPanel({ flowId, trigger, savedTrigger, webhookUrl, a2aUrl, mcp, mcpTool, email, stepIds, firstStep, onChange, callers, onCallers, onFirstStep, onRotated }: Props) {
-  const [lastEvery, setLastEvery] = useState(trigger.type === "schedule" ? trigger.every : "1d");
+export function TriggerPanel({ flowId, trigger, savedTrigger, nextRunAt, webhookUrl, a2aUrl, mcp, mcpTool, email, stepIds, firstStep, onChange, callers, onCallers, onFirstStep, onRotated }: Props) {
+  const [lastEvery, setLastEvery] = useState((trigger.type === "schedule" && trigger.every) || "1d");
   const [lastAddress, setLastAddress] = useState(trigger.type === "email" ? trigger.address : "");
   const changed = JSON.stringify(trigger) !== JSON.stringify(savedTrigger ?? { type: "manual" });
 
   const pick = (type: Trigger["type"]) => {
     if (type === trigger.type) return;
-    if (trigger.type === "schedule") setLastEvery(trigger.every);
+    if (trigger.type === "schedule" && trigger.every) setLastEvery(trigger.every);
     if (trigger.type === "email") setLastAddress(trigger.address);
     if (type === "schedule") onChange({ type, every: lastEvery, input: "" });
     else if (type === "email") onChange({ type, address: lastAddress });
@@ -63,26 +65,12 @@ export function TriggerPanel({ flowId, trigger, savedTrigger, webhookUrl, a2aUrl
 
       {trigger.type === "schedule" && (
         <>
-          <div className="field">
-            <label htmlFor="trigger-every">Every</label>
-            <input
-              id="trigger-every"
-              className="mono input-short"
-              value={trigger.every}
-              autoComplete="off"
-              spellCheck={false}
-              aria-invalid={EVERY_PATTERN.test(trigger.every) ? undefined : true}
-              aria-describedby="trigger-every-hint"
-              onChange={(event) => onChange({ ...trigger, every: event.target.value.trim() })}
-            />
-            {EVERY_PATTERN.test(trigger.every) ? (
-              <Hint id="trigger-every-hint">A number and m, h or d: 15m, 2h, 1d. At least a minute.</Hint>
-            ) : (
-              <p className="error-text" id="trigger-every-hint">
-                Use a number and m, h or d, like 15m, 2h or 1d.
-              </p>
-            )}
-          </div>
+          <ScheduleWhen trigger={trigger} lastEvery={lastEvery} onEvery={setLastEvery} onChange={onChange} />
+          {!changed && nextRunAt && (
+            <p className="hint">
+              Next run: <time dateTime={nextRunAt}>{new Date(nextRunAt).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</time> (your time)
+            </p>
+          )}
           <div className="field">
             <label htmlFor="trigger-input">Input for each run</label>
             <textarea id="trigger-input" rows={3} value={trigger.input} aria-describedby="trigger-input-hint" onChange={(event) => onChange({ ...trigger, input: event.target.value })} />
@@ -233,6 +221,109 @@ function CopyAddress({ id, label, address, children }: { readonly id: string; re
       {copied === "manual" && <p className="hint">Selected. Press Ctrl+C (or ⌘C) to copy.</p>}
       <Hint id={`${id}-hint`}>{children}</Hint>
     </div>
+  );
+}
+
+type ScheduleTrigger = Extract<Trigger, { type: "schedule" }>;
+const DAYS = [
+  ["mon", "Mon"],
+  ["tue", "Tue"],
+  ["wed", "Wed"],
+  ["thu", "Thu"],
+  ["fri", "Fri"],
+  ["sat", "Sat"],
+  ["sun", "Sun"],
+] as const;
+type Day = (typeof DAYS)[number][0];
+/** This browser's time zone, the starting point for a schedule at a time of day. */
+const HERE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const ZONES: readonly string[] = (() => {
+  try {
+    return (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
+  } catch {
+    return [];
+  }
+})();
+
+/** When a schedule runs: every so often, or at a time of day on some days, by a time zone's clock. */
+function ScheduleWhen({ trigger, lastEvery, onEvery, onChange }: { readonly trigger: ScheduleTrigger; readonly lastEvery: string; readonly onEvery: (every: string) => void; readonly onChange: (trigger: Trigger) => void }) {
+  const atTime = Boolean(trigger.at);
+  const days = new Set<Day>(trigger.on ?? DAYS.map(([day]) => day));
+  const toggle = (day: Day) => {
+    const next = new Set(days);
+    if (next.has(day)) next.delete(day);
+    else next.add(day);
+    if (next.size === 0) return;
+    const on = DAYS.map(([d]) => d).filter((d) => next.has(d));
+    const { on: _on, ...rest } = trigger;
+    onChange(on.length === 7 ? rest : { ...rest, on });
+  };
+  const every = trigger.every ?? "";
+  return (
+    <>
+      <fieldset className="field">
+        <legend>When</legend>
+        <div className="radio-list">
+          <div className="radio">
+            <input type="radio" id="schedule-every" name="schedule-kind" checked={!atTime} onChange={() => onChange({ type: "schedule", every: lastEvery, input: trigger.input })} />
+            <label htmlFor="schedule-every">Every so often</label>
+          </div>
+          <div className="radio">
+            <input type="radio" id="schedule-at" name="schedule-kind" checked={atTime} onChange={() => { if (trigger.every) onEvery(trigger.every); onChange({ type: "schedule", at: "08:00", timezone: HERE, input: trigger.input }); }} />
+            <label htmlFor="schedule-at">At a time of day</label>
+          </div>
+        </div>
+      </fieldset>
+      {atTime ? (
+        <>
+          <div className="field">
+            <label htmlFor="trigger-at">At</label>
+            <input id="trigger-at" type="time" className="input-short" value={trigger.at} onChange={(event) => event.target.value && onChange({ ...trigger, at: event.target.value })} />
+          </div>
+          <fieldset className="field">
+            <legend>On</legend>
+            <div className="day-toggles">
+              {DAYS.map(([day, label]) => (
+                <button key={day} type="button" className={days.has(day) ? "day-toggle on" : "day-toggle"} aria-pressed={days.has(day)} onClick={() => toggle(day)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <div className="field">
+            <label htmlFor="trigger-timezone">By the clock in</label>
+            <input id="trigger-timezone" className="mono" list="trigger-timezones" value={trigger.timezone ?? ""} placeholder={HERE} autoComplete="off" spellCheck={false} aria-describedby="trigger-timezone-hint" onChange={(event) => { const timezone = event.target.value.trim(); const { timezone: _tz, ...rest } = trigger; onChange(timezone ? { ...rest, timezone } : rest); }} />
+            <datalist id="trigger-timezones">
+              {ZONES.map((zone) => (
+                <option key={zone} value={zone} />
+              ))}
+            </datalist>
+            <Hint id="trigger-timezone-hint">A time zone like Asia/Kolkata. Left empty, the server's own clock.</Hint>
+          </div>
+        </>
+      ) : (
+        <div className="field">
+          <label htmlFor="trigger-every">Every</label>
+          <input
+            id="trigger-every"
+            className="mono input-short"
+            value={every}
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={EVERY_PATTERN.test(every) ? undefined : true}
+            aria-describedby="trigger-every-hint"
+            onChange={(event) => onChange({ ...trigger, every: event.target.value.trim() })}
+          />
+          {EVERY_PATTERN.test(every) ? (
+            <Hint id="trigger-every-hint">A number and m, h or d: 15m, 2h, 1d. At least a minute.</Hint>
+          ) : (
+            <p className="error-text" id="trigger-every-hint">
+              Use a number and m, h or d, like 15m, 2h or 1d.
+            </p>
+          )}
+        </div>
+      )}
+    </>
   );
 }
 

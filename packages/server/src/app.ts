@@ -1,3 +1,4 @@
+import { nextRun } from "@huddle/core";
 import { type Assistant, Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type MemoryHit, type Note, ollamaModels, type PactIdentity, tokenFactoryModels, vllmModels, periodStart, type Presenter, present, rulesPresenter, VIEW_KINDS, type ViewKind, type ViewWriter, type Router, type SavedFlow, SensitiveNote, type SignIns, type Store } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -78,6 +79,8 @@ export function createApp(options: AppOptions): Hono {
     webhookUrl: `${options.publicUrl}/hooks/${saved.id}/${saved.webhookSecret}`,
     a2aUrl: `${options.publicUrl}/a2a/flows/${saved.id}`,
     mcpTool: names.get(saved.id) ?? saved.id,
+    // A schedule at a time of day runs at the same times however it was saved, so when it runs next is known here.
+    nextRunAt: saved.flow.trigger.type === "schedule" && saved.flow.trigger.at ? new Date(nextRun(saved.flow.trigger, Date.now())).toISOString() : null,
     createdAt: saved.createdAt,
     updatedAt: saved.updatedAt,
   });

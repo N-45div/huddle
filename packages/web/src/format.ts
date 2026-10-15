@@ -33,9 +33,21 @@ export function clockTime(iso: string | null | undefined): string {
   return date ? timeOnly.format(date) : "";
 }
 
+const DAY_NAMES = { mon: "Mondays", tue: "Tuesdays", wed: "Wednesdays", thu: "Thursdays", fri: "Fridays", sat: "Saturdays", sun: "Sundays" } as const;
+
+/** A schedule in words, as the server says it: "Every 2h", "Fridays at 18:00 (Asia/Kolkata)", "Weekdays at 08:00". */
+function scheduleSummary(trigger: Extract<Trigger, { type: "schedule" }>): string {
+  if (trigger.every || !trigger.at) return `Every ${trigger.every ?? "?"}`;
+  const order = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+  const days = new Set(trigger.on ?? order);
+  const weekdays = days.size === 5 && ["mon", "tue", "wed", "thu", "fri"].every((day) => days.has(day as (typeof order)[number]));
+  const when = days.size === 7 ? "Every day" : weekdays ? "Weekdays" : days.size === 2 && days.has("sat") && days.has("sun") ? "Weekends" : order.filter((day) => days.has(day)).map((day) => DAY_NAMES[day]).join(", ");
+  return `${when} at ${trigger.at}${trigger.timezone ? ` (${trigger.timezone})` : ""}`;
+}
+
 export function triggerSummary(trigger: Trigger | undefined): string {
   if (!trigger || trigger.type === "manual") return "Manual";
-  if (trigger.type === "schedule") return `Every ${trigger.every}`;
+  if (trigger.type === "schedule") return scheduleSummary(trigger);
   if (trigger.type === "email") return `Email to ${trigger.address}`;
   return "Webhook";
 }

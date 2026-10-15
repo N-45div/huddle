@@ -612,6 +612,7 @@ function Editor({ flowId, openDescribe }: { readonly flowId: string; readonly op
                 flowId={flowId}
                 trigger={meta.trigger}
                 savedTrigger={view.flow.trigger}
+                nextRunAt={view.nextRunAt}
                 webhookUrl={view.webhookUrl}
                 a2aUrl={view.a2aUrl}
                 mcp={info?.mcp}

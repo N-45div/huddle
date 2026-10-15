@@ -3476,3 +3476,29 @@ h1 .badge {
   font-size: 12.5px;
   color: var(--muted);
 }
+
+/* A schedule's days: seven toggles, the ones it runs on filled in. */
+.day-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.day-toggle {
+  min-width: 46px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.day-toggle.on {
+  border-color: var(--accent, #4f5bd5);
+  background: color-mix(in srgb, var(--accent, #4f5bd5) 12%, var(--surface));
+  color: var(--text, inherit);
+  font-weight: 600;
+}
