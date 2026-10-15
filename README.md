@@ -258,6 +258,10 @@ chat path isn't `/v1/chat/completions`, give the whole chat URL instead:
 
 **Sochen.** Set `SOCHEN_API_KEY` (a Pro plan's `sk_sochen_…` key) and add `{ "id": "sochen", "connector": "sochen" }`.
 
+**Web search (Tavily).** Set `TAVILY_API_KEY` and add `{ "id": "web", "connector": "tavily" }`: the step's
+request is the query, and the answer is Tavily's, with its sources (and every source's matching text in
+the data). Memory isn't sent. An advanced search is 2 of Tavily's credits (1,000 free a month).
+
 **Monid.** [Monid](https://monid.ai) puts a catalog of paid data tools behind one key and one balance:
 Google's job listings, reviews, prices, search results. Set `MONID_API_KEY`, then find a tool in the canvas
 (add an assistant, pick Monid tool, and describe what it should do), or from the command line:
@@ -625,6 +629,29 @@ Businesses must reach your Huddle's `jwks.json` over the internet, so set `HUDDL
 Tested against PACT's reference Provider: Skyline Airways checked a flight, asked for permission to
 rebook, and rebooked it, with both receipts checked.
 
+## Check the facts before you say yes
+
+An assistant can be confidently wrong, and an approval is where that costs you: you say yes to a plan
+with the wrong train in it. Give an approval step `"check": true`, and before you're asked, Huddle looks
+up the facts in its message on the web:
+
+```json
+{ "id": "ok", "type": "approval", "message": "Send this plan to your partner?\n\n{{plan.text}}", "check": true }
+```
+
+A quick model lists the facts worth checking (facts about a named thing: a train's number and times, a
+place's entry fee or hours, a business's address, a rule), [Tavily](https://tavily.com) searches each one,
+and a stronger model says whether the sources back it, contradict it, or don't settle it, quoting them.
+The approval shows contradicted facts first, each with the source's own words and a link. A quote that
+isn't word for word in the source it names doesn't count: that fact shows as not settled, so a model can't
+make evidence up. If the check can't run (no key, no credits), you're still asked, and the run says why.
+
+It needs `TAVILY_API_KEY` and a model: with `NEBIUS_API_KEY`, Nemotron Lightning lists the facts and Super
+weighs the sources. A check of five facts is 10 of Tavily's credits and a fraction of a cent of the models,
+and counts toward `HUDDLE_BUDGET`. In `examples/weekend-plan.json`, Nemotron Ultra planned a Mysuru weekend
+with the Palace at ₹50 a head; the check quoted "INR 100 for adults" from MakeMyTrip before the yes. On
+another run it caught both of the plan's trains going the wrong way.
+
 ## Check hand-offs first (optional)
 
 Huddle's own approvals are how you say yes, and that's all most setups need. If you want something
@@ -791,6 +818,7 @@ docker compose up -d   # http://localhost:7700, data in the huddle-data volume
 | `TYPESAFE_API_KEY`, `HUDDLE_JEV_MODEL` | none, `jev-latest` | Jev judges the router's `"auto"` |
 | `HUDDLE_OPENSHELL_GATEWAY` | none | an NVIDIA OpenShell gateway, for sandboxed assistants and their requests in Approvals |
 | `OPENSHELL_TLS_DIR` | `~/.config/openshell/gateways/openshell/mtls` | the OpenShell CLI's client certificate (`ca.crt`, `tls.crt`, `tls.key`) |
+| `TAVILY_API_KEY` | none | web search: the `tavily` connector's key, and, with a model, checking the facts in approvals that ask (`"check": true`) |
 | `RESEND_API_KEY` | none | sends email (the `email` connector's default key) and reads mail that arrives; reading needs a full-access key |
 | `RESEND_WEBHOOK_SECRET` | none | the signing secret of Resend's `email.received` webhook, pointed at `/hooks/email`; without it Huddle takes no mail |
 | `HUDDLE_OWNER_EMAILS` | none | your own addresses, comma-separated: mail from them counts as you |
