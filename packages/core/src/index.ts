@@ -58,6 +58,7 @@ export { evaluateFormula, FormulaError, namesIn, parseFormula } from "./formula.
 export { type Answer, type Choice, FILLED, FilledView, jevPresenter, type JevPresenterOptions, type ModelOptions, modelPresenter, obviousChoice, present, type Presenter, rulesPresenter, type Table, tableOf, type View, VIEW_KINDS, type ViewKind, VIEWS, type ViewWriter, viewWriter } from "./present.ts";
 export { type Budget, CHARS_PER_TOKEN, costOf, dollars, estimateTokens, parseBudget, periodStart, type Price, priceOf, type Spend, spendOf, type Usage } from "./cost.ts";
 export { type Candidate, jevJudge, type JevOptions, type Judge, modelJudge, type ModelJudgeOptions, type Ranking } from "./judge.ts";
-export { askFirst, Assistant, assistantProblems, Assistants, type Caller, callerDecision, Callers, CLI_AGENTS, type CliAgent, CONTACT_TIERS, type ContactTier, EMAIL_PATTERN, everyMs, Flow, parseFlow, Step, TIERS, type Tier, Trigger } from "./schema.ts";
+export { nextRun, type ScheduleTrigger, scheduleText, type Weekday, WEEKDAYS } from "./schedule.ts";
+export { askFirst, Assistant, assistantProblems, Assistants, type Caller, callerDecision, Callers, CLI_AGENTS, type CliAgent, CONTACT_TIERS, type ContactTier, EMAIL_PATTERN, everyMs, Flow, knownTimeZone, parseFlow, Step, TIERS, type Tier, Trigger } from "./schema.ts";
 export { type Approval, type Change, type Contact, type HeldBy, type KeptAnswer, type LogLine, type Note, type Run, type RunState, type SavedFlow, type SpendTotal, Store } from "./store.ts";
 export { lookup, render, type RunContext, type StepAnswer } from "./template.ts";

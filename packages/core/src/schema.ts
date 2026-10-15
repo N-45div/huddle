@@ -170,10 +170,36 @@ export type Step = z.infer<typeof Step>;
 /** How long between scheduled runs: "15m", "2h", "1d" (at least 1 minute). */
 const every = z.string().regex(/^[1-9]\d*(m|h|d)$/, 'use a number and m, h or d, like "15m", "2h" or "1d"');
 
+/** Whether a time zone name is one this machine knows ("Asia/Kolkata", "Europe/London", "UTC"). */
+export function knownTimeZone(name: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: name });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const ScheduleTrigger = z
+  .object({
+    type: z.literal("schedule"),
+    /** Every so often: "15m", "2h", "1d", counted from when the flow is saved or Huddle starts. */
+    every: every.optional(),
+    /** Or at a time of day, 24-hour: "08:00", "18:30". */
+    at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'a time of day, 24-hour, like "08:00" or "18:30"').optional(),
+    /** With `at`: on these days only (every day when left out). */
+    on: z.array(z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"])).min(1).max(7).optional(),
+    /** With `at`: whose clock, like "Asia/Kolkata" (the server's own when left out). */
+    timezone: z.string().refine(knownTimeZone, 'a time zone, like "Asia/Kolkata" or "Europe/London"').optional(),
+    input: z.string().default(""),
+  })
+  .refine((trigger) => Boolean(trigger.every) !== Boolean(trigger.at), "a schedule runs either every so often (every) or at a time of day (at): give one of them")
+  .refine((trigger) => trigger.at || (!trigger.on && !trigger.timezone), "days (on) and a time zone go with a time of day (at)");
+
 export const Trigger = z.discriminatedUnion("type", [
   z.object({ type: z.literal("manual") }),
-  /** Runs every so often, with `input` as the run's input. */
-  z.object({ type: z.literal("schedule"), every, input: z.string().default("") }),
+  /** Runs every so often, or at a time of day on some days, with `input` as the run's input. */
+  ScheduleTrigger,
   /** Runs when something posts to the flow's webhook address (the server shows it); the body is the input. */
   z.object({ type: z.literal("webhook") }),
   /** Runs when mail to `address` reaches Huddle, through Resend's inbound webhook; the email is the input. */

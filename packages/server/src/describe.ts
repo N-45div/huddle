@@ -22,7 +22,7 @@ A flow:
 {
   "name": "short name",
   "description": "one sentence",
-  "trigger": { "type": "manual" } | { "type": "schedule", "every": "15m" | "2h" | "1d", "input": "text the run starts with" } | { "type": "webhook" } | { "type": "email", "address": "the address whose mail starts it" },
+  "trigger": { "type": "manual" } | { "type": "schedule", "every": "15m" | "2h" | "1d", "input": "text the run starts with" } | { "type": "schedule", "at": "18:00", "on": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] (the days it runs; leave out for every day), "timezone": "Asia/Kolkata" (when the person names a place or zone), "input": "..." } | { "type": "webhook" } | { "type": "email", "address": "the address whose mail starts it" },
   "assistants": [ { "id": "lowercase-id", "name": "Display name", "connector": "...", "memory": ["slice", ...] } ],
   "steps": [ ... ]
 }

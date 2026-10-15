@@ -784,9 +784,15 @@ describe("schedules", () => {
     scheduler.start();
     const saved = store.saveFlow(every(greeter, "15m"));
     store.saveFlow(invoices);
-    assert.deepEqual(scheduler.scheduled().map((slot) => [slot.flowId, slot.every]), [[saved.id, "15m"]]);
+    assert.deepEqual(scheduler.scheduled().map((slot) => [slot.flowId, slot.schedule]), [[saved.id, "Every 15m"]]);
     store.saveFlow(every(greeter, "40d"), saved.id);
-    assert.deepEqual(scheduler.scheduled().map((slot) => slot.every), ["40d"]);
+    assert.deepEqual(scheduler.scheduled().map((slot) => slot.schedule), ["Every 40d"]);
+    // A time of day on some days, by a time zone's clock: the timer waits for the next one.
+    store.saveFlow({ ...greeter, trigger: { type: "schedule", at: "18:00", on: ["fri"], timezone: "Asia/Kolkata", input: "weekend" } }, saved.id);
+    const [friday] = scheduler.scheduled();
+    assert.equal(friday?.schedule, "Fridays at 18:00 (Asia/Kolkata)");
+    assert.equal(new Date(friday!.dueAt).getUTCDay(), 5);
+    assert.equal(new Date(friday!.dueAt).toISOString().slice(11, 16), "12:30");
     store.deleteFlow(saved.id);
     assert.deepEqual(scheduler.scheduled(), []);
     scheduler.stop();
