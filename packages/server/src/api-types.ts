@@ -5,7 +5,7 @@
  */
 import type { Assistant, Choice, Contact, FactCheck, HeldBy, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger, View } from "@huddle/core";
 
-export type { Assistant, Choice, Contact, HeldBy, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger, View };
+export type { Assistant, Choice, Contact, FactCheck, HeldBy, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger, View };
 export type { FoundTool, ToolDetails } from "./monid.ts";
 
 /** GET /api/info: what this Huddle can do. */

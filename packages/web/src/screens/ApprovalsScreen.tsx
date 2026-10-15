@@ -3,6 +3,7 @@ import { api, describeError } from "../api.ts";
 import { useApp } from "../app-context.ts";
 import { AnswerButtons } from "../components/Answer.tsx";
 import { Empty, ErrorNote, Link, Loading } from "../components/bits.tsx";
+import { FactChecks } from "../components/FactChecks.tsx";
 import { useChanges } from "../events.ts";
 import { ago, fullTime } from "../format.ts";
 import { useDebounced, useResource } from "../hooks.ts";
@@ -71,6 +72,7 @@ export function ApprovalsScreen() {
               </time>
             </p>
             <p className="waiting-message">{approval.message}</p>
+            {approval.checks && <FactChecks checks={approval.checks} />}
             <div className="approval-foot">
               <AnswerButtons
                 approvalId={approval.id}

@@ -101,6 +101,13 @@ function describe(line: LogLine): Described {
         ),
       };
     }
+    case "fact-checked": {
+      const count = (key: string) => Number(field(detail, key) ?? 0);
+      const parts = [`${count("supported")} backed`, `${count("contradicted")} contradicted`, `${count("unclear")} not settled`];
+      return { title: `Checked ${count("facts")} facts on the web: ${parts.join(", ")}`, body: `By ${text(detail, "by")}`, ...(count("contradicted") > 0 ? { tone: "danger" as const } : {}) };
+    }
+    case "unchecked":
+      return { title: "Facts not checked", body: text(detail, "reason"), tone: "warn" };
     case "waiting":
       return { title: field(detail, "heldBy") ? `Held: waiting for a yes in ${text(field(detail, "heldBy"), "by")}` : "Waiting for a yes or no", body: text(detail, "message"), tone: "warn" };
     case "released":

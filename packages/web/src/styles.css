@@ -916,6 +916,89 @@ h1 .badge {
   white-space: pre-wrap;
 }
 
+/* What the web says about an approval's facts: contradicted first, each with its source's own words. */
+.fact-checks {
+  margin: 12px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.fact-checks-head {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.fact-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fact {
+  display: grid;
+  grid-template-columns: 104px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.fact-verdict {
+  justify-self: start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surface-2);
+}
+
+.fact-supported .fact-verdict {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+
+.fact-contradicted .fact-verdict {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.fact-claim,
+.fact-note {
+  margin: 0;
+}
+
+.fact-claim {
+  font-size: 14px;
+  font-weight: 520;
+}
+
+.fact-note {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.fact-quote {
+  margin: 6px 0 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--border);
+  font-size: 13px;
+}
+
+.fact-contradicted .fact-quote {
+  border-left-color: var(--danger);
+}
+
+@media (max-width: 560px) {
+  .fact {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
 .answer {
   display: flex;
   flex-direction: column;

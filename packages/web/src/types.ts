@@ -12,6 +12,7 @@ export type {
   ConnectorInfo,
   Contact,
   ContactTier,
+  FactCheck,
   Flow,
   FlowView,
   FoundTool,
