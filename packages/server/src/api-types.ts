@@ -3,9 +3,9 @@
  * can't drift apart. All routes are under /api; when the server has a token, every call carries
  * `Authorization: Bearer <token>` (the event stream takes `?token=` instead).
  */
-import type { Assistant, Choice, Contact, FactCheck, HeldBy, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger, View } from "@huddle/core";
+import type { Assistant, Choice, Contact, FactCheck, HeldBy, Receipt, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger, View } from "@huddle/core";
 
-export type { Assistant, Choice, Contact, FactCheck, HeldBy, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger, View };
+export type { Assistant, Choice, Contact, FactCheck, HeldBy, Receipt, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger, View };
 export type { FoundTool, ToolDetails } from "./monid.ts";
 
 /** GET /api/info: what this Huddle can do. */
@@ -75,6 +75,8 @@ export interface RunDetail {
   readonly run: RunView;
   readonly flow: Flow;
   readonly log: readonly LogLine[];
+  /** Where its requests and your notes went. */
+  readonly receipt: Receipt;
 }
 
 /** GET /api/approvals: what's waiting on a person. */

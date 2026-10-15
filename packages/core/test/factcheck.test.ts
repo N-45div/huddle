@@ -64,7 +64,7 @@ describe("checking the facts in an approval", () => {
 
   it("checks before the person is asked, keeps the result with the approval, and counts its cost", async () => {
     const flow = parseFlow({ name: "Trip", assistants: [{ id: "a", connector: "mock", replies: { "*": TRAIN } }], steps: [{ id: "plan", type: "agent", agent: "a", ask: "plan" }, { id: "ok", type: "approval", message: "Book this? {{plan.text}}", check: true }] });
-    const canned: FactCheck = { facts: [{ claim: TRAIN, verdict: "supported", note: "Matches.", source: { title: "Timetable", url: "https://example.com", quote: "departs at 06:00" } }], checkedBy: "m with Tavily", costUsd: 0.02 };
+    const canned: FactCheck = { facts: [{ claim: TRAIN, verdict: "supported", note: "Matches.", source: { title: "Timetable", url: "https://example.com", quote: "departs at 06:00" } }], checkedBy: "m with Tavily", costUsd: 0.02, sentTo: ["api.tokenfactory.nebius.com", "api.tavily.com"] };
     const store = new Store();
     const engine = new Engine(store, { mock: (await import("../src/connectors/mock.ts")).mock }, { checker: async () => canned });
     const view = await engine.start(flow, "go");

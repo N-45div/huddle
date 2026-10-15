@@ -1,4 +1,4 @@
-import { TAVILY_CREDIT_USD, type TavilyResult, tavilySearch } from "./tavily.ts";
+import { TAVILY_API, TAVILY_CREDIT_USD, type TavilyResult, tavilySearch } from "./tavily.ts";
 import { isTokenFactory, thinkingFor, tokenFactoryPrice } from "./tokenfactory.ts";
 
 /**
@@ -26,6 +26,8 @@ export interface FactCheck {
   readonly checkedBy: string;
   /** What the check cost: Tavily's credits, plus the models where their price is known. */
   readonly costUsd: number;
+  /** The services the message and its facts went to: the models' hosts and Tavily's. */
+  readonly sentTo: readonly string[];
 }
 
 export type FactChecker = (text: string) => Promise<FactCheck>;
@@ -99,6 +101,14 @@ async function askJson(model: ChatModel, system: string, user: string, fetcher: 
 export function factChecker(options: FactCheckOptions): FactChecker {
   const fetcher = options.fetcher ?? globalThis.fetch;
   const max = options.maxFacts ?? 5;
+  const hostOf = (url: string) => {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return url;
+    }
+  };
+  const sentTo = [...new Set([hostOf(options.lister.url), hostOf(options.judge.url), hostOf(TAVILY_API)])];
   return async (text) => {
     let costUsd = 0;
     const listed = await askJson(options.lister, LIST(max), text.slice(0, 8_000), fetcher);
@@ -106,7 +116,8 @@ export function factChecker(options: FactCheckOptions): FactChecker {
     const raw = (listed.json as { facts?: unknown } | null)?.facts;
     const claims = (Array.isArray(raw) ? raw : []).filter((claim): claim is string => typeof claim === "string" && claim.trim().length > 0).map((claim) => claim.trim().slice(0, 300)).slice(0, max);
     const checkedBy = `${options.judge.model} with Tavily`;
-    if (claims.length === 0) return { facts: [], checkedBy, costUsd };
+    // Nothing to look up: only the model that read the message saw it.
+    if (claims.length === 0) return { facts: [], checkedBy, costUsd, sentTo: [hostOf(options.lister.url)] };
 
     // Every fact searched at once; one failing search leaves that fact unclear, not the whole check.
     const searches = await Promise.all(
@@ -146,6 +157,6 @@ export function factChecker(options: FactCheckOptions): FactChecker {
       if (!result || !quoted(quote, result.content)) return { claim, verdict: "unclear", note: "The quote given as evidence isn't in the source, so this isn't settled.", source: null };
       return { claim, verdict, note, source: { title: result.title, url: result.url, quote: quote.slice(0, 400) } };
     });
-    return { facts, checkedBy, costUsd };
+    return { facts, checkedBy, costUsd, sentTo };
   };
 }

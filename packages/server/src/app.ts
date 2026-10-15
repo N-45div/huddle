@@ -1,4 +1,4 @@
-import { nextRun } from "@huddle/core";
+import { nextRun, receiptOf } from "@huddle/core";
 import { type Assistant, Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type MemoryHit, type Note, ollamaModels, type PactIdentity, tokenFactoryModels, vllmModels, periodStart, type Presenter, present, rulesPresenter, VIEW_KINDS, type ViewKind, type ViewWriter, type Router, type SavedFlow, SensitiveNote, type SignIns, type Store } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -303,7 +303,8 @@ export function createApp(options: AppOptions): Hono {
   app.get("/api/runs/:id", (c) => {
     const run = store.run(c.req.param("id"));
     if (!run) return bad(c, "There's no such run.", 404);
-    return c.json<RunDetail>({ run: engine.view(run.id), flow: run.flow, log: store.logOf(run.id) });
+    const log = store.logOf(run.id);
+    return c.json<RunDetail>({ run: engine.view(run.id), flow: run.flow, log, receipt: receiptOf(run.flow, log, store.notes()) });
   });
   app.get("/api/approvals", (c) =>
     c.json<WaitingApproval[]>(

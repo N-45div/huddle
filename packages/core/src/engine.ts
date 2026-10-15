@@ -286,7 +286,7 @@ export class Engine {
     try {
       const checks = await this.checker(message);
       const count = (verdict: string) => checks.facts.filter((fact) => fact.verdict === verdict).length;
-      this.store.log(run.id, stepId, "fact-checked", { facts: checks.facts.length, supported: count("supported"), contradicted: count("contradicted"), unclear: count("unclear"), by: checks.checkedBy, costUsd: checks.costUsd });
+      this.store.log(run.id, stepId, "fact-checked", { facts: checks.facts.length, supported: count("supported"), contradicted: count("contradicted"), unclear: count("unclear"), by: checks.checkedBy, costUsd: checks.costUsd, claims: checks.facts.map((fact) => fact.claim), sentTo: checks.sentTo });
       if (checks.costUsd > 0) this.store.addSpend(run, stepId, "fact-check", { inputTokens: 0, outputTokens: 0, costUsd: checks.costUsd, estimated: false });
       return checks;
     } catch (error) {
