@@ -1,3 +1,5 @@
+import { thinkingFor } from "./tokenfactory.ts";
+
 /**
  * The router's judge: given a request and your assistants, which should answer, in order. Pluggable:
  * Jev (TypeSafe AI's System One model) gives a calibrated probability for every assistant in one Choice
@@ -100,6 +102,8 @@ export function modelJudge(options: ModelJudgeOptions): Judge {
         body: JSON.stringify({
           model: options.model,
           temperature: 0,
+          // Picking an assistant shouldn't wait on the model thinking it over (Nemotron on Token Factory would).
+          ...thinkingFor(options.url, false),
           messages: [
             { role: "system", content: `${INSTRUCTIONS}\n\nAssistants:\n${list}\n\nAnswer with JSON only: {"ranking": ["best-id", "next-id", ...]} using only these ids, best first.` },
             { role: "user", content: request.slice(0, MAX_STATE_CHARS) },

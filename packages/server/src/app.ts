@@ -373,7 +373,7 @@ export function createApp(options: AppOptions): Hono {
   });
 
   app.post("/api/describe", async (c) => {
-    if (!options.describe) return bad(c, "Describe it needs an AI model: set HUDDLE_LLM_URL and HUDDLE_LLM_MODEL (and HUDDLE_LLM_KEY if it needs one).", 501);
+    if (!options.describe) return bad(c, "Describe it needs an AI model: set NEBIUS_API_KEY for NVIDIA Nemotron, or HUDDLE_LLM_URL and HUDDLE_LLM_MODEL (and HUDDLE_LLM_KEY if it needs one).", 501);
     const text = (await body(c)).text;
     if (typeof text !== "string" || !text.trim()) return bad(c, "Describe the flow in a sentence.");
     try {

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, reranker, Router, rulesPresenter, type Guard, guardFromEnv, SignIns, Store, storedGrants, viewWriter } from "@huddle/core";
+import { type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, SignIns, Store, storedGrants, viewWriter } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
 import { monidCatalog } from "./monid.ts";
@@ -20,7 +20,11 @@ import { webApp } from "./static.ts";
  *   HUDDLE_TOKEN       the token for the canvas and API; required unless listening on this machine only
  *   HUDDLE_PUBLIC_URL  how others reach this Huddle, for webhook and A2A addresses
  *   HUDDLE_A2A_TOKEN   a separate token for assistants calling Huddle over A2A or MCP (default HUDDLE_TOKEN)
- *   HUDDLE_LLM_URL, HUDDLE_LLM_MODEL, HUDDLE_LLM_KEY   an OpenAI-compatible model for "describe it"
+ *   HUDDLE_LLM_URL, HUDDLE_LLM_MODEL, HUDDLE_LLM_KEY   an OpenAI-compatible model for "describe it", for
+ *                      judging "auto", and for showing answers as views
+ *   NEBIUS_API_KEY     NVIDIA Nemotron on Nebius Token Factory: the nebius connector's key, and, when no
+ *                      HUDDLE_LLM_URL is set, Huddle's own model calls, each on the tier its job needs:
+ *                      Lightning judges "auto" and picks views, Super fills them in, Ultra drafts flows
  *   HUDDLE_MEMORY_BUDGET  characters of kept notes each request may carry (default 4000)
  *   HUDDLE_EMBED_URL, HUDDLE_EMBED_MODEL, HUDDLE_EMBED_KEY   an OpenAI-compatible embeddings API, so
  *                      memory finds notes by meaning as well as by their words
@@ -71,8 +75,16 @@ if (token && token.length < 16) {
   process.exit(1);
 }
 
-const llmUrl = env("HUDDLE_LLM_URL");
+const nebiusKey = env("NEBIUS_API_KEY");
+// With just a Token Factory key, Huddle's own model calls run on NVIDIA Nemotron; HUDDLE_LLM_MODEL puts every one on a single model.
+const onNemotron = !env("HUDDLE_LLM_URL") && Boolean(nebiusKey);
+const llmUrl = env("HUDDLE_LLM_URL") ?? (onNemotron ? TOKEN_FACTORY_URL : undefined);
+const llmKey = env("HUDDLE_LLM_KEY") ?? (onNemotron ? nebiusKey : undefined);
 const llmModel = env("HUDDLE_LLM_MODEL");
+const modelFor = (tier: keyof typeof NEMOTRON): string | undefined => llmModel ?? (onNemotron ? NEMOTRON[tier] : undefined);
+const quickModel = modelFor("lightning");
+const fillModel = modelFor("super");
+const draftModel = modelFor("ultra");
 // The desktop app runs Huddle bundled into one file, with its version given.
 const version = env("HUDDLE_VERSION") ?? (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }).version;
 const publicUrl = (env("HUDDLE_PUBLIC_URL") ?? `http://${loopback || host === "0.0.0.0" || host === "::" ? "localhost" : host}:${port}`).replace(/\/$/, "");
@@ -123,11 +135,13 @@ const scheduler = new Scheduler(store, engine);
 const typesafeKey = env("TYPESAFE_API_KEY");
 let judge: Judge | null = null;
 if (typesafeKey) judge = jevJudge({ key: typesafeKey, model: env("HUDDLE_JEV_MODEL") });
-else if (llmUrl && llmModel) judge = modelJudge({ url: llmUrl, model: llmModel, key: env("HUDDLE_LLM_KEY") });
+else if (llmUrl && quickModel) judge = modelJudge({ url: llmUrl, model: quickModel, key: llmKey });
 
-// How answers are shown: Jev chooses the view if it's set up, else the HUDDLE_LLM_* model, else plain rules; that model fills charts and the like in.
-const presenter = typesafeKey ? jevPresenter({ key: typesafeKey, model: env("HUDDLE_JEV_MODEL") }) : llmUrl && llmModel ? modelPresenter({ url: llmUrl, model: llmModel, key: env("HUDDLE_LLM_KEY") }) : rulesPresenter;
-const writer = llmUrl && llmModel ? viewWriter({ url: llmUrl, model: llmModel, key: env("HUDDLE_LLM_KEY") }) : null;
+// How answers are shown: Jev chooses the view if it's set up, else the HUDDLE_LLM_* model, else plain rules; a model fills charts and the like in.
+const presenter = typesafeKey ? jevPresenter({ key: typesafeKey, model: env("HUDDLE_JEV_MODEL") }) : llmUrl && quickModel ? modelPresenter({ url: llmUrl, model: quickModel, key: llmKey }) : rulesPresenter;
+const writer = llmUrl && fillModel ? viewWriter({ url: llmUrl, model: fillModel, key: llmKey }) : null;
+// Token Factory's prices, read fresh when it's in use (the built-in ones stand if the catalog can't be reached).
+if (nebiusKey) refreshTokenFactoryPrices().catch(() => undefined);
 
 // Monid's catalog: the canvas's tool search and the owner's MCP tools, within a cap per run.
 const monidKey = env("MONID_API_KEY");
@@ -141,7 +155,7 @@ const app = createApp({
   publicUrl,
   token,
   a2aToken: env("HUDDLE_A2A_TOKEN"),
-  describe: llmUrl && llmModel ? describer({ url: llmUrl, model: llmModel, key: env("HUDDLE_LLM_KEY") }) : undefined,
+  describe: llmUrl && draftModel ? describer({ url: llmUrl, model: draftModel, key: llmKey }) : undefined,
   sandboxes,
   signIns,
   pact: identity,
@@ -165,7 +179,8 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   console.log(`  Router (OpenAI-compatible): ${publicUrl}/v1, model = one of your assistants' ids, or "auto" (${judge ? `judged by ${judge.name}` : "no judge: your list's order"})`);
   if (spendCap) console.log(`  Budget: ${dollars(spendCap.usd)} a ${spendCap.period} for priced assistants; ${dollars(engine.spent())} spent so far`);
   if (!built) console.log(`  The canvas isn't built (no ${join(web, "index.html")}): run npm run build.`);
-  if (!llmUrl || !llmModel) console.log('  "Describe it" is off: set HUDDLE_LLM_URL and HUDDLE_LLM_MODEL to turn it on.');
+  if (onNemotron) console.log(`  Huddle's own model calls: NVIDIA Nemotron on Nebius Token Factory (${llmModel ?? "Lightning judges and picks views, Super fills them in, Ultra drafts flows"})`);
+  if (!llmUrl || !draftModel) console.log('  "Describe it" is off: set NEBIUS_API_KEY, or HUDDLE_LLM_URL and HUDDLE_LLM_MODEL, to turn it on.');
   console.log(`  Answers as views: ${presenter.name === "rules" ? "tables only (set TYPESAFE_API_KEY or HUDDLE_LLM_* to choose views)" : `chosen by ${presenter.name}`}${writer ? `, charts, flowcharts, calculators and comparisons filled in by ${writer.model}` : ""}`);
   if (monidKey) console.log(`  Monid: tool search in the canvas, and monid_find, monid_show, monid_run and monid_result on /mcp (up to $${monidMaxUsd} a run)`);
   if (guard) console.log(`  ${guard.name} checks every hand-off first (HUDDLE_GUARD=${env("HUDDLE_GUARD")}): a blocked one fails its run, a held one waits for your yes`);

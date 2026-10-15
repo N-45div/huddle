@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { FormulaError, namesIn, parseFormula } from "./formula.ts";
+import { thinkingFor } from "./tokenfactory.ts";
 
 /**
  * Answers you can interact with, after CopilotKit's Open Intelligent UI (MIT): how best to show an
@@ -264,7 +265,7 @@ async function chat(options: ModelOptions, messages: readonly { role: string; co
   const response = await fetcher(endpoint, {
     method: "POST",
     headers: { "content-type": "application/json", ...(options.key ? { authorization: `Bearer ${options.key}` } : {}) },
-    body: JSON.stringify({ model: options.model, temperature: 0.1, messages }),
+    body: JSON.stringify({ model: options.model, temperature: 0.1, messages, ...thinkingFor(options.url, false) }),
     signal: AbortSignal.timeout(timeoutMs),
   });
   const body = (await response.json().catch(() => null)) as { choices?: { message?: { content?: unknown } }[]; error?: { message?: string } } | null;

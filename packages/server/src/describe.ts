@@ -1,4 +1,4 @@
-import type { Flow } from "@huddle/core";
+import { type Flow, thinkingFor } from "@huddle/core";
 import { checkFlow } from "./app.ts";
 
 /**
@@ -27,7 +27,7 @@ A flow:
   "steps": [ ... ]
 }
 
-Connectors: "openclaw" (OpenClaw), "hermes" (Hermes Agent), "sochen" (Sochen), "homeassistant" (Home Assistant, for lights, heating and devices), "agentzero" (Agent Zero, needs "url"), "a2a" (any A2A agent, needs "url"), "openai" (any OpenAI-style chat API, needs "url"), "http" (needs "url"), "email" (sends the step's text as an email; needs "to": ["address", ...] and "from": "an address on the person's own domain"; a first line "Subject: ..." is the subject), "mock" (a stand-in with "replies": {"keyword": "answer", "*": "otherwise"}).
+Connectors: "openclaw" (OpenClaw), "hermes" (Hermes Agent), "sochen" (Sochen), "homeassistant" (Home Assistant, for lights, heating and devices), "agentzero" (Agent Zero, needs "url"), "a2a" (any A2A agent, needs "url"), "openai" (any OpenAI-style chat API, needs "url"), "nebius" (an NVIDIA Nemotron model on Nebius Token Factory, needs "model": "nvidia/Nemotron-3_5-Lightning" for quick answers, "nvidia/nemotron-3-super-120b-a12b" for most work, "nvidia/Nemotron-3-Ultra-550b-a55b" for hard reasoning; "thinking": true makes it think first),"http" (needs "url"), "email" (sends the step's text as an email; needs "to": ["address", ...] and "from": "an address on the person's own domain"; a first line "Subject: ..." is the subject), "mock" (a stand-in with "replies": {"keyword": "answer", "*": "otherwise"}).
 Use the assistants the description names. If it names none for a job, use "mock" with sensible replies so the flow can be tried, and say so in the description.
 "memory" lists the slices of the person's shared memory the assistant may read, e.g. "home", "money", "work". Give each assistant only what its job needs.
 
@@ -61,7 +61,8 @@ export function describer(options: DescribeOptions): (text: string) => Promise<F
     const response = await fetcher(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json", ...(options.key ? { authorization: `Bearer ${options.key}` } : {}) },
-      body: JSON.stringify({ model: options.model, messages, temperature: 0.2 }),
+      // A whole flow is worth thinking over first, where the API can (Nemotron on Token Factory).
+      body: JSON.stringify({ model: options.model, messages, temperature: 0.2, ...thinkingFor(options.url, true) }),
       signal: AbortSignal.timeout(90_000),
     });
     const body = (await response.json().catch(() => null)) as { choices?: { message?: { content?: unknown } }[]; error?: { message?: string } } | null;

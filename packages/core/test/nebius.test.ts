@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { nebius } from "../src/connectors/nebius.ts";
 import { priceOf } from "../src/cost.ts";
+import { modelJudge } from "../src/judge.ts";
+import { modelPresenter } from "../src/present.ts";
 import { Assistant, assistantProblems } from "../src/schema.ts";
 import { NEMOTRON, refreshTokenFactoryPrices, thinkingFor, TOKEN_FACTORY_URL, tokenFactoryModels, tokenFactoryPrice } from "../src/tokenfactory.ts";
 
@@ -35,6 +37,19 @@ describe("NVIDIA Nemotron on Nebius Token Factory", () => {
     assert.equal(priceOf(generic("https://api.example.com/v1")), null);
     assert.deepEqual(thinkingFor(TOKEN_FACTORY_URL, false), { chat_template_kwargs: { enable_thinking: false } });
     assert.deepEqual(thinkingFor("https://api.openai.com/v1", false), {}, "other APIs don't know the switch");
+  });
+
+  it("turns thinking off for Huddle's own quick calls on Token Factory, and leaves other APIs alone", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetcher = (async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return Response.json({ choices: [{ message: { content: '{"ranking": ["planner"], "view": "calculator"}' } }] });
+    }) as typeof fetch;
+    const candidates = [{ id: "quick", description: "fast everyday answers" }, { id: "planner", description: "multi-step plans" }];
+    assert.deepEqual((await modelJudge({ url: TOKEN_FACTORY_URL, model: NEMOTRON.lightning, fetcher }).rank("plan a trip", candidates)).order, ["planner", "quick"]);
+    await modelJudge({ url: "https://api.openai.com/v1", model: "gpt-5.4-mini", fetcher }).rank("plan a trip", candidates);
+    await modelPresenter({ url: TOKEN_FACTORY_URL, model: NEMOTRON.lightning, fetcher }).choose({ text: "Split 120 four ways with a 15% tip." });
+    assert.deepEqual(bodies.map((body) => body.chat_template_kwargs), [{ enable_thinking: false }, undefined, { enable_thinking: false }]);
   });
 
   it("reads current prices from the public catalog, and lists a key's models with NVIDIA's first", async () => {
