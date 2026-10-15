@@ -35,8 +35,15 @@ teammate: you put them on a canvas, say who does what, and decide where you want
   stops there until you tap yes or no. Nothing that spends, sends or books gets past one without you.
 - **Runs survive waiting.** A run that's waiting for your approval is saved, so it carries on later,
   after a restart, from exactly where it stopped.
-- **Runs start how you like.** Press Run, put it on a schedule ("every 2h"), give it a webhook
-  address that anything can post to, or an email address: mail to it starts the flow.
+- **Runs start how you like.** Press Run, put it on a schedule ("every 2h", or "Fridays at 18:00" by
+  your time zone's clock: `{ "type": "schedule", "at": "18:00", "on": ["fri"], "timezone": "Asia/Kolkata" }`),
+  give it a webhook address that anything can post to, or an email address: mail to it starts the flow.
+- **A receipt for every run.** Each run's page says where your data went: which service each request
+  reached (or that it stayed on this machine), how much was sent, which of your notes went with it, and
+  what a fact check searched the web for. It's worked out from the run's own log, so it's the record of
+  what happened, not a setting's promise.
+- **Facts checked before you say yes.** An approval with `"check": true` looks its facts up on the web
+  first and shows what the sources say ([below](#check-the-facts-before-you-say-yes)).
 - **Your assistants can call it too.** Huddle is an A2A agent itself, so OpenClaw, Hermes or any other
   A2A assistant can hand a job to one of your flows. And it's an MCP server, so Claude Code, Claude
   Desktop, Cursor or any MCP client gets your flows as tools.
