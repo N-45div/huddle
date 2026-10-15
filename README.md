@@ -541,6 +541,25 @@ A sandbox image needs a few things OpenShell checks: a non-root user, a working 
 can write, and a single-platform image (on Docker Desktop, a one-line `FROM` build gives you one). The
 policy has to let the sandbox read the agent's install: sandboxes start with only system paths.
 
+**Hermes on NVIDIA Nemotron, sandboxed.** The same image runs Hermes on Nemotron through Nebius Token
+Factory ([`hermes-config.yaml`](examples/openshell-hermes/hermes-config.yaml) points it there, thinking
+off). Give OpenShell a provider for Token Factory from
+[`nebius-provider.yaml`](examples/openshell-hermes/nebius-provider.yaml): it binds `NEBIUS_API_KEY` to
+`api.tokenfactory.nebius.com` and nowhere else, so the sandbox only ever sees a placeholder.
+
+```bash
+openshell provider profile import -f examples/openshell-hermes/nebius-provider.yaml --global
+openshell provider create --name nebius --type nebius-token-factory --from-existing   # reads NEBIUS_API_KEY
+openshell sandbox create --name hermes-nemotron --from huddle/hermes-sandbox:local --provider nebius \
+  --policy examples/openshell-hermes/policy.yaml --no-tty --detach -- sleep infinity
+```
+
+The profile lets only `curl` call Token Factory, so the first time Hermes asks (with
+[`flow-nemotron.json`](examples/openshell-hermes/flow-nemotron.json)), OpenShell blocks its Python and
+drafts the rule; Huddle shows it in Approvals, flagged because it would let Hermes use the key. Tested with
+OpenShell 0.1.2 and Hermes Agent 0.22.2: Hermes also asked for `models.dev:443`, which we denied in Huddle,
+and it still answered from Nemotron, in 8 seconds, with the memory its slice allows.
+
 ## The router: one API to every assistant you run
 
 Like OpenRouter for models, but for your assistants, with your memory and your approvals in the middle.

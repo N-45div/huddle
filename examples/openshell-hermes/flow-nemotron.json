@@ -1,0 +1,15 @@
+{
+  "name": "Hermes on Nemotron, sandboxed",
+  "description": "Hermes Agent in an NVIDIA OpenShell sandbox, on NVIDIA Nemotron through Nebius Token Factory. OpenShell holds the key and decides what Hermes may reach; what it asks for waits in Huddle's Approvals.",
+  "assistants": [
+    {
+      "id": "hermes",
+      "name": "Hermes (sandboxed, Nemotron)",
+      "connector": "openshell",
+      "agentId": "hermes-nemotron",
+      "command": ["env", "HERMES_HOME=/tmp/hermes", "/opt/hermes/bin/hermes", "chat", "--query-file", "/dev/stdin", "--oneshot", "-Q"],
+      "memory": ["me"]
+    }
+  ],
+  "steps": [{ "id": "ask", "type": "agent", "agent": "hermes", "ask": "In one line: where do I live, and how do I like to travel?" }]
+}

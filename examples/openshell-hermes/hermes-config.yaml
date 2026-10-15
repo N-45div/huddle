@@ -1,0 +1,13 @@
+# Hermes Agent's model in the sandbox: NVIDIA Nemotron on Nebius Token Factory, with Nemotron's thinking off
+# (it's on by default, and slow). The key is OpenShell's placeholder for NEBIUS_API_KEY.
+providers:
+  tokenfactory:
+    api: https://api.tokenfactory.nebius.com/v1
+    key_env: NEBIUS_API_KEY
+    transport: chat_completions
+    extra_body:
+      chat_template_kwargs:
+        enable_thinking: false
+model:
+  provider: custom:tokenfactory
+  default: nvidia/nemotron-3-super-120b-a12b

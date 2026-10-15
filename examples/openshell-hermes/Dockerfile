@@ -4,6 +4,8 @@ FROM nousresearch/hermes-agent:latest
 RUN (id -u 1000 >/dev/null 2>&1 || useradd -m -u 1000 -s /bin/sh agent) \
  && mkdir -p /tmp/hermes && chown 1000:1000 /tmp/hermes \
  && chmod -R a+rX /opt/hermes
+# Its model: Nemotron on Nebius Token Factory (used when a command doesn't name another provider).
+COPY --chown=1000:1000 hermes-config.yaml /tmp/hermes/config.yaml
 ENV HERMES_HOME=/tmp/hermes
 # OpenShell checks the workspace (the working directory) is writable by the sandbox's user.
 WORKDIR /tmp/hermes

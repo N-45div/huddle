@@ -1,0 +1,30 @@
+# An OpenShell provider profile for NVIDIA Nemotron on Nebius Token Factory. Import it, then create the
+# provider from NEBIUS_API_KEY:
+#   openshell provider profile import -f examples/openshell-hermes/nebius-provider.yaml --global
+#   openshell provider create --name nebius --type nebius-token-factory --from-existing
+#
+# The sandbox only ever sees a placeholder for the key: OpenShell's proxy puts the real one in, and only
+# on requests to api.tokenfactory.nebius.com. `binaries` names who may call it without asking: curl. When
+# Hermes' own Python calls it, OpenShell blocks the call and drafts a rule, and you allow it (or not) in
+# Huddle's Approvals.
+id: nebius-token-factory
+display_name: Nebius Token Factory
+description: NVIDIA Nemotron and other open models on Nebius Token Factory
+category: inference
+inference_capable: true
+credentials:
+  - name: api_key
+    description: Nebius Token Factory API key
+    env_vars: [NEBIUS_API_KEY]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+discovery:
+  credentials: [api_key]
+endpoints:
+  - host: api.tokenfactory.nebius.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries: [/usr/bin/curl, /usr/local/bin/curl]
