@@ -168,6 +168,36 @@ describe("the API", () => {
     assert.equal((await app.request("/api/memory/search?q=passport")).status, 401);
   });
 
+  it("proposes a tidy-up without changing anything, and merges what the person agrees to", async () => {
+    const { app, store } = setup();
+    // Copies from before memory stopped adding a note twice.
+    const old = store.db.prepare("INSERT INTO notes (id, slice, note, status, source, created_at) VALUES (?, 'me', ?, ?, 'old', ?)");
+    old.run("note_a", "Lives in Bengaluru", "kept", "2026-10-01T09:00:00.000Z");
+    old.run("note_b", "lives in Bengaluru.", "kept", "2026-10-02T09:00:00.000Z");
+    old.run("note_c", "Has a dog called Biscuit", "kept", "2026-10-03T09:00:00.000Z");
+    old.run("note_d", "Dog's name is Biscuit, a beagle", "kept", "2026-10-04T09:00:00.000Z");
+    assert.equal((await app.request("/api/memory/tidy", { method: "POST" })).status, 401);
+
+    const tidy = await (await app.request("/api/memory/tidy", json({}))).json();
+    assert.deepEqual(
+      tidy.proposals.map((found: { kind: string; keep: string; notes: { id: string }[] }) => [found.kind, found.keep, found.notes.map((one) => one.id)]),
+      [["copies", "note_a", ["note_a", "note_b"]]],
+      "with no model, only exact copies",
+    );
+    assert.equal(tidy.readBy, null);
+    assert.equal(store.notes().length, 4, "proposing changes nothing");
+
+    const merged = await app.request("/api/memory/merge", json({ ids: ["note_c", "note_d"], note: "Has a beagle called Biscuit" }));
+    assert.equal(merged.status, 201);
+    assert.equal((await merged.json()).note, "Has a beagle called Biscuit");
+    assert.equal((await app.request("/api/memory/merge", json({ ids: ["note_c", "note_a"], note: "x" }))).status, 409, "note_c is gone");
+    assert.equal((await app.request("/api/memory/merge", json({ ids: "note_a", note: "x" }))).status, 400);
+    assert.deepEqual(store.notes().map((one) => one.note).sort(), ["Has a beagle called Biscuit", "Lives in Bengaluru", "lives in Bengaluru."]);
+
+    const { app: withModel } = setup({ tidy: async (notes) => ({ proposals: [], looked: notes.length, sent: notes.length, readBy: "nemotron", sentTo: ["api.tokenfactory.nebius.com"], costUsd: 0.0004, failed: [] }) });
+    assert.equal((await (await withModel.request("/api/memory/tidy", json({}))).json()).readBy, "nemotron", "a set-up model tidies instead");
+  });
+
   it("won't keep a password, a card number, a code or a key", async () => {
     const { app, store } = setup();
     const refused = await app.request("/api/memory", json({ slice: "home", note: "The wifi password is hunter22" }));

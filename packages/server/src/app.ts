@@ -1,5 +1,5 @@
 import { nextRun, receiptOf } from "@huddle/core";
-import { type Assistant, Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type MemoryHit, type Note, ollamaModels, type PactIdentity, tokenFactoryModels, vllmModels, periodStart, type Presenter, present, rulesPresenter, VIEW_KINDS, type ViewKind, type ViewWriter, type Router, type SavedFlow, SensitiveNote, type SignIns, type Store } from "@huddle/core";
+import { type Assistant, Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type MemoryHit, type Note, ollamaModels, type PactIdentity, tokenFactoryModels, vllmModels, periodStart, type Presenter, present, rulesPresenter, VIEW_KINDS, type ViewKind, type ViewWriter, type Router, type SavedFlow, SensitiveNote, type SignIns, type Store, type Tidy, tidyMemory } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { a2aRoutes } from "./a2a.ts";
@@ -54,6 +54,8 @@ export interface AppOptions {
   readonly present?: { readonly presenter: Presenter; readonly writer: ViewWriter | null };
   /** Monid's catalog of paid data tools, when MONID_API_KEY is set: the canvas's tool search and the owner's MCP tools. */
   readonly monid?: MonidCatalog;
+  /** Tidying memory up: exact copies by default; give it a model to find notes that say the same thing in other words, or disagree. */
+  readonly tidy?: (notes: readonly Note[]) => Promise<Tidy>;
 }
 
 /** A flow from a request body, or the problems with it, one line each. */
@@ -373,6 +375,18 @@ export function createApp(options: AppOptions): Hono {
     }
   });
   app.delete("/api/memory/:id", (c) => (store.forget(c.req.param("id")) ? c.json({ ok: true }) : bad(c, "There's no such note.", 404)));
+  // Tidying up proposes only: the page applies each proposal the person agrees to, with merge and delete.
+  app.post("/api/memory/tidy", async (c) => c.json<Tidy>(await (options.tidy ?? ((notes) => tidyMemory(notes)))(store.notes())));
+  app.post("/api/memory/merge", async (c) => {
+    const { ids, note } = await body(c);
+    if (!Array.isArray(ids) || !ids.every((one) => typeof one === "string") || typeof note !== "string" || !note.trim()) return bad(c, 'Send { "ids": ["note_...", ...], "note": "the one note" }.');
+    try {
+      return c.json(store.merge(ids as string[], note.trim()), 201);
+    } catch (error) {
+      if (error instanceof SensitiveNote) return bad(c, error.message);
+      return bad(c, error instanceof Error ? error.message : String(error), 409);
+    }
+  });
 
   // Describe it -------------------------------------------------------------------------------------
   // Answers you can interact with: how to show one, and the view (a table, or one a model filled in, checked).

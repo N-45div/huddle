@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, factChecker, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, SignIns, Store, storedGrants, viewWriter } from "@huddle/core";
+import { type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, factChecker, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, SignIns, Store, storedGrants, tidyMemory, viewWriter } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
 import { monidCatalog } from "./monid.ts";
@@ -169,6 +169,8 @@ const app = createApp({
   present: { presenter, writer },
   email: { webhookSecret: env("RESEND_WEBHOOK_SECRET"), apiKey: env("RESEND_API_KEY"), ownerEmails: (env("HUDDLE_OWNER_EMAILS") ?? "").split(",").filter((address) => address.trim()) },
   monid: monidKey ? monidCatalog({ key: monidKey, maxUsd: monidMaxUsd }) : undefined,
+  // Tidying memory up: the fill-in model reads each slice's kept notes, only when the person asks.
+  tidy: llmUrl && fillModel ? (notes) => tidyMemory(notes, { model: { url: llmUrl, model: fillModel, key: llmKey } }) : undefined,
 });
 const web = env("HUDDLE_WEB") ?? fileURLToPath(new URL("../../web/dist", import.meta.url));
 const built = existsSync(join(web, "index.html"));
@@ -194,6 +196,7 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   else if (env("ARMORIQ_API_KEY")) console.log("  ARMORIQ_API_KEY is set but no guard is on: set HUDDLE_GUARD=armoriq to have ArmorIQ check every hand-off.");
   const finds = [memory.embedder ? `words and meaning (${memory.embedder.model})` : "words", ...(memory.reranker ? [`reranked by ${memory.reranker.model}`] : [])];
   console.log(`  Memory: up to ${budget} characters of kept notes per request, found by ${finds.join(", ")}`);
+  console.log(`  Tidy up (Memory page): exact copies${llmUrl && fillModel ? `, and notes that say the same thing or disagree, read by ${fillModel} when you ask` : " only (set NEBIUS_API_KEY, or HUDDLE_LLM_*, for the rest)"}`);
   if (env("RESEND_WEBHOOK_SECRET")) {
     console.log(`  Email in: point Resend's inbound webhook (email.received) at ${publicUrl}/hooks/email`);
     if (!env("RESEND_API_KEY")) console.log("  ...but RESEND_API_KEY isn't set, so Huddle can't read the mail that arrives.");

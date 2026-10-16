@@ -3,9 +3,9 @@
  * can't drift apart. All routes are under /api; when the server has a token, every call carries
  * `Authorization: Bearer <token>` (the event stream takes `?token=` instead).
  */
-import type { Assistant, Choice, Contact, FactCheck, HeldBy, Receipt, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger, View } from "@huddle/core";
+import type { Assistant, Choice, Contact, FactCheck, HeldBy, Receipt, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Tidy, TidyProposal, Trigger, View } from "@huddle/core";
 
-export type { Assistant, Choice, Contact, FactCheck, HeldBy, Receipt, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Trigger, View };
+export type { Assistant, Choice, Contact, FactCheck, HeldBy, Receipt, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Tidy, TidyProposal, Trigger, View };
 export type { FoundTool, ToolDetails } from "./monid.ts";
 
 /** GET /api/info: what this Huddle can do. */
@@ -238,6 +238,8 @@ export interface SandboxRequests {
  *   POST   /api/memory { slice, note }     -> Note                (a person's own note: kept; 400 if it holds a secret)
  *   POST   /api/memory/:id/keep            -> { ok: true }        (400 if it holds a secret)
  *   DELETE /api/memory/:id                 -> { ok: true }
+ *   POST   /api/memory/tidy                -> Tidy                (proposals only: copies, and with a model, merges and notes that disagree)
+ *   POST   /api/memory/merge { ids, note } -> Note                (those notes, all in one slice, replaced by one kept note; 409 if one is gone)
  *   POST   /api/describe { text }          -> { flow }            (501 when no model is set up)
  *   GET    /api/sandbox-requests           -> SandboxRequests
  *   POST   /api/sandbox-requests/:sandbox/:id { yes, reason? } -> { ok: true }   (409 when it changed meanwhile)
