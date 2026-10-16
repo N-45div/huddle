@@ -60,6 +60,13 @@ export const STATE_LABEL: Record<RunState, string> = {
   failed: "Failed",
 };
 
+/** Dollars, readably: $0.0042, $1.25. */
+export function dollars(usd: number): string {
+  if (usd === 0) return "$0";
+  if (usd < 0.01) return `$${usd.toPrecision(2)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
 export function plural(count: number, one: string, many = `${one}s`): string {
   return `${count} ${count === 1 ? one : many}`;
 }

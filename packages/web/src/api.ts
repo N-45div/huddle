@@ -10,6 +10,7 @@ import type {
   Info,
   MemoryHit,
   Note,
+  Tidy,
   PresentedView,
   RunDetail,
   RouterView,
@@ -230,6 +231,8 @@ export const api = {
   addNote: (slice: string, note: string) => call<Note>("POST", "/memory", { slice, note }),
   keepNote: (noteId: string) => call<{ ok: true }>("POST", `/memory/${id(noteId)}/keep`),
   deleteNote: (noteId: string) => call<{ ok: true }>("DELETE", `/memory/${id(noteId)}`),
+  tidyMemory: () => call<Tidy>("POST", "/memory/tidy", {}),
+  mergeNotes: (ids: readonly string[], note: string) => call<Note>("POST", "/memory/merge", { ids, note }),
 
   describe: (text: string) => call<{ flow: Flow }>("POST", "/describe", { text }),
 };

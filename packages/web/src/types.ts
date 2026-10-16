@@ -21,6 +21,8 @@ export type {
   LogLine,
   MemoryHit,
   Note,
+  Tidy,
+  TidyProposal,
   PresentedView,
   Receipt,
   RunDetail,

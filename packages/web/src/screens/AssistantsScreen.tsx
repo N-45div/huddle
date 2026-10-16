@@ -6,7 +6,7 @@ import { Markdown } from "../components/Markdown.tsx";
 import { TabPanel, Tabs } from "../components/Tabs.tsx";
 import { AssistantsPanel } from "../editor/AssistantsPanel.tsx";
 import { useChanges } from "../events.ts";
-import { ago, plural } from "../format.ts";
+import { ago, dollars, plural } from "../format.ts";
 import { useDebounced, useResource } from "../hooks.ts";
 import { href } from "../router.ts";
 import type { Assistant, Info, RouterUsage, SpendView } from "../types.ts";
@@ -99,13 +99,6 @@ function usageLine(row: RouterUsage | undefined): string {
   if (row.reused) parts.push(`${plural(row.reused, "answer")} given again`);
   if (row.lastAt) parts.push(`last ${ago(row.lastAt)}`);
   return parts.join(" · ");
-}
-
-/** Dollars, readably: $0.0042, $1.25. */
-function dollars(usd: number): string {
-  if (usd === 0) return "$0";
-  if (usd < 0.01) return `$${usd.toPrecision(2)}`;
-  return `$${usd.toFixed(2)}`;
 }
 
 /** What assistants with a price have cost this period, against the budget, and what the router saved. */
