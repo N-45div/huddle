@@ -104,6 +104,22 @@ optional, from any provider:
 If either is down, memory carries on without it, and a run never fails over memory. **Memory** on the
 canvas has a search box that ranks notes the same way.
 
+A note a slice already holds isn't added again, whatever its case, spacing or full stop. **Tidy up** on the
+Memory page finds the rest. Exact copies are found on your machine. With a model set up (`NEBIUS_API_KEY`
+puts this on Nemotron 3 Super), it also reads each slice's kept notes, one slice at a time and only when
+you click, for:
+- notes that say the same thing in other words;
+- notes that can't both be true, like an old and a new city.
+
+Each is a proposal you apply or leave: forget the copies, merge them into one note you can edit, or keep
+just one of two notes that disagree.
+
+A model's one note is checked before you see it. It must name no person, place or number its notes don't,
+and keep most of what they say. In testing, Nemotron offered "Moved to Pune in September 2026" as the one
+note for a Bengaluru/Pune conflict, dropping "prefers trains to flights, budget-minded" from the older
+note. That note now fails the check, so the conflict shows with "Keep only this" on each note and no
+one-note offer.
+
 In Sochen, on Postgres with Voyage embeddings and reranking and a reader model for counting
 questions, this engine scored 89.2% on LongMemEval. That number is Sochen's: Huddle has the ranking
 but not the reader, stems words with SQLite's Porter stemmer rather than Postgres', and hasn't been
@@ -279,6 +295,26 @@ chat path isn't `/v1/chat/completions`, give the whole chat URL instead:
 **Web search (Tavily).** Set `TAVILY_API_KEY` and add `{ "id": "web", "connector": "tavily" }`: the step's
 request is the query, and the answer is Tavily's, with its sources (and every source's matching text in
 the data). Memory isn't sent. An advanced search is 2 of Tavily's credits (1,000 free a month).
+
+**Read the web (context.dev).** Set `CONTEXT_DEV_API_KEY` and add `{ "id": "web", "connector": "contextdev" }`.
+Through [context.dev](https://context.dev)'s official SDK, it does one of three things, chosen by `agentId`:
+
+- `"read"`: reads the link in the request as Markdown. With a question beside the link, you get only the
+  passages that answer it.
+- `"search"`: searches the web, with each result's matching passages.
+- `"company"`: looks up the company behind a website, a work email or a name. A personal address or an
+  unknown site gives `data.found: false` rather than an error.
+
+Left out, it picks from each request: a link is read, a lone email address or domain is looked up as a
+company, and anything else is searched. Memory isn't sent. A page read costs 1 credit (2 with passages),
+a search 2 and a company 10, with 1,000 credits free a month. Huddle counts each credit at the Developer
+plan's price ($19 for 7,500).
+
+Two examples use it with Nemotron:
+- [`read-it-for-me.json`](examples/read-it-for-me.json): paste a link and a question, and Lightning answers
+  from the passages. Live, it read the palace's ticket price and timings in 3 s for about half a cent.
+- [`who-is-this.json`](examples/who-is-this.json): someone you don't know writes to you. Super says who
+  they are and whether it's worth a reply, and you choose whether to remember them.
 
 **Monid.** [Monid](https://monid.ai) puts a catalog of paid data tools behind one key and one balance:
 Google's job listings, reviews, prices, search results. Set `MONID_API_KEY`, then find a tool in the canvas
@@ -856,6 +892,7 @@ docker compose up -d   # http://localhost:7700, data in the huddle-data volume
 | `HUDDLE_OPENSHELL_GATEWAY` | none | an NVIDIA OpenShell gateway, for sandboxed assistants and their requests in Approvals |
 | `OPENSHELL_TLS_DIR` | `~/.config/openshell/gateways/openshell/mtls` | the OpenShell CLI's client certificate (`ca.crt`, `tls.crt`, `tls.key`) |
 | `TAVILY_API_KEY` | none | web search: the `tavily` connector's key, and, with a model, checking the facts in approvals that ask (`"check": true`) |
+| `CONTEXT_DEV_API_KEY` | none | the `contextdev` connector's key: reading pages, searching the web, looking companies up |
 | `RESEND_API_KEY` | none | sends email (the `email` connector's default key) and reads mail that arrives; reading needs a full-access key |
 | `RESEND_WEBHOOK_SECRET` | none | the signing secret of Resend's `email.received` webhook, pointed at `/hooks/email`; without it Huddle takes no mail |
 | `HUDDLE_OWNER_EMAILS` | none | your own addresses, comma-separated: mail from them counts as you |
