@@ -69,6 +69,23 @@ async function body(c: Context): Promise<Record<string, unknown>> {
   return ((await c.req.json().catch(() => null)) ?? {}) as Record<string, unknown>;
 }
 
+/** The most images a run may start with, and how big each may be. */
+const MAX_IMAGES = 4;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const IMAGE_URL = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/;
+
+/** The images a run is started with: data: URLs of PNG, JPEG, WebP or GIF, or what's wrong with them. */
+export function imagesIn(value: unknown): string[] | string {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.some((image) => typeof image !== "string")) return "images should be a list of data: URLs.";
+  if (value.length > MAX_IMAGES) return `A run can start with at most ${MAX_IMAGES} images.`;
+  for (const image of value as string[]) {
+    if (!IMAGE_URL.test(image)) return "Each image should be a data: URL of a PNG, JPEG, WebP or GIF (data:image/png;base64,…).";
+    if (Math.floor(((image.length - image.indexOf(",") - 1) * 3) / 4) > MAX_IMAGE_BYTES) return "Each image can be at most 5 MB.";
+  }
+  return value as string[];
+}
+
 export function createApp(options: AppOptions): Hono {
   const { store, engine } = options;
   const app = new Hono();
@@ -286,8 +303,10 @@ export function createApp(options: AppOptions): Hono {
   app.post("/api/flows/:id/run", async (c) => {
     const saved = store.flow(c.req.param("id"));
     if (!saved) return bad(c, "There's no such flow.", 404);
-    const input = (await body(c)).input;
-    return c.json({ runId: engine.launch(saved.flow, typeof input === "string" ? input : "", saved.id) }, 202);
+    const given = await body(c);
+    const images = imagesIn(given.images);
+    if (typeof images === "string") return bad(c, images);
+    return c.json({ runId: engine.launch(saved.flow, typeof given.input === "string" ? given.input : "", saved.id, undefined, images) }, 202);
   });
   app.post("/api/flows/:id/webhook/rotate", (c) => {
     if (!store.flow(c.req.param("id"))) return bad(c, "There's no such flow.", 404);

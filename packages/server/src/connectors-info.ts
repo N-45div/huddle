@@ -75,6 +75,15 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
           { value: "on", label: "Yes: for hard problems" },
         ],
       },
+      {
+        key: "images",
+        label: "May see photos a run starts with",
+        required: false,
+        choices: [
+          { value: "", label: "No" },
+          { value: "on", label: "Yes: it reads images (pick nvidia/Nemotron-3.5-Super-VL)" },
+        ],
+      },
       { key: "keyEnv", label: "Key variable", required: false, placeholder: "NEBIUS_API_KEY" },
     ],
   },

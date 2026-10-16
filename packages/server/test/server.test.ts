@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { a2a, Assistant, type Connector, Engine, type Flow, mock, newKey, type OpenShell, PactIdentity, parseFlow, Router, type Run, rulesPresenter, SignIns, Store, viewWriter } from "@huddle/core";
 import { Hono } from "hono";
-import { createApp } from "../src/app.ts";
+import { createApp, imagesIn } from "../src/app.ts";
 import { describer } from "../src/describe.ts";
 import { SandboxWatcher } from "../src/sandbox-requests.ts";
 import { Scheduler } from "../src/scheduler.ts";
@@ -817,6 +817,19 @@ describe("schedules", () => {
     assert.equal(store.failInterrupted(), 1);
     assert.equal(store.run(cut.id)?.state, "failed");
     assert.equal(store.run(waiting.id)?.state, "waiting");
+  });
+});
+
+describe("images a run starts with", () => {
+  it("are taken as data: URLs of PNG, JPEG, WebP or GIF, at most four, up to 5 MB each", () => {
+    const png = "data:image/png;base64,iVBORw0KGgo=";
+    assert.deepEqual(imagesIn(undefined), []);
+    assert.deepEqual(imagesIn([png]), [png]);
+    assert.match(String(imagesIn([png, png, png, png, png])), /at most 4/);
+    assert.match(String(imagesIn(["https://example.com/a.png"])), /data: URL/);
+    assert.match(String(imagesIn(["data:image/svg+xml;base64,PHN2Zz4="])), /PNG, JPEG, WebP or GIF/);
+    assert.match(String(imagesIn([`data:image/jpeg;base64,${"A".repeat(7_100_000)}`])), /at most 5 MB/);
+    assert.match(String(imagesIn("nope")), /a list/);
   });
 });
 
