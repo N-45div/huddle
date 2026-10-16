@@ -1,0 +1,26 @@
+{
+  "name": "Bill reader",
+  "description": "Snap a bill and run this with the photo: NVIDIA Nemotron 3.5 Super VL reads it (only that assistant sees the photo), you're asked before it's remembered, and it goes into your money memory. Needs NEBIUS_API_KEY.",
+  "assistants": [
+    {
+      "id": "reader",
+      "name": "Bill reader (Nemotron 3.5 Super VL)",
+      "connector": "nebius",
+      "model": "nvidia/Nemotron-3.5-Super-VL",
+      "images": true,
+      "maxTokens": 600,
+      "description": "Reads photos of bills, receipts and tickets."
+    }
+  ],
+  "steps": [
+    {
+      "id": "read",
+      "type": "agent",
+      "agent": "reader",
+      "ask": "Read the bill in the photo. {{input}}\n\nSay who it's from, what it's for, the amount and the due date, in two short lines. Never repeat an account or card number beyond its last 4 digits. Then a last line of JSON: {\"biller\": \"...\", \"for\": \"...\", \"amount\": <number>, \"currency\": \"<ISO code>\", \"due\": \"YYYY-MM-DD\"}"
+    },
+    { "id": "found", "type": "condition", "if": "{{read.data.amount}} > 0", "then": "ok", "else": "end" },
+    { "id": "ok", "type": "approval", "message": "Remember this bill?\n\n{{read.data.biller}}: {{read.data.amount}} {{read.data.currency}} for {{read.data.for}}, due {{read.data.due}}.", "next": "remember", "onNo": "end" },
+    { "id": "remember", "type": "memory", "slice": "money", "note": "Bill from {{read.data.biller}} ({{read.data.for}}): {{read.data.amount}} {{read.data.currency}}, due {{read.data.due}}." }
+  ]
+}
