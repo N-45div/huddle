@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { Spend } from "./cost.ts";
 import type { FactCheck } from "./factcheck.ts";
 import { findSecret, redactSecrets, SensitiveNote } from "./memory/sensitive.ts";
+import { noteKey } from "./memory/tidy.ts";
 import type { Assistant, ContactTier, Flow } from "./schema.ts";
 import type { RunContext } from "./template.ts";
 
@@ -410,16 +411,63 @@ export class Store {
 
   // Memory -----------------------------------------------------------------------------------------
 
-  /** A suggestion from a flow or an assistant, with any password, card number, code or key masked. */
+  /**
+   * A suggestion from a flow or an assistant, with any password, card number, code or key masked. One that
+   * says what the slice already holds, kept or suggested, isn't added again: that note comes back instead.
+   */
   suggest(slice: string, note: string, source: string): Note {
-    return this.addNote(slice, redactSecrets(note), source, "suggested");
+    const masked = redactSecrets(note);
+    return this.sameNote(slice, masked) ?? this.addNote(slice, masked, source, "suggested");
   }
 
-  /** A note a person writes themselves: kept straight away. One holding a secret is refused (SensitiveNote). */
+  /**
+   * A note a person writes themselves: kept straight away (a suggestion saying the same is kept instead).
+   * One holding a secret is refused (SensitiveNote).
+   */
   remember(slice: string, note: string): Note {
     const secret = findSecret(note);
     if (secret) throw new SensitiveNote(secret);
+    const known = this.sameNote(slice, note);
+    if (known?.status === "kept") return known;
+    if (known && this.keep(known.id)) return { ...known, status: "kept" };
     return this.addNote(slice, note, "you", "kept");
+  }
+
+  /** The note in this slice with these words (give or take case, spacing and a full stop), a kept one first. */
+  private sameNote(slice: string, note: string): Note | null {
+    const key = noteKey(note);
+    const rows = this.db.prepare("SELECT * FROM notes WHERE slice = ? ORDER BY status = 'kept' DESC, created_at").all(slice) as Row[];
+    const row = rows.find((candidate) => noteKey(String(candidate.note)) === key);
+    return row ? toNote(row) : null;
+  }
+
+  /**
+   * Notes of one slice replaced by one kept note, all at once: a tidy-up the person agreed to. Throws when a
+   * note is gone or in another slice, and refuses a note holding a secret (SensitiveNote).
+   */
+  merge(ids: readonly string[], note: string): Note {
+    const secret = findSecret(note);
+    if (secret) throw new SensitiveNote(secret);
+    const unique = [...new Set(ids)];
+    if (unique.length < 2) throw new Error("Merging takes two notes or more.");
+    const rows = unique.map((id) => this.db.prepare("SELECT * FROM notes WHERE id = ?").get(id) as Row | undefined);
+    if (rows.some((row) => !row)) throw new Error("A note to merge isn't in memory any more.");
+    const slices = new Set(rows.map((row) => String(row!.slice)));
+    if (slices.size > 1) throw new Error("Only notes in the same slice can be merged.");
+    const [slice] = slices;
+    const merged: Note = { id: newId("note"), slice: slice!, note, status: "kept", source: `tidy-up: ${unique.length} notes merged`, createdAt: now() };
+    this.db.exec("BEGIN");
+    try {
+      const forget = this.db.prepare("DELETE FROM notes WHERE id = ?");
+      for (const id of unique) forget.run(id);
+      this.db.prepare("INSERT INTO notes (id, slice, note, status, source, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(merged.id, merged.slice, merged.note, merged.status, merged.source, merged.createdAt);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    this.changed({ kind: "memory" });
+    return merged;
   }
 
   keep(id: string): boolean {

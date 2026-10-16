@@ -244,8 +244,11 @@ export class Engine {
       }
       case "memory": {
         const note = render(step.note, context);
-        const suggested = this.store.suggest(step.slice, note, `run ${run.id}, step ${step.id}`);
-        this.store.log(run.id, step.id, "suggested", { note: suggested.id, slice: step.slice, text: suggested.note });
+        const source = `run ${run.id}, step ${step.id}`;
+        const suggested = this.store.suggest(step.slice, note, source);
+        // A note memory already holds comes back as it is, not suggested again.
+        const already = suggested.source !== source ? suggested.status : null;
+        this.store.log(run.id, step.id, "suggested", { note: suggested.id, slice: step.slice, text: suggested.note, ...(already ? { already } : {}) });
         return { wait: false, context: keep(note), next: step.next ?? following(run.flow, step) };
       }
     }

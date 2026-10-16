@@ -71,7 +71,8 @@ export function quoted(quote: string, content: string): boolean {
   return words.length >= 8 && loose(content).includes(words);
 }
 
-async function askJson(model: ChatModel, system: string, user: string, fetcher: typeof fetch): Promise<{ json: unknown; costUsd: number }> {
+/** One question to a model that answers in JSON, with thinking off: what it said, and what that cost where the price is known. */
+export async function askJson(model: ChatModel, system: string, user: string, fetcher: typeof fetch): Promise<{ json: unknown; costUsd: number }> {
   const endpoint = `${model.url.replace(/\/+$/, "")}/chat/completions`;
   const response = await fetcher(endpoint, {
     method: "POST",
@@ -82,7 +83,7 @@ async function askJson(model: ChatModel, system: string, user: string, fetcher: 
   const body = (await response.json().catch(() => null)) as { choices?: { message?: { content?: unknown } }[]; usage?: { prompt_tokens?: unknown; completion_tokens?: unknown }; error?: { message?: string } } | null;
   if (!response.ok) {
     const said = body?.error?.message ?? `HTTP ${response.status}`;
-    throw new Error(`The checking model said: ${model.key ? said.replaceAll(model.key, "[key]") : said}`);
+    throw new Error(`The model said: ${model.key ? said.replaceAll(model.key, "[key]") : said}`);
   }
   const content = String(body?.choices?.[0]?.message?.content ?? "");
   const found = /\{[\s\S]*\}/.exec(content)?.[0];

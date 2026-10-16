@@ -122,7 +122,12 @@ function describe(line: LogLine): Described {
       return { title: "Answered no", body: text(detail, "message") };
     case "suggested":
       return {
-        title: (
+        title: detail.already ? (
+          <>
+            Already in <strong>{text(detail, "slice")}</strong>
+            {detail.already === "kept" ? "" : " (suggested, waiting for you)"}, not added again
+          </>
+        ) : (
           <>
             Suggested a note for <strong>{text(detail, "slice")}</strong>
           </>
