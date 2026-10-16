@@ -22,7 +22,7 @@ export interface TidyProposal {
   readonly notes: readonly Note[];
   /** copies: the note to keep (a kept one before a suggestion); the others go. */
   readonly keep?: string;
-  /** merge: the one note that replaces them. */
+  /** merge: the one note that replaces them. conflict, when the model offers one: them as one note, going by the newer. */
   readonly merged?: string;
   /** Why, in plain words. */
   readonly why: string;
@@ -65,10 +65,10 @@ export function noteKey(text: string): string {
   return words.slice(0, end);
 }
 
-const TIDY = `You tidy up someone's memory: short notes their assistants read, all about one part of their life. Find two things. 1) Notes that say the same thing, or where every fact in one note is also in another: merge them into one note that keeps every fact they hold, adds nothing that isn't in them, and is no longer than it needs to be. 2) Notes that can't both be true now, like two different home cities, two prices for the same plan, or an old and a new phone number: list them (the newer note is often the right one, but the person decides). Leave alone notes that are only related, and notes about different events: two bills, two trips or two visits are not copies. A note goes in one item at most. Answer with JSON only: {"merge": [{"notes": [<numbers>], "note": "<the one note>", "why": "<a short line>"}], "conflicts": [{"notes": [<numbers>], "why": "<a short line>"}]}, with empty lists when the notes are tidy.`;
+const TIDY = `You tidy up someone's memory: short notes their assistants read, all about one part of their life. Find two things. 1) Notes that say the same thing, or where every fact in one note is also in another: merge them into one note that keeps every fact they hold, adds nothing that isn't in them, and is no longer than it needs to be. 2) Notes that can't both be true now, like two different home cities, two prices for the same plan, or an old and a new phone number: list them, with one note that keeps everything else they say and goes by the newer note where they disagree (the person decides). Leave alone notes that are only related, and notes about different events: two bills, two trips or two visits are not copies. A note goes in one item at most. Each "why" is a short line for the person, in plain words about what the notes say; never mention the notes' numbers. Answer with JSON only: {"merge": [{"notes": [<numbers>], "note": "<the one note>", "why": "..."}], "conflicts": [{"notes": [<numbers>], "note": "<the one note, by the newer>", "why": "..."}]}, with empty lists when the notes are tidy.`;
 
 const listed = (slice: string, notes: readonly Note[]): string =>
-  `The "${slice}" notes, oldest first, each with the day it was written:\n${notes.map((note, index) => `${index + 1}. (${note.createdAt.slice(0, 10)}) ${note.note}`).join("\n")}`;
+  `The "${slice}" notes, oldest first, each with the day it was written:\n${notes.map((note, index) => `${index + 1}. (${note.createdAt.slice(0, 10)}) ${note.note}`).join("\n")}\n\nIn each "why", say what the notes say, never their numbers. A conflict's one note keeps every other fact in them.`;
 
 const wordsOf = (text: string): string[] => text.match(/[\p{L}\p{N}](?:[\p{L}\p{N}'’.,:/-]*[\p{L}\p{N}])?/gu) ?? [];
 
@@ -79,6 +79,34 @@ export function addsNothing(merged: string, sources: readonly string[]): boolean
     .split(/(?<=[.!?])\s+/)
     .flatMap((sentence) => wordsOf(sentence).filter((word, index) => /\d/.test(word) || (index > 0 && /^\p{Lu}/u.test(word))))
     .every((word) => known.has(word.toLowerCase()));
+}
+
+const COMMON = new Set(["that", "this", "with", "from", "have", "been", "were", "they", "them", "their", "about", "into", "than", "then", "each", "also", "only", "just", "very", "what", "when", "where", "which", "while", "would", "could", "should", "there", "these", "those", "does", "over", "more", "most", "some", "such", "will"]);
+const contentWords = (text: string): Set<string> => new Set(text.toLowerCase().split(/[^\p{L}]+/u).filter((word) => word.length >= 4 && !COMMON.has(word)));
+
+/**
+ * Whether one note keeps most of what its notes say (share of their words of four letters or more, default
+ * 60%). A model asked to keep every fact can still drop half a note; this catches it. A conflict's one note
+ * loses the older fact on purpose, so the bar isn't all of them.
+ */
+export function keepsMost(merged: string, sources: readonly string[], share = 0.6): boolean {
+  const wanted = new Set(sources.flatMap((source) => [...contentWords(source)]));
+  if (wanted.size === 0) return true;
+  const have = contentWords(merged);
+  return [...wanted].filter((word) => have.has(word)).length / wanted.size >= share;
+}
+
+/** A model's reason without the numbers its notes had in the prompt, which mean nothing on the page. */
+export function plainWhy(why: string): string {
+  const said = new Map<string, string>();
+  return why.replace(/\b(notes?)\s+(\d+(?:\s*(?:,|and|&)\s*\d+)*)/gi, (_match, word: string, numbers: string) => {
+    let words = "these notes";
+    if (word.toLowerCase() === "note") {
+      if (!said.has(numbers)) said.set(numbers, ["one note", "the other"][said.size] ?? "another");
+      words = said.get(numbers)!;
+    }
+    return word[0] === "N" ? words[0]!.toUpperCase() + words.slice(1) : words;
+  });
 }
 
 const KIND_ORDER: Readonly<Record<TidyKind, number>> = { conflict: 0, merge: 1, copies: 2 };
@@ -117,7 +145,7 @@ function copiesIn(slice: string, notes: readonly Note[]): { proposals: TidyPropo
 
 const record = (value: unknown): Record<string, unknown> => (value && typeof value === "object" ? (value as Record<string, unknown>) : {});
 const items = (value: unknown): Record<string, unknown>[] => (Array.isArray(value) ? value.map(record) : []);
-const line = (value: unknown, otherwise: string): string => (typeof value === "string" && value.trim() ? value.trim().slice(0, 200) : otherwise);
+const line = (value: unknown, otherwise: string): string => (typeof value === "string" && value.trim() ? plainWhy(value.trim()).slice(0, 200) : otherwise);
 
 /** What the model proposed for one slice, checked: real note numbers, each note once, merges that add nothing. */
 function proposalsFrom(slice: string, notes: readonly Note[], answer: unknown): TidyProposal[] {
@@ -130,18 +158,26 @@ function proposalsFrom(slice: string, notes: readonly Note[], answer: unknown): 
     return (numbers as number[]).sort((a, b) => a - b).map((n) => notes[n - 1]!);
   };
   const take = (picked: readonly Note[]) => picked.forEach((note) => used.add(notes.indexOf(note) + 1));
+  /** The one note a model offers, if it's fit to keep: short, no secret, nothing its notes don't say, and most of what they do. */
+  const fit = (value: unknown, picked: readonly Note[]): string | null => {
+    const merged = typeof value === "string" ? value.trim() : "";
+    if (!merged || merged.length > 500 || findSecret(merged)) return null;
+    const sources = picked.map((note) => note.note);
+    return addsNothing(merged, sources) && keepsMost(merged, sources) ? merged : null;
+  };
   const found: TidyProposal[] = [];
   for (const item of items(record(answer).conflicts)) {
     const picked = pick(item.notes);
     if (!picked) continue;
     take(picked);
-    found.push(proposal("conflict", slice, picked, line(item.why, "These can't all be true.")));
+    // A conflict stands without its one note: the person can still keep just one of them.
+    const merged = fit(item.note, picked);
+    found.push(proposal("conflict", slice, picked, line(item.why, "These can't all be true."), merged ? { merged } : {}));
   }
   for (const item of items(record(answer).merge)) {
     const picked = pick(item.notes);
-    const merged = typeof item.note === "string" ? item.note.trim() : "";
-    if (!picked || !merged || merged.length > 500 || findSecret(merged)) continue;
-    if (!addsNothing(merged, picked.map((note) => note.note))) continue;
+    const merged = picked && fit(item.note, picked);
+    if (!picked || !merged) continue;
     take(picked);
     found.push(proposal("merge", slice, picked, line(item.why, "These say the same thing."), { merged }));
   }

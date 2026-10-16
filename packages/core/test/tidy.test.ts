@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { addsNothing, noteKey, tidyMemory } from "../src/memory/tidy.ts";
+import { addsNothing, keepsMost, noteKey, plainWhy, tidyMemory } from "../src/memory/tidy.ts";
 import { type Note, Store } from "../src/store.ts";
 import { NEMOTRON, TOKEN_FACTORY_URL } from "../src/tokenfactory.ts";
 
@@ -58,7 +58,7 @@ describe("tidying memory up", () => {
     const money = [note("money", "Netflix costs 649 a month"), note("money", "Netflix plan: 649 rupees monthly"), note("money", "Gym membership 1,200 a month")];
     const { options, read } = model({
       me: {
-        conflicts: [{ notes: [1, 3], why: "Two home cities." }],
+        conflicts: [{ notes: [1, 3], note: "Lives in Pune since moving in September 2026", why: "Two home cities." }],
         merge: [
           { notes: [2, 4], note: "Has a beagle called Biscuit", why: "Same dog." },
           { notes: [3, 5], note: "Moved to Pune", why: "Overlaps a note already in a conflict." },
@@ -87,11 +87,20 @@ describe("tidying memory up", () => {
       ],
       "a merge that names something new, a note number that isn't there and a note used twice are all dropped",
     );
+    assert.equal(tidy.proposals[0]!.merged, "Lives in Pune since moving in September 2026", "a conflict's one note, by the newer");
     assert.equal(tidy.proposals[1]!.merged, "Has a beagle called Biscuit");
     assert.equal(tidy.sent, 8);
     assert.equal(tidy.readBy, NEMOTRON.super);
     assert.deepEqual(tidy.sentTo, ["api.tokenfactory.nebius.com"]);
     assert.ok(tidy.costUsd > 0, "Token Factory's price for Super");
+  });
+
+  it("keeps a conflict whose one note names something new, without that note", async () => {
+    const { options } = model({ me: { conflicts: [{ notes: [1, 2], note: "Lives in Mumbai", why: "Two cities." }], merge: [] } });
+    const tidy = await tidyMemory([note("me", "Lives in Bengaluru"), note("me", "Moved to Pune")], options);
+    assert.equal(tidy.proposals.length, 1);
+    assert.equal(tidy.proposals[0]!.kind, "conflict");
+    assert.equal(tidy.proposals[0]!.merged, undefined);
   });
 
   it("says which slices the model couldn't read, and still has the copies", async () => {
@@ -107,6 +116,22 @@ describe("tidying memory up", () => {
     assert.ok(addsNothing("Biscuit is a beagle. Has had him since then.", sources), "a sentence's first word can be capitalised");
     assert.equal(addsNothing("Has a beagle called Biscuit, born in 2021", sources), false, "a new number");
     assert.equal(addsNothing("Has a beagle called Biscuit from Mysuru", sources), false, "a new place");
+  });
+
+  it("won't offer one note that drops most of what its notes say (Nemotron did, on 17 Oct)", () => {
+    const sources = ["Lives in Bengaluru, prefers trains to flights, budget-minded, writes short and warm.", "Moved to Pune in September 2026 for the new job."];
+    assert.equal(keepsMost("Moved to Pune in September 2026 for the new job.", sources), false, "the trains, the budget and the writing gone");
+    assert.ok(keepsMost("Lives in Pune since September 2026 (moved for the new job), prefers trains to flights, budget-minded, writes short and warm.", sources));
+    assert.ok(keepsMost("Pays 649 a month for Netflix, the Premium plan.", ["Netflix Premium costs 649 rupees a month.", "Pays 649 a month for Netflix, the Premium plan."]));
+  });
+
+  it("puts a model's reason in plain words, without the notes' numbers", () => {
+    assert.equal(
+      plainWhy("Note 1 says lives in Bengaluru but note 2 says moved to Pune, so note 2 overrides as it is newer."),
+      "One note says lives in Bengaluru but the other says moved to Pune, so the other overrides as it is newer.",
+    );
+    assert.equal(plainWhy("Notes 1 and 2 state identical facts."), "These notes state identical facts.");
+    assert.equal(plainWhy("Both state the monthly cost of Netflix Premium as 649 rupees."), "Both state the monthly cost of Netflix Premium as 649 rupees.");
   });
 
   it("merges notes of one slice into one kept note, all at once", () => {
