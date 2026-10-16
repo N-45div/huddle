@@ -333,8 +333,8 @@ export class Store {
 
   // Runs -------------------------------------------------------------------------------------------
 
-  createRun(flow: Flow, input: string, flowId: string | null = null): Run {
-    const run: Run = { id: newId("run"), flowId, flow, state: "running", at: null, context: { input, steps: {} }, error: null, createdAt: now(), updatedAt: now() };
+  createRun(flow: Flow, input: string, flowId: string | null = null, images: readonly string[] = []): Run {
+    const run: Run = { id: newId("run"), flowId, flow, state: "running", at: null, context: { input, steps: {}, ...(images.length ? { images } : {}) }, error: null, createdAt: now(), updatedAt: now() };
     this.db
       .prepare("INSERT INTO runs (id, flow_id, flow, state, at, context, error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .run(run.id, flowId, JSON.stringify(flow), run.state, run.at, JSON.stringify(run.context), run.error, run.createdAt, run.updatedAt);

@@ -34,6 +34,8 @@ export interface Disclosure {
   readonly to: Destination;
   /** Characters of the request itself. */
   readonly chars: number;
+  /** Images sent with it (photos the run started with). */
+  readonly images: number;
   readonly notes: readonly SentNote[];
   readonly at: string;
 }
@@ -110,6 +112,7 @@ export function receiptOf(flow: Flow, log: readonly LogLine[], notes: readonly N
         assistant: assistant.name ?? assistant.id,
         to: destinationOf(assistant),
         chars: typeof detail.ask === "string" ? detail.ask.length : 0,
+        images: typeof detail.images === "number" ? detail.images : 0,
         notes: sent.map((id) => {
           const note = byId.get(id);
           return { id, slice: note?.slice ?? null, note: note?.note ?? null };

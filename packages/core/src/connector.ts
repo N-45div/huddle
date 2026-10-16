@@ -15,6 +15,8 @@ export interface ConnectorRequest {
   readonly signal?: AbortSignal;
   /** The run this request belongs to, so a connector can keep one conversation going across its steps. */
   readonly runId?: string;
+  /** Images (data: URLs) the run started with, for an assistant allowed to see them. */
+  readonly images?: readonly string[];
 }
 
 /** An answer, and the tokens it took when the assistant says. */

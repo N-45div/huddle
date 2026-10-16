@@ -12,6 +12,8 @@ export interface StepAnswer {
 export interface RunContext {
   readonly input: string;
   readonly steps: Readonly<Record<string, StepAnswer>>;
+  /** Images the run started with (data: URLs); only assistants allowed to see images get them. */
+  readonly images?: readonly string[];
 }
 
 /** The value at a dotted path ("read.data.amount"), or undefined. */

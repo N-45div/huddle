@@ -83,15 +83,15 @@ export class Engine {
     return this.store.spendSince(since).reduce((sum, total) => sum + total.usd, 0);
   }
 
-  async start(flow: Flow, input: string, flowId: string | null = null, startedBy?: StartedBy): Promise<RunView> {
-    const run = this.store.createRun(flow, input, flowId);
+  async start(flow: Flow, input: string, flowId: string | null = null, startedBy?: StartedBy, images: readonly string[] = []): Promise<RunView> {
+    const run = this.store.createRun(flow, input, flowId, images);
     if (startedBy) this.store.log(run.id, "trigger", "started", startedBy);
     return this.advance(run, flow.steps[0]?.id ?? "end");
   }
 
   /** Starts a run and returns its id at once; the run carries on in the background (for the server). */
-  launch(flow: Flow, input: string, flowId: string | null = null, startedBy?: StartedBy): string {
-    const run = this.store.createRun(flow, input, flowId);
+  launch(flow: Flow, input: string, flowId: string | null = null, startedBy?: StartedBy, images: readonly string[] = []): string {
+    const run = this.store.createRun(flow, input, flowId, images);
     if (startedBy) this.store.log(run.id, "trigger", "started", startedBy);
     void this.advance(run, flow.steps[0]?.id ?? "end").catch((error: unknown) => console.error(`[huddle] run ${run.id} stopped:`, error));
     return run.id;
@@ -211,11 +211,13 @@ export class Engine {
         const ask = render(step.ask, context);
         // Kept notes from this assistant's slices only: all that fit the budget, the ones about this ask first.
         const memory = await this.memory.recall(ask, assistant.memory);
-        this.store.log(run.id, step.id, "asked", { assistant: assistant.id, ask, memory: memory.map((note) => note.id) });
+        // The run's images go only to an assistant allowed to see them.
+        const images = assistant.images ? (context.images ?? []) : [];
+        this.store.log(run.id, step.id, "asked", { assistant: assistant.id, ask, memory: memory.map((note) => note.id), ...(images.length ? { images: images.length } : {}) });
         const started = performance.now();
         let reply: Reply;
         try {
-          reply = await connector.send({ assistant, ask, memory, runId: run.id });
+          reply = await connector.send({ assistant, ask, memory, runId: run.id, ...(images.length ? { images } : {}) });
         } catch (error) {
           void this.guard?.report(handOff, { ok: false, chars: 0, error: error instanceof Error ? error.message : String(error), ms: Math.round(performance.now() - started) });
           throw error;

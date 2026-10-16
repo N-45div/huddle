@@ -15,14 +15,14 @@ const TIMEOUT_MS = 300_000;
 /** `extra` adds a provider's own fields to each request (Token Factory's thinking switch, for one). */
 export function openai(fetcher: typeof fetch = globalThis.fetch, extra?: (assistant: Assistant) => Record<string, unknown>): Connector {
   return {
-    async send({ assistant, ask, memory, signal }) {
+    async send({ assistant, ask, memory, signal, images }) {
       if (!assistant.url) throw new Error(`Assistant "${assistant.id}" uses the openai connector but has no url.`);
       const key = keyFor(assistant);
       const base = assistant.url.replace(/\/+$/, "");
       const url = base.endsWith("/chat/completions") ? base : base.endsWith("/v1") ? `${base}/chat/completions` : `${base}/v1/chat/completions`;
       const messages = [
         ...(memory.length ? [{ role: "system", content: `What you may use about the person:\n${memoryText(memory)}` }] : []),
-        { role: "user", content: ask },
+        { role: "user", content: images?.length ? [{ type: "text", text: ask }, ...images.map((url) => ({ type: "image_url", image_url: { url } }))] : ask },
       ];
       // A cap on the answer: OpenAI's current models take max_completion_tokens and refuse max_tokens, which
       // the other OpenAI-style servers (Hermes, Open WebUI, Ollama...) still use. So: the new name for OpenAI,

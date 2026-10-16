@@ -36,6 +36,8 @@ export const Assistant = z.object({
   agentId: z.string().min(1).optional(),
   /** openai, ollama, vllm, nebius, cli: the model to ask for (e.g. "openclaw/main" for an OpenClaw agent, what vLLM serves, "nvidia/nemotron-3-super-120b-a12b" on Token Factory, or "sonnet" for Claude Code). */
   model: z.string().min(1).optional(),
+  /** May see the images a run starts with (photos you attach). Off when left out; it needs a model that reads images, like nvidia/Nemotron-3.5-Super-VL. */
+  images: z.boolean().optional(),
   /** nebius: let the model think before it answers. Better on hard problems; slower, and the thinking is billed. Off when left out. */
   thinking: z.boolean().optional(),
   /** pact: the audience the business's Provider gave Huddle when it registered (goes in each token's aud). */
