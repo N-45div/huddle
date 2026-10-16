@@ -13,6 +13,8 @@ export { openai } from "./connectors/openai.ts";
 export { VLLM_URL, vllm, vllmModels } from "./connectors/vllm.ts";
 export { nebius } from "./connectors/nebius.ts";
 export { tavily } from "./connectors/tavily.ts";
+export { contextdev } from "./connectors/contextdev.ts";
+export { CONTEXT_DEV_API, CONTEXT_DEV_CREDIT_USD, contextDev, type ContextDevResult, type ContextDevTask, taskFor as contextDevTask } from "./contextdev.ts";
 export { type ChatModel, type CheckedFact, type FactCheck, type FactChecker, factChecker, type FactCheckOptions, quoted, type Verdict as FactVerdict } from "./factcheck.ts";
 export { TAVILY_API, TAVILY_CREDIT_USD, type TavilyResult, type TavilySearch, tavilySearch } from "./tavily.ts";
 export { isTokenFactory, NEMOTRON, refreshTokenFactoryPrices, thinkingFor, TOKEN_FACTORY_URL, tokenFactoryModels, tokenFactoryPrice } from "./tokenfactory.ts";

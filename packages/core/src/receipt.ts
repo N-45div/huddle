@@ -2,6 +2,7 @@ import { MONID_API } from "./monid.ts";
 import type { Assistant, Flow } from "./schema.ts";
 import type { LogLine, Note } from "./store.ts";
 import { TAVILY_API } from "./tavily.ts";
+import { CONTEXT_DEV_API } from "./contextdev.ts";
 import { TOKEN_FACTORY_URL } from "./tokenfactory.ts";
 
 /**
@@ -55,7 +56,7 @@ export interface Receipt {
 }
 
 /** Connectors that never send the assistant your notes. */
-const NO_MEMORY = new Set<Assistant["connector"]>(["email", "tavily", "monid", "homeassistant", "mock"]);
+const NO_MEMORY = new Set<Assistant["connector"]>(["email", "tavily", "contextdev", "monid", "homeassistant", "mock"]);
 
 const SERVICE: Partial<Record<Assistant["connector"], { readonly name: string; readonly url: string }>> = {
   openclaw: { name: "OpenClaw", url: "http://127.0.0.1:18789" },
@@ -64,6 +65,7 @@ const SERVICE: Partial<Record<Assistant["connector"], { readonly name: string; r
   vllm: { name: "vLLM", url: "http://127.0.0.1:8000" },
   nebius: { name: "Nebius Token Factory", url: TOKEN_FACTORY_URL },
   tavily: { name: "Tavily", url: TAVILY_API },
+  contextdev: { name: "context.dev", url: CONTEXT_DEV_API },
   monid: { name: "Monid", url: MONID_API },
   email: { name: "Resend (email)", url: "https://api.resend.com" },
   sochen: { name: "Sochen", url: "https://sochen.dev" },

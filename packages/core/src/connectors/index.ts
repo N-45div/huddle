@@ -10,6 +10,7 @@ import { mock } from "./mock.ts";
 import { monid } from "./monid.ts";
 import { nebius } from "./nebius.ts";
 import { tavily } from "./tavily.ts";
+import { contextdev } from "./contextdev.ts";
 import { ollama } from "./ollama.ts";
 import { openshell } from "./openshell.ts";
 import { pact } from "./pact.ts";
@@ -32,6 +33,7 @@ export function defaultConnectors(): Readonly<Record<string, Connector>> {
     vllm: vllm(),
     nebius: nebius(),
     tavily: tavily(),
+    contextdev: contextdev(),
     cli: cli(),
     openshell: openshell(),
     pact: pact(() => null),

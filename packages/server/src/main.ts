@@ -45,6 +45,7 @@ import { webApp } from "./static.ts";
  *   HUDDLE_OWNER_EMAILS    your addresses, comma-separated: mail from them counts as you
  *   TAVILY_API_KEY     web search (tavily.com): the tavily connector's key, and, with a model set up, the facts
  *                      in approvals that ask for it (check: true) checked on the web before you're asked
+ *   CONTEXT_DEV_API_KEY    context.dev: the contextdev connector's key (reads pages, searches, looks companies up)
  *   MONID_API_KEY      Monid's paid data tools (monid.ai): the monid connector's key, the canvas's tool
  *                      search, and monid_find, monid_show, monid_run and monid_result for your MCP clients
  *   HUDDLE_MONID_MAX_USD  the most one of those MCP runs may cost, in US dollars (default 0.10)
@@ -191,6 +192,7 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   console.log(`  Answers as views: ${presenter.name === "rules" ? "tables only (set TYPESAFE_API_KEY or HUDDLE_LLM_* to choose views)" : `chosen by ${presenter.name}`}${writer ? `, charts, flowcharts, calculators and comparisons filled in by ${writer.model}` : ""}`);
   if (checker) console.log(`  Approvals that ask for it (check: true) have their facts checked on the web first: Tavily searches, ${fillModel} weighs the sources`);
   else if (tavilyKey) console.log("  TAVILY_API_KEY is set, but checking facts also needs a model: NEBIUS_API_KEY, or HUDDLE_LLM_URL and HUDDLE_LLM_MODEL.");
+  if (env("CONTEXT_DEV_API_KEY")) console.log("  context.dev: contextdev assistants read pages, search the web and look companies up");
   if (monidKey) console.log(`  Monid: tool search in the canvas, and monid_find, monid_show, monid_run and monid_result on /mcp (up to $${monidMaxUsd} a run)`);
   if (guard) console.log(`  ${guard.name} checks every hand-off first (HUDDLE_GUARD=${env("HUDDLE_GUARD")}): a blocked one fails its run, a held one waits for your yes`);
   else if (env("ARMORIQ_API_KEY")) console.log("  ARMORIQ_API_KEY is set but no guard is on: set HUDDLE_GUARD=armoriq to have ArmorIQ check every hand-off.");

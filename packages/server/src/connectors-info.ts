@@ -94,6 +94,26 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
     fields: [{ key: "keyEnv", label: "Key variable", required: false, placeholder: "TAVILY_API_KEY" }],
   },
   {
+    id: "contextdev",
+    name: "Read the web (context.dev)",
+    description:
+      "context.dev reads a page (and with a question, just the passages that answer it), searches the web, or looks up the company behind a website or a work email. Set CONTEXT_DEV_API_KEY where Huddle runs (1,000 free credits a month). Memory isn't sent.",
+    fields: [
+      {
+        key: "agentId",
+        label: "What it does",
+        required: false,
+        choices: [
+          { value: "", label: "Picks from each request: a link is read, an email or domain is a company, else a search" },
+          { value: "read", label: "Reads the link in the request" },
+          { value: "search", label: "Searches the web" },
+          { value: "company", label: "Looks up a company (website, work email or name)" },
+        ],
+      },
+      { key: "keyEnv", label: "Key variable", required: false, placeholder: "CONTEXT_DEV_API_KEY" },
+    ],
+  },
+  {
     id: "cli",
     name: "Agent CLI on this computer",
     description:
