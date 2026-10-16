@@ -357,9 +357,9 @@ function Editor({ flowId, openDescribe }: { readonly flowId: string; readonly op
     }
   };
 
-  const runFlow = async (input: string) => {
+  const runFlow = async (input: string, images: readonly string[] = []) => {
     if (dirty && !(await save())) throw new Error("It couldn't be saved, so it didn't run. The problems are listed above the canvas.");
-    const { runId } = await api.runFlow(flowId, input);
+    const { runId } = await api.runFlow(flowId, input, images);
     setWatching(runId);
   };
 

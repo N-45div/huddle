@@ -171,6 +171,8 @@ interface Draft {
   model: string;
   /** nebius: "on" when the model should think first. */
   thinking: string;
+  /** "on" when it may see the photos a run starts with. */
+  images: string;
   agentId: string;
   audience: string;
   /** A command line, split into the command's parts on save. */
@@ -197,7 +199,7 @@ interface Draft {
   waitSeconds: string;
 }
 
-type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "thinking" | "agentId" | "audience" | "command" | "replies" | "scopes" | "to" | "from" | "price" | "maxTokens" | "reuseMinutes" | "tool" | "input" | "maxUsd" | "waitSeconds", string>>;
+type DraftErrors = Partial<Record<"id" | "connector" | "url" | "keyEnv" | "model" | "thinking" | "images" | "agentId" | "audience" | "command" | "replies" | "scopes" | "to" | "from" | "price" | "maxTokens" | "reuseMinutes" | "tool" | "input" | "maxUsd" | "waitSeconds", string>>;
 
 /** Connectors whose answers Huddle can cap at a number of tokens. */
 const CAPPED = new Set(["openai", "ollama", "vllm", "nebius"]);
@@ -249,6 +251,7 @@ function draftOf(assistant: Assistant | undefined): Draft {
     keyEnv: assistant?.keyEnv ?? "",
     model: assistant?.model ?? "",
     thinking: assistant?.thinking ? "on" : "",
+    images: assistant?.images ? "on" : "",
     agentId: assistant?.agentId ?? "",
     audience: assistant?.audience ?? "",
     command: joinCommand(assistant?.command),
@@ -380,6 +383,7 @@ function AssistantForm({
       if (value) assistant[key] = value;
     }
     if (shown.has("thinking") ? draft.thinking === "on" : kept?.thinking) assistant.thinking = true;
+    if (shown.has("images") ? draft.images === "on" : kept?.images) assistant.images = true;
     const command = shown.has("command") ? splitCommand(draft.command) : kept?.command;
     if (command?.length) assistant.command = command;
     const scopes = shown.has("scopes") ? draft.scopes.split(/[\s,]+/).filter(Boolean) : kept?.scopes;

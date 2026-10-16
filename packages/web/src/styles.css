@@ -3559,3 +3559,28 @@ h1 .badge {
   font-size: 12px;
   font-weight: 600;
 }
+
+/* Photos picked to start a run with. */
+.run-photos {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.run-photos li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.run-photos img {
+  width: 84px;
+  height: 84px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}

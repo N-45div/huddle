@@ -208,7 +208,7 @@ export const api = {
     const result = await call<{ ok: true } | ApiError>("POST", "/flows/check", { flow });
     if (result && "error" in result) throw new ApiFailure(400, result.error, result.problems ?? []);
   },
-  runFlow: (flowId: string, input: string) => call<{ runId: string }>("POST", `/flows/${id(flowId)}/run`, { input }),
+  runFlow: (flowId: string, input: string, images: readonly string[] = []) => call<{ runId: string }>("POST", `/flows/${id(flowId)}/run`, { input, ...(images.length ? { images } : {}) }),
   rotateWebhook: (flowId: string) => call<FlowView>("POST", `/flows/${id(flowId)}/webhook/rotate`),
 
   runs: (options: { flow?: string; limit?: number } = {}) => {

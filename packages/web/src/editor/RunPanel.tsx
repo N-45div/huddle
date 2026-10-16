@@ -17,7 +17,7 @@ interface Props {
   readonly detail: RunDetail | null;
   readonly detailError: string | null;
   /** Saves first when there are unsaved changes; throws with a readable message when it can't run. */
-  readonly onRun: (input: string) => Promise<void>;
+  readonly onRun: (input: string, images: readonly string[]) => Promise<void>;
   readonly onWatch: (runId: string | null) => void;
   readonly onAnswered: () => void;
 }
@@ -25,6 +25,15 @@ interface Props {
 export function RunPanel({ flowId, dirty, watching, detail, detailError, onRun, onWatch, onAnswered }: Props) {
   const { authVersion } = useApp();
   const [input, setInput] = useState("");
+  /** Photos to start the run with, as data: URLs; only assistants allowed to see images get them. */
+  const [photos, setPhotos] = useState<readonly { readonly name: string; readonly url: string }[]>([]);
+  const addPhotos = async (files: FileList | null) => {
+    const picked = [...(files ?? [])].filter((file) => /^image\/(png|jpeg|webp|gif)$/.test(file.type));
+    const tooBig = picked.find((file) => file.size > 5 * 1024 * 1024);
+    if (tooBig) return setError(`${tooBig.name} is over 5 MB.`);
+    const read = await Promise.all(picked.map((file) => new Promise<{ name: string; url: string }>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve({ name: file.name, url: String(reader.result) }); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file); })));
+    setPhotos((current) => [...current, ...read].slice(0, 4));
+  };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const recent = useResource(() => api.runs({ flow: flowId, limit: 8 }), [flowId, authVersion]);
@@ -38,7 +47,8 @@ export function RunPanel({ flowId, dirty, watching, detail, detailError, onRun, 
     setBusy(true);
     setError(null);
     try {
-      await onRun(input);
+      await onRun(input, photos.map((photo) => photo.url));
+      setPhotos([]);
       refetchRecent();
     } catch (caught) {
       setError(describeError(caught));
@@ -63,6 +73,23 @@ export function RunPanel({ flowId, dirty, watching, detail, detailError, onRun, 
           <Hint id="run-input-hint">
             Steps read it as <code>{"{{input}}"}</code>.
           </Hint>
+        </div>
+        <div className="field">
+          <label htmlFor="run-photos">Photos (optional)</label>
+          <input id="run-photos" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple aria-describedby="run-photos-hint" onChange={(event) => { void addPhotos(event.target.files); event.target.value = ""; }} />
+          {photos.length > 0 && (
+            <ul className="run-photos">
+              {photos.map((photo, index) => (
+                <li key={`${photo.name}-${index}`}>
+                  <img src={photo.url} alt={photo.name} />
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => setPhotos((current) => current.filter((_, other) => other !== index))}>
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <Hint id="run-photos-hint">Up to 4. Only assistants allowed to see photos get them, like a Nemotron VL reader.</Hint>
         </div>
         {dirty && <p className="note note-soft">You have unsaved changes. Running saves them first.</p>}
         {error && (

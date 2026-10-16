@@ -30,7 +30,7 @@ export function ReceiptPanel({ receipt }: { readonly receipt: Receipt }) {
                 <strong>{disclosure.assistant}</strong> → {disclosure.to.label}
               </p>
               <p className="receipt-what muted">
-                {plural(disclosure.chars, "character")} of request
+                {plural(disclosure.chars, "character")} of request{disclosure.images > 0 ? `, ${plural(disclosure.images, "photo")}` : ""}
                 {disclosure.notes.length === 0 ? ", no notes" : `, and ${plural(disclosure.notes.length, "note")}:`}
               </p>
               {disclosure.notes.length > 0 && (
