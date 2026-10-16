@@ -1,0 +1,282 @@
+{
+  "summary": {
+    "date": "2026-10-16",
+    "asks": 24,
+    "routedAsExpected": 24,
+    "autoUsd": 0.06476802,
+    "bestUsd": 0.075815,
+    "autoMedianMs": 1812,
+    "bestMedianMs": 2515,
+    "verdicts": {
+      "auto": 10,
+      "tie": 3,
+      "best": 11
+    }
+  },
+  "rows": [
+    {
+      "kind": "quick",
+      "ask": "What's 18% of 2,400?",
+      "routedTo": "quick",
+      "expected": "quick",
+      "autoUsd": 0.000030720000000000004,
+      "bestUsd": 0.001062,
+      "autoMs": 1324,
+      "bestMs": 2211,
+      "verdict": "best"
+    },
+    {
+      "kind": "quick",
+      "ask": "Convert 72°F to Celsius.",
+      "routedTo": "quick",
+      "expected": "quick",
+      "autoUsd": 0.00004524,
+      "bestUsd": 0.000556,
+      "autoMs": 1196,
+      "bestMs": 1040,
+      "verdict": "best"
+    },
+    {
+      "kind": "quick",
+      "ask": "How many days are there from 17 October 2026 to 25 December 2026?",
+      "routedTo": "quick",
+      "expected": "quick",
+      "autoUsd": 0.00003984,
+      "bestUsd": 0.00162,
+      "autoMs": 1232,
+      "bestMs": 1812,
+      "verdict": "auto"
+    },
+    {
+      "kind": "quick",
+      "ask": "Is 2027 a leap year?",
+      "routedTo": "quick",
+      "expected": "quick",
+      "autoUsd": 0.000046320000000000004,
+      "bestUsd": 0.000602,
+      "autoMs": 1150,
+      "bestMs": 974,
+      "verdict": "best"
+    },
+    {
+      "kind": "quick",
+      "ask": "What's the capital of Australia?",
+      "routedTo": "quick",
+      "expected": "quick",
+      "autoUsd": 0.00001572,
+      "bestUsd": 0.000086,
+      "autoMs": 718,
+      "bestMs": 662,
+      "verdict": "tie"
+    },
+    {
+      "kind": "quick",
+      "ask": "Split ₹3,450 equally between 3 people.",
+      "routedTo": "quick",
+      "expected": "quick",
+      "autoUsd": 0.000025559999999999992,
+      "bestUsd": 0.000182,
+      "autoMs": 917,
+      "bestMs": 943,
+      "verdict": "tie"
+    },
+    {
+      "kind": "quick",
+      "ask": "What does RSVP stand for?",
+      "routedTo": "quick",
+      "expected": "quick",
+      "autoUsd": 0.00002268,
+      "bestUsd": 0.000242,
+      "autoMs": 822,
+      "bestMs": 771,
+      "verdict": "best"
+    },
+    {
+      "kind": "quick",
+      "ask": "How many minutes are there in 3.5 hours?",
+      "routedTo": "quick",
+      "expected": "quick",
+      "autoUsd": 0.000022800000000000005,
+      "bestUsd": 0.000292,
+      "autoMs": 798,
+      "bestMs": 836,
+      "verdict": "tie"
+    },
+    {
+      "kind": "write",
+      "ask": "Write a two-line message to my landlord saying the rent will be two days late this month.",
+      "routedTo": "writer",
+      "expected": "writer",
+      "autoUsd": 0.00008022,
+      "bestUsd": 0.000201,
+      "autoMs": 1361,
+      "bestMs": 830,
+      "verdict": "best"
+    },
+    {
+      "kind": "write",
+      "ask": "Draft a polite email declining a meeting on Friday and offering Monday morning instead.",
+      "routedTo": "writer",
+      "expected": "writer",
+      "autoUsd": 0.00025752000000000007,
+      "bestUsd": 0.002077,
+      "autoMs": 2482,
+      "bestMs": 3392,
+      "verdict": "auto"
+    },
+    {
+      "kind": "write",
+      "ask": "Write a short birthday message for my colleague Priya.",
+      "routedTo": "writer",
+      "expected": "writer",
+      "autoUsd": 0.00010661999999999998,
+      "bestUsd": 0.00054,
+      "autoMs": 1812,
+      "bestMs": 1465,
+      "verdict": "auto"
+    },
+    {
+      "kind": "write",
+      "ask": "Reply to a recruiter: I'm interested, but only in fully remote roles.",
+      "routedTo": "writer",
+      "expected": "writer",
+      "autoUsd": 0.00015114000000000002,
+      "bestUsd": 0.001833,
+      "autoMs": 1710,
+      "bestMs": 2515,
+      "verdict": "best"
+    },
+    {
+      "kind": "write",
+      "ask": "Write a WhatsApp message asking my plumber to come on Saturday morning to fix a leaking tap.",
+      "routedTo": "writer",
+      "expected": "writer",
+      "autoUsd": 0.00027948,
+      "bestUsd": 0.00106,
+      "autoMs": 2361,
+      "bestMs": 1467,
+      "verdict": "best"
+    },
+    {
+      "kind": "write",
+      "ask": "Write a thank-you note to a friend who helped me move house last weekend.",
+      "routedTo": "writer",
+      "expected": "writer",
+      "autoUsd": 0.00024167999999999998,
+      "bestUsd": 0.002138,
+      "autoMs": 2281,
+      "bestMs": 3160,
+      "verdict": "auto"
+    },
+    {
+      "kind": "write",
+      "ask": "Ask my manager for next Monday off, briefly.",
+      "routedTo": "writer",
+      "expected": "writer",
+      "autoUsd": 0.00015762000000000005,
+      "bestUsd": 0.000668,
+      "autoMs": 1650,
+      "bestMs": 986,
+      "verdict": "auto"
+    },
+    {
+      "kind": "write",
+      "ask": "Write a LinkedIn comment congratulating a friend on her new job as a product manager.",
+      "routedTo": "writer",
+      "expected": "writer",
+      "autoUsd": 0.0001353,
+      "bestUsd": 0.001714,
+      "autoMs": 1567,
+      "bestMs": 2747,
+      "verdict": "auto"
+    },
+    {
+      "kind": "plan",
+      "ask": "Plan a 3-day trip from Bengaluru to Goa for two under ₹20,000, day by day.",
+      "routedTo": "planner",
+      "expected": "planner",
+      "autoUsd": 0.009304080000000001,
+      "bestUsd": 0.008886,
+      "autoMs": 13233,
+      "bestMs": 11989,
+      "verdict": "auto"
+    },
+    {
+      "kind": "plan",
+      "ask": "Make a weekly grocery plan for two vegetarians under ₹2,500.",
+      "routedTo": "planner",
+      "expected": "planner",
+      "autoUsd": 0.01204554,
+      "bestUsd": 0.010419,
+      "autoMs": 15179,
+      "bestMs": 13937,
+      "verdict": "best"
+    },
+    {
+      "kind": "plan",
+      "ask": "I earn ₹60,000 a month and have ₹50,000 saved. Plan an emergency fund and a monthly saving schedule.",
+      "routedTo": "planner",
+      "expected": "planner",
+      "autoUsd": 0.00786444,
+      "bestUsd": 0.007275,
+      "autoMs": 10429,
+      "bestMs": 9159,
+      "verdict": "auto"
+    },
+    {
+      "kind": "plan",
+      "ask": "Plan my week: the gym three times, a 10-hour work project, and calling my parents twice.",
+      "routedTo": "planner",
+      "expected": "planner",
+      "autoUsd": 0.0059469,
+      "bestUsd": 0.003966,
+      "autoMs": 7914,
+      "bestMs": 4425,
+      "verdict": "auto"
+    },
+    {
+      "kind": "plan",
+      "ask": "Should I buy or lease a car if I drive 8,000 km a year? Lay out the trade-offs and recommend one.",
+      "routedTo": "planner",
+      "expected": "planner",
+      "autoUsd": 0.00580926,
+      "bestUsd": 0.007023,
+      "autoMs": 7666,
+      "bestMs": 9777,
+      "verdict": "auto"
+    },
+    {
+      "kind": "plan",
+      "ask": "Plan a 6-week programme to get a beginner running 5 km without stopping.",
+      "routedTo": "planner",
+      "expected": "planner",
+      "autoUsd": 0.00759054,
+      "bestUsd": 0.006114,
+      "autoMs": 9638,
+      "bestMs": 7434,
+      "verdict": "best"
+    },
+    {
+      "kind": "plan",
+      "ask": "Organise a birthday dinner for 8 people under ₹10,000: venue type, menu, timeline.",
+      "routedTo": "planner",
+      "expected": "planner",
+      "autoUsd": 0.008952020000000002,
+      "bestUsd": 0.01088,
+      "autoMs": 11451,
+      "bestMs": 12254,
+      "verdict": "best"
+    },
+    {
+      "kind": "plan",
+      "ask": "Plan how to finish a 40-hour online course in 4 weeks around a full-time job.",
+      "routedTo": "planner",
+      "expected": "planner",
+      "autoUsd": 0.005596780000000001,
+      "bestUsd": 0.006379,
+      "autoMs": 7173,
+      "bestMs": 7442,
+      "verdict": "best"
+    }
+  ]
+}
