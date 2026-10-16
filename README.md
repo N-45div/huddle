@@ -242,6 +242,17 @@ With `NEBIUS_API_KEY` set and no `HUDDLE_LLM_URL`, Huddle's own model calls run 
 size its job needs: Lightning judges `"auto"` and picks how answers are shown, Super fills charts and
 tables in, and Ultra drafts flows from a sentence, using the assistants you've saved.
 
+Does letting Nemotron pick the size pay? On 24 everyday asks it sent every one to the right size, and quick
+asks and messages cost 89% less than sending everything to Ultra, with writing graded better 5 times in 8
+([the benchmark, and how to rerun it](docs/benchmarks/routing.md)).
+
+**Photos.** A run can start with up to four photos (attach them on the Run tab, or `"images"` in
+`POST /api/flows/:id/run` as data: URLs). Only an assistant with `"images": true` gets them, so a photo of
+a bill goes to the one that reads it and to nothing else; the run's receipt says who saw it.
+[`examples/bill-reader.json`](examples/bill-reader.json) reads a bill with
+`nvidia/Nemotron-3.5-Super-VL` and asks you before it's remembered: biller, amount and due date in about
+3 seconds, for a fraction of a cent.
+
 **Agent CLIs: Claude Code, Codex, OpenCode.** The ones on the computer Huddle runs on, signed in as you
 already use them ([Omarchy](#on-omarchy) sets them up). Add an assistant with **Agent CLI on this
 computer** and pick which one, or in a flow file:
