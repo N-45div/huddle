@@ -16,6 +16,9 @@ const emailAddress = z.string().max(254).regex(EMAIL_PATTERN, "an email address,
 /** The agent CLIs the cli connector can run on this computer, each in its careful mode. */
 export const CLI_AGENTS = ["claude", "codex", "opencode"] as const;
 export type CliAgent = (typeof CLI_AGENTS)[number];
+/** What a context.dev assistant does: read a page, search the web, or look a company up. */
+export const CONTEXT_DEV_MODES = ["read", "search", "company"] as const;
+export type ContextDevMode = (typeof CONTEXT_DEV_MODES)[number];
 /** A model name as these CLIs take it ("sonnet", "gpt-5.5", "openai/gpt-5.4-mini", "opus[1m]"): nothing a shell would read. */
 const CLI_MODEL = /^[A-Za-z0-9][A-Za-z0-9._:/@[\]-]{0,127}$/;
 
@@ -25,14 +28,14 @@ export const Assistant = z.object({
   /** What it's good at, in a sentence: what the router's judge reads to pick it. */
   description: z.string().max(500).optional(),
   /** How to reach it: openclaw and hermes are A2A with their usual local address filled in. */
-  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "vllm", "nebius", "tavily", "cli", "openshell", "pact", "homeassistant", "agentzero", "instinct", "email", "monid"]),
+  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "vllm", "nebius", "tavily", "contextdev", "cli", "openshell", "pact", "homeassistant", "agentzero", "instinct", "email", "monid"]),
   /** The slices of shared memory this assistant may read. */
   memory: z.array(z.string().min(1)).default([]),
   /** http: where to POST. a2a: the agent's base address or its card. openai: the API base. sochen: if not https://sochen.dev. instinct: if not http://127.0.0.1:8080. */
   url: z.string().url().optional(),
   /** The environment variable that holds this assistant's key. Never the key itself. */
   keyEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/, "an environment variable name, like SOCHEN_API_KEY").optional(),
-  /** homeassistant: which conversation agent; agentzero: which agent profile; openshell: which sandbox; cli: which agent CLI. */
+  /** homeassistant: which conversation agent; agentzero: which agent profile; openshell: which sandbox; cli: which agent CLI; contextdev: read, search or company (left out: picked from each request). */
   agentId: z.string().min(1).optional(),
   /** openai, ollama, vllm, nebius, cli: the model to ask for (e.g. "openclaw/main" for an OpenClaw agent, what vLLM serves, "nvidia/nemotron-3-super-120b-a12b" on Token Factory, or "sonnet" for Claude Code). */
   model: z.string().min(1).optional(),
@@ -107,6 +110,9 @@ export function assistantProblems(assistant: Assistant): string[] {
     if (assistant.model !== undefined && !CLI_MODEL.test(assistant.model)) {
       problems.push(`assistant "${assistant.id}": a model name for an agent CLI is letters, numbers and . _ : / @ - [ ] (like "sonnet" or "gpt-5.5")`);
     }
+  }
+  if (assistant.connector === "contextdev" && assistant.agentId !== undefined && !(CONTEXT_DEV_MODES as readonly string[]).includes(assistant.agentId)) {
+    problems.push(`assistant "${assistant.id}" uses context.dev: say what it does (agentId), ${CONTEXT_DEV_MODES.join(", ")}, or leave it out to pick from each request`);
   }
   if (assistant.connector === "openshell" && (!assistant.agentId || !assistant.command)) {
     problems.push(`assistant "${assistant.id}" runs in OpenShell: give its sandbox's name (agentId) and the command that runs its agent (command)`);
