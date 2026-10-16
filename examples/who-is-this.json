@@ -1,0 +1,34 @@
+{
+  "name": "Who's this?",
+  "description": "Someone you don't know wrote to you: context.dev looks up the company behind their email address (a personal address is skipped, at no cost), NVIDIA Nemotron 3 Super says who they are and whether it's worth a reply, and you choose whether to remember them. Needs CONTEXT_DEV_API_KEY and NEBIUS_API_KEY.",
+  "assistants": [
+    {
+      "id": "lookup",
+      "name": "Company lookup (context.dev)",
+      "connector": "contextdev",
+      "agentId": "company",
+      "description": "Finds the company behind a website or a work email."
+    },
+    {
+      "id": "judge",
+      "name": "Sizer-up (Nemotron Super)",
+      "connector": "nebius",
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "memory": ["me"],
+      "maxTokens": 500,
+      "description": "Weighs up who someone is and what they want."
+    }
+  ],
+  "steps": [
+    { "id": "who", "type": "agent", "agent": "lookup", "ask": "{{input}}" },
+    { "id": "known", "type": "condition", "if": "{{who.data.found}} == true", "then": "size", "else": "end" },
+    {
+      "id": "size",
+      "type": "agent",
+      "agent": "judge",
+      "ask": "This came to me:\n{{input}}\n\nWhat context.dev found about the company behind the sender's address:\n{{who.text}}\n\nIn two short lines: who they are, and whether this looks worth a reply, and why. Then a last line of JSON: {\"company\": \"<the company's name>\", \"does\": \"<what they do, in under 12 words>\", \"worth\": true or false, \"why\": \"<a few words>\"}"
+    },
+    { "id": "ok", "type": "approval", "message": "Remember who they are?\n\n{{size.data.company}} ({{who.data.domain}}): {{size.data.does}}\nWorth a reply: {{size.data.why}}", "next": "remember", "onNo": "end" },
+    { "id": "remember", "type": "memory", "slice": "people", "note": "{{size.data.company}} ({{who.data.domain}}): {{size.data.does}}" }
+  ]
+}

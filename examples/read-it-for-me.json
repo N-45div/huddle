@@ -1,0 +1,30 @@
+{
+  "name": "Read it for me",
+  "description": "Paste a link, with a question if you have one: context.dev reads the page (only the passages that answer your question, when there is one) and NVIDIA Nemotron 3.5 Lightning answers from what it read. Your notes go to neither. Needs CONTEXT_DEV_API_KEY and NEBIUS_API_KEY.",
+  "assistants": [
+    {
+      "id": "page",
+      "name": "Page reader (context.dev)",
+      "connector": "contextdev",
+      "agentId": "read",
+      "description": "Reads a web page, or just the parts of it that answer a question."
+    },
+    {
+      "id": "answer",
+      "name": "Answer (Nemotron Lightning)",
+      "connector": "nebius",
+      "model": "nvidia/Nemotron-3_5-Lightning",
+      "maxTokens": 400,
+      "description": "Quick answers from text it's given."
+    }
+  ],
+  "steps": [
+    { "id": "read", "type": "agent", "agent": "page", "ask": "{{input}}" },
+    {
+      "id": "say",
+      "type": "agent",
+      "agent": "answer",
+      "ask": "What I sent: {{input}}\n\nWhat the page says:\n{{read.text}}\n\nIf I asked a question, answer it from the page only, in three short lines at most, and say so if the page doesn't answer it. If I didn't, say what the page is and the three things on it worth knowing. End with the page's address."
+    }
+  ]
+}
