@@ -67,7 +67,7 @@ type Confirming = { readonly kind: "discard" } | { readonly kind: "describe"; re
 const FIT: FitViewOptions<EditorNode> = { padding: 0.25, maxZoom: 1 };
 const DELETE_KEYS = ["Backspace", "Delete"];
 const STEP_TYPES: readonly StepType[] = ["agent", "condition", "approval", "memory"];
-const EMPTY_META: Meta = { name: "", description: "", trigger: { type: "manual" }, assistants: [] };
+const EMPTY_META: Meta = { name: "", description: "", example: "", trigger: { type: "manual" }, assistants: [] };
 
 function problemNotice(headline: string, caught: unknown): Notice {
   if (caught instanceof ApiFailure && caught.problems.length) return { tone: "error", message: caught.message || headline, problems: caught.problems };
@@ -76,7 +76,7 @@ function problemNotice(headline: string, caught: unknown): Notice {
 
 const serialize = (graph: Graph) => JSON.stringify(graphToFlow(graph.meta, graph.nodes, graph.edges));
 
-export function FlowEditor(props: { readonly flowId: string; readonly openDescribe: boolean }) {
+export function FlowEditor(props: { readonly flowId: string; readonly openDescribe: boolean; readonly openRun: boolean }) {
   return (
     <ReactFlowProvider>
       <Editor {...props} />
@@ -84,7 +84,7 @@ export function FlowEditor(props: { readonly flowId: string; readonly openDescri
   );
 }
 
-function Editor({ flowId, openDescribe }: { readonly flowId: string; readonly openDescribe: boolean }) {
+function Editor({ flowId, openDescribe, openRun }: { readonly flowId: string; readonly openDescribe: boolean; readonly openRun: boolean }) {
   const { info, authVersion } = useApp();
   const [view, setView] = useState<FlowView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -94,7 +94,7 @@ function Editor({ flowId, openDescribe }: { readonly flowId: string; readonly op
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [baseline, setBaseline] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [tab, setTab] = useState<PanelTab>(openDescribe ? "flow" : "step");
+  const [tab, setTab] = useState<PanelTab>(openDescribe ? "flow" : openRun ? "run" : "step");
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState<"save" | "check" | null>(null);
   const [confirming, setConfirming] = useState<Confirming | null>(null);
@@ -108,10 +108,10 @@ function Editor({ flowId, openDescribe }: { readonly flowId: string; readonly op
   const loaded = useRef(false);
   const [focusDescribe] = useState(openDescribe);
 
-  // "?describe" only opens the Describe box once; drop it from the address.
+  // "?describe" and "?try" only open their tab once; drop them from the address.
   useEffect(() => {
-    if (openDescribe) replaceHash(href.flow(flowId));
-  }, [openDescribe, flowId]);
+    if (openDescribe || openRun) replaceHash(href.flow(flowId));
+  }, [openDescribe, openRun, flowId]);
 
   const applyFlow = useCallback(
     (flow: Flow): Graph => {
@@ -601,6 +601,8 @@ function Editor({ flowId, openDescribe }: { readonly flowId: string; readonly op
                 view={view}
                 description={meta.description}
                 onDescription={(description) => setMeta((current) => ({ ...current, description }))}
+                example={meta.example}
+                onExample={(example) => setMeta((current) => ({ ...current, example }))}
                 canDescribe={info?.describe ?? false}
                 focusDescribe={focusDescribe}
                 onDescribed={(described) => (dirty ? setConfirming({ kind: "describe", flow: described }) : loadDescribed(described))}
@@ -630,6 +632,7 @@ function Editor({ flowId, openDescribe }: { readonly flowId: string; readonly op
             {tab === "run" && (
               <RunPanel
                 flowId={flowId}
+                example={meta.example}
                 dirty={dirty}
                 watching={watching}
                 detail={runDetail}

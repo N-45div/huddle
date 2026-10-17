@@ -34,6 +34,7 @@ export type {
   ToolDetails,
   RunView,
   SignIn,
+  Template,
   SandboxRequests,
   SandboxRequestView,
   Trigger,

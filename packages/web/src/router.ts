@@ -8,7 +8,7 @@ import { useEffect, useSyncExternalStore } from "react";
 
 export type Route =
   | { readonly name: "flows" }
-  | { readonly name: "flow"; readonly id: string; readonly describe: boolean }
+  | { readonly name: "flow"; readonly id: string; readonly describe: boolean; readonly run: boolean }
   | { readonly name: "runs"; readonly flow: string | null }
   | { readonly name: "run"; readonly id: string }
   | { readonly name: "assistants" }
@@ -30,7 +30,7 @@ export function parseRoute(hash: string): Route {
   const params = new URLSearchParams(query);
   switch (parts[0]) {
     case "flows":
-      return parts[1] ? { name: "flow", id: parts[1], describe: params.has("describe") } : { name: "flows" };
+      return parts[1] ? { name: "flow", id: parts[1], describe: params.has("describe"), run: params.has("try") } : { name: "flows" };
     case "runs":
       return parts[1] ? { name: "run", id: parts[1] } : { name: "runs", flow: params.get("flow") };
     case "assistants":
@@ -53,6 +53,8 @@ const part = encodeURIComponent;
 export const href = {
   flows: () => "#/flows",
   flow: (id: string, describe = false) => `#/flows/${part(id)}${describe ? "?describe" : ""}`,
+  /** A flow opened on its Run tab, its example request ready. */
+  tryFlow: (id: string) => `#/flows/${part(id)}?try`,
   runs: (flow?: string | null) => (flow ? `#/runs?flow=${part(flow)}` : "#/runs"),
   run: (id: string) => `#/runs/${part(id)}`,
   assistants: () => "#/assistants",

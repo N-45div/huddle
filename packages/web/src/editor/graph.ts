@@ -30,6 +30,8 @@ const LINK_ORDER: readonly LinkHandle[] = ["next", "then", "else", "onNo"];
 export interface Meta {
   readonly name: string;
   readonly description: string;
+  /** A request to try it with: the run box starts with it. */
+  readonly example: string;
   readonly trigger: Trigger;
   /** Who may start it from outside; none means only you. */
   readonly callers?: Callers;
@@ -269,6 +271,7 @@ export function flowToGraph(flow: Flow): Graph {
     meta: {
       name: flow.name ?? "",
       description: flow.description ?? "",
+      example: flow.example ?? "",
       trigger: flow.trigger ?? { type: "manual" },
       ...(flow.callers ? { callers: flow.callers } : {}),
       assistants: flow.assistants ?? [],
@@ -342,6 +345,7 @@ export function graphToFlow(meta: Meta, nodes: readonly EditorNode[], edges: rea
   return {
     name: meta.name,
     ...(description ? { description: meta.description } : {}),
+    ...(meta.example.trim() ? { example: meta.example } : {}),
     trigger: meta.trigger,
     ...(meta.callers ? { callers: meta.callers } : {}),
     assistants: [...meta.assistants],

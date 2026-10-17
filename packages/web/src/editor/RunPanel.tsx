@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, describeError } from "../api.ts";
 import { useApp } from "../app-context.ts";
 import { AnswerButtons } from "../components/Answer.tsx";
@@ -12,6 +12,8 @@ import type { RunDetail } from "../types.ts";
 
 interface Props {
   readonly flowId: string;
+  /** The flow's example request: the input starts with it. */
+  readonly example?: string;
   readonly dirty: boolean;
   readonly watching: string | null;
   readonly detail: RunDetail | null;
@@ -22,9 +24,13 @@ interface Props {
   readonly onAnswered: () => void;
 }
 
-export function RunPanel({ flowId, dirty, watching, detail, detailError, onRun, onWatch, onAnswered }: Props) {
+export function RunPanel({ flowId, example, dirty, watching, detail, detailError, onRun, onWatch, onAnswered }: Props) {
   const { authVersion } = useApp();
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(example ?? "");
+  // The flow loads after the panel can open (a template opens straight on Run): start with its example then.
+  useEffect(() => {
+    if (example) setInput((current) => current || example);
+  }, [example]);
   /** Photos to start the run with, as data: URLs; only assistants allowed to see images get them. */
   const [photos, setPhotos] = useState<readonly { readonly name: string; readonly url: string }[]>([]);
   const addPhotos = async (files: FileList | null) => {

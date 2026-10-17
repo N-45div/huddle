@@ -130,7 +130,7 @@ function Screen({ route }: { readonly route: Route }) {
     case "flows":
       return <FlowsScreen />;
     case "flow":
-      return <FlowEditor key={route.id} flowId={route.id} openDescribe={route.describe} />;
+      return <FlowEditor key={route.id} flowId={route.id} openDescribe={route.describe} openRun={route.run} />;
     case "runs":
       return <RunsScreen flowFilter={route.flow} />;
     case "run":

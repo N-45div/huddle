@@ -8,13 +8,15 @@ interface Props {
   readonly view: FlowView;
   readonly description: string;
   readonly onDescription: (description: string) => void;
+  readonly example: string;
+  readonly onExample: (example: string) => void;
   /** Whether the server can draw a flow from a sentence (/api/info.describe). */
   readonly canDescribe: boolean;
   readonly focusDescribe: boolean;
   readonly onDescribed: (flow: Flow) => void;
 }
 
-export function FlowPanel({ view, description, onDescription, canDescribe, focusDescribe, onDescribed }: Props) {
+export function FlowPanel({ view, description, onDescription, example, onExample, canDescribe, focusDescribe, onDescribed }: Props) {
   return (
     <div className="inspector-section">
       {canDescribe && <DescribeBox autoFocus={focusDescribe} onDescribed={onDescribed} />}
@@ -23,6 +25,12 @@ export function FlowPanel({ view, description, onDescription, canDescribe, focus
         <label htmlFor="flow-description">Description</label>
         <textarea id="flow-description" rows={3} value={description} aria-describedby="flow-description-hint" onChange={(event) => onDescription(event.target.value)} />
         <Hint id="flow-description-hint">What this flow is for, in a line. Shown in the list of flows.</Hint>
+      </div>
+
+      <div className="field">
+        <label htmlFor="flow-example">Try it with</label>
+        <textarea id="flow-example" rows={2} value={example} aria-describedby="flow-example-hint" onChange={(event) => onExample(event.target.value)} />
+        <Hint id="flow-example-hint">A request to try it with: the Run tab starts with it.</Hint>
       </div>
 
       <dl className="facts">

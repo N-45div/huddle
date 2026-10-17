@@ -17,6 +17,7 @@ import type {
   RunSummary,
   SandboxRequests,
   SignIn,
+  Template,
   WaitingApproval,
   ToolDetails,
 } from "./types.ts";
@@ -202,6 +203,7 @@ export const api = {
   flows: () => call<FlowView[]>("GET", "/flows"),
   flow: (flowId: string) => call<FlowView>("GET", `/flows/${id(flowId)}`),
   createFlow: (flow: Flow) => call<FlowView>("POST", "/flows", { flow }),
+  templates: () => call<Template[]>("GET", "/templates"),
   saveFlow: (flowId: string, flow: Flow) => call<FlowView>("PUT", `/flows/${id(flowId)}`, { flow }),
   deleteFlow: (flowId: string) => call<{ ok: true }>("DELETE", `/flows/${id(flowId)}`),
   /** Resolves when the flow is fine; throws an ApiFailure listing its problems when it isn't. */

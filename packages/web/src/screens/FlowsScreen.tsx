@@ -3,6 +3,7 @@ import { api, describeError } from "../api.ts";
 import { useApp } from "../app-context.ts";
 import { Empty, ErrorNote, Link, Loading } from "../components/bits.tsx";
 import { ConfirmDialog } from "../components/Dialog.tsx";
+import { Templates } from "../components/Templates.tsx";
 import { useChanges } from "../events.ts";
 import { ago, fullTime, plural, triggerSummary } from "../format.ts";
 import { useDebounced, useResource } from "../hooks.ts";
@@ -139,6 +140,8 @@ export function FlowsScreen() {
           </table>
         </div>
       )}
+
+      {flows.data && <Templates flows={list} />}
 
       <ConfirmDialog
         open={deleting !== null}
