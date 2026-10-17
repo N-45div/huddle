@@ -42,6 +42,8 @@ await build({
 });
 // The OpenShell client loads its protos from ./proto next to itself.
 cpSync(join(root, "packages/core/src/openshell/proto"), join(resources, "server/proto"), { recursive: true });
+// The example flows, offered as templates in the canvas.
+cpSync(join(root, "examples"), join(resources, "server/examples"), { recursive: true });
 
 // 2. The canvas, built.
 const web = join(root, "packages/web/dist");

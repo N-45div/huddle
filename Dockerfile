@@ -25,6 +25,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY packages/core/src packages/core/src
 COPY packages/server/src packages/server/src
 COPY --from=build /app/packages/web/dist packages/web/dist
+COPY examples examples
 RUN mkdir -p /data && chown node:node /data
 USER node
 VOLUME /data

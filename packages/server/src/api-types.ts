@@ -7,6 +7,7 @@ import type { Assistant, Choice, Contact, FactCheck, HeldBy, Receipt, ContactTie
 
 export type { Assistant, Choice, Contact, FactCheck, HeldBy, Receipt, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Tidy, TidyProposal, Trigger, View };
 export type { FoundTool, ToolDetails } from "./monid.ts";
+export type { Template } from "./templates.ts";
 
 /** GET /api/info: what this Huddle can do. */
 export interface Info {
@@ -233,6 +234,7 @@ export interface SandboxRequests {
  *   GET    /api/runs/:id                   -> RunDetail
  *   GET    /api/approvals                  -> WaitingApproval[]
  *   POST   /api/approvals/:id { yes }      -> 202 { runId }
+ *   GET    /api/templates                  -> Template[]          (the example flows, with what each still needs here)
  *   GET    /api/memory?status=             -> Note[]
  *   GET    /api/memory/search?q=&slice=&status=&limit= -> MemoryHit[]   (best first; slice may repeat)
  *   POST   /api/memory { slice, note }     -> Note                (a person's own note: kept; 400 if it holds a secret)

@@ -11,6 +11,7 @@ import type { ApiError, FlowView, Info, PresentedView, RouterUsage, RouterView, 
 import { CONNECTORS } from "./connectors-info.ts";
 import type { MonidCatalog } from "./monid.ts";
 import { noSandboxes, type SandboxInbox, Stale } from "./sandbox-requests.ts";
+import { readTemplates, type Template } from "./templates.ts";
 
 /**
  * Huddle's server: the API the canvas uses (/api), webhooks that start flows (/hooks, and
@@ -341,6 +342,9 @@ export function createApp(options: AppOptions): Hono {
       return bad(c, error instanceof Error ? error.message : String(error), 409);
     }
   });
+
+  // The example flows, to start from: each says what it reaches and what this server still needs for it.
+  app.get("/api/templates", (c) => c.json<Template[]>(readTemplates()));
 
   // Memory ----------------------------------------------------------------------------------------
   app.get("/api/memory", (c) => {
