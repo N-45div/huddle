@@ -120,6 +120,22 @@ note for a Bengaluru/Pune conflict, dropping "prefers trains to flights, budget-
 note. That note now fails the check, so the conflict shows with "Keep only this" on each note and no
 one-note offer.
 
+**Learn from what you say** (a switch on the Memory page, off until you turn it on) lets memory grow on
+its own:
+- **When:** after a flow you run in the canvas, or a chat through the router.
+- **What it reads:** Nemotron 3 Super reads what you wrote, and only that: not the answers, not your notes.
+  It suggests up to three lasting things about you, like "Mother lives in Kochi" or "Does not drink
+  alcohol". They wait in Memory like any other suggestion.
+- **What it never reads:** mail, webhooks, and messages from contacts or AI clients. A flow whose input
+  isn't your own words, like a pasted email in *Who's this?*, says `"learn": false`.
+- **What gets dropped:** a suggestion naming a person, place or number you didn't say, and one that
+  memory already holds in other words.
+- **Receipt:** the run's receipt shows your words going to the model, and the run log lists what it
+  suggested. About $0.00015 a message.
+
+It runs on Super because Lightning, tried first, kept the request itself ("Weekend trip with a companion
+from Bengaluru to Mysuru") and filed "Hates early flights" under money.
+
 In Sochen, on Postgres with Voyage embeddings and reranking and a reader model for counting
 questions, this engine scored 89.2% on LongMemEval. That number is Sochen's: Huddle has the ranking
 but not the reader, stems words with SQLite's Porter stemmer rather than Postgres', and hasn't been
@@ -861,9 +877,11 @@ npm run build          # builds the canvas
 npm start              # http://localhost:7700
 ```
 
-Open http://localhost:7700, make a flow (or, with a model set up, press **Describe it**), and press
-**Run**. Runs that stop for
-an approval wait in **Approvals**; what your assistants suggest remembering waits in **Memory**.
+Open http://localhost:7700. The quickest start is **Start from a template** on the Flows page. Each
+example flow (all on Nemotron, plus the stand-in *Invoices*, which needs nothing) says what it reaches and
+which keys your server still needs. **Use this** opens it on its Run tab with a request ready to try.
+Or make a flow yourself (with a model set up, press **Describe it**) and press **Run**. Runs that stop
+for an approval wait in **Approvals**; what your assistants suggest remembering waits in **Memory**.
 
 ### With Docker
 
