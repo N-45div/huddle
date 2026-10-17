@@ -113,6 +113,12 @@ export function askFrom(messages: readonly ChatMessage[]): string {
   return `${before.map((message) => `${label(message.role)}: ${message.text}`).join("\n")}\n\nNow: ${said[lastUser]!.text}`;
 }
 
+/** What the person said last, alone: the words learning may read (never the replies or earlier turns). */
+export function lastSaid(messages: readonly ChatMessage[]): string {
+  const said = messages.filter((message) => message.role === "user").map((message) => textOf(message.content).trim()).filter(Boolean);
+  return said.at(-1) ?? "";
+}
+
 /** "auto": let the judge pick. */
 export const AUTO = "auto";
 /** A candidate the judge gives less than this isn't tried. */

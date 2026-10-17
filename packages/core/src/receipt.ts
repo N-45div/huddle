@@ -123,6 +123,20 @@ export function receiptOf(flow: Flow, log: readonly LogLine[], notes: readonly N
       });
     }
     if (line.kind === "fact-checked") searches.push({ stepId: line.stepId, queries: strings(detail.claims), sentTo: strings(detail.sentTo) });
+    // Learning from what you said: your words, and nothing else, went to the model that reads them.
+    if (line.kind === "learned") {
+      const host = typeof detail.host === "string" ? detail.host : null;
+      const local = host !== null && LOOPBACK.has(host);
+      disclosures.push({
+        stepId: line.stepId,
+        assistant: `Learning from what you said (${typeof detail.by === "string" ? detail.by : "a model"})`,
+        to: { label: typeof detail.to === "string" ? detail.to : (host ?? "a model"), host: local ? null : host, local },
+        chars: typeof detail.chars === "number" ? detail.chars : 0,
+        images: 0,
+        notes: [],
+        at: line.at,
+      });
+    }
   }
   const services = [...new Set([...disclosures.map((disclosure) => disclosure.to.host).filter((host): host is string => Boolean(host)), ...searches.flatMap((search) => search.sentTo)])].sort();
   return { disclosures, searches, services };

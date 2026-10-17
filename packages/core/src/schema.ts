@@ -279,6 +279,8 @@ export const Flow = z
     description: z.string().optional(),
     /** A request to try it with: the run box starts with it. */
     example: z.string().max(4_000).optional(),
+    /** false: what starts it isn't your own words (a pasted email, a link), so memory never learns from it. */
+    learn: z.boolean().optional(),
     trigger: Trigger.default({ type: "manual" }),
     /** Who may start it from outside Huddle; without it, only you. */
     callers: Callers.optional(),

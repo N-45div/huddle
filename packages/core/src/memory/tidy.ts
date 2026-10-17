@@ -82,7 +82,7 @@ export function addsNothing(merged: string, sources: readonly string[]): boolean
 }
 
 const COMMON = new Set(["that", "this", "with", "from", "have", "been", "were", "they", "them", "their", "about", "into", "than", "then", "each", "also", "only", "just", "very", "what", "when", "where", "which", "while", "would", "could", "should", "there", "these", "those", "does", "over", "more", "most", "some", "such", "will"]);
-const contentWords = (text: string): Set<string> => new Set(text.toLowerCase().split(/[^\p{L}]+/u).filter((word) => word.length >= 4 && !COMMON.has(word)));
+export const contentWords = (text: string): Set<string> => new Set(text.toLowerCase().split(/[^\p{L}]+/u).filter((word) => word.length >= 4 && !COMMON.has(word)));
 
 /**
  * Whether one note keeps most of what its notes say (share of their words of four letters or more, default

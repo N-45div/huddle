@@ -2,6 +2,7 @@
   "name": "Inbox digest",
   "description": "Mail that reaches your Huddle address is read by NVIDIA Nemotron 3.5 Lightning: what matters is summed up and, once you say yes, sent to your own inbox; the rest goes quietly into your work notes. Needs NEBIUS_API_KEY, and Resend for the mail.",
   "example": "From: Asha (landlord)\nSubject: Rent from March\n\nHi, the rent goes up to ₹28,000 from 1 March. Please confirm by Friday so I can update the agreement.",
+  "learn": false,
   "trigger": { "type": "email", "address": "inbox@mail.example.com" },
   "assistants": [
     { "id": "reader", "name": "Reader", "connector": "nebius", "model": "nvidia/Nemotron-3_5-Lightning", "memory": ["work"], "description": "Reads email and says what matters.", "maxTokens": 600 },

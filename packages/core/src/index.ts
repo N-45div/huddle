@@ -46,7 +46,7 @@ export {
   starterInput,
   toolId,
 } from "./monid.ts";
-export { Engine, type EngineOptions, HeldElsewhere, MAX_STEPS, OverBudget, type RunView, type StartedBy } from "./engine.ts";
+export { Engine, type EngineOptions, HeldElsewhere, LEARNING, MAX_STEPS, OverBudget, type RunView, type StartedBy } from "./engine.ts";
 export { type AgentStep, type Guard, type HandOff, type Outcome, type Verdict } from "./guard.ts";
 export { GUARDS, guardFromEnv } from "./guards/index.ts";
 export { httpGuard, type HttpGuardOptions } from "./guards/http.ts";
@@ -55,8 +55,9 @@ export { type Embedder, embedder, type EmbedderOptions } from "./memory/embeddin
 export { Memory, type MemoryHit, type MemoryOptions, NOTE_CLIP, RECALL_BUDGET } from "./memory/memory.ts";
 export { type Reranker, reranker, type RerankerOptions } from "./memory/rerank.ts";
 export { findSecret, redactSecrets, SensitiveNote } from "./memory/sensitive.ts";
+export { alreadySays, type Learned, type LearnedNote, type Learner, noteTaker } from "./memory/learn.ts";
 export { addsNothing, keepsMost, noteKey, plainWhy, type Tidy, type TidyKind, type TidyOptions, type TidyProposal, tidyMemory } from "./memory/tidy.ts";
-export { askFrom, type Attempt, AUTO, type ChatMessage, type CostRoute, FIT, NoAnswer, PREFER, type Prefer, type RouteInfo, type RouteRequest, type Routed, Router, STICKY_MS } from "./router.ts";
+export { askFrom, type Attempt, AUTO, type ChatMessage, type CostRoute, FIT, lastSaid, NoAnswer, PREFER, type Prefer, type RouteInfo, type RouteRequest, type Routed, Router, STICKY_MS } from "./router.ts";
 export { evaluateFormula, FormulaError, namesIn, parseFormula } from "./formula.ts";
 export { type Answer, type Choice, FILLED, FilledView, jevPresenter, type JevPresenterOptions, type ModelOptions, modelPresenter, obviousChoice, present, type Presenter, rulesPresenter, type Table, tableOf, type View, VIEW_KINDS, type ViewKind, VIEWS, type ViewWriter, viewWriter } from "./present.ts";
 export { type Budget, CHARS_PER_TOKEN, costOf, dollars, estimateTokens, parseBudget, periodStart, type Price, priceOf, type Spend, spendOf, type Usage } from "./cost.ts";

@@ -3,9 +3,13 @@ import { type Connector, memoryText, type Reply } from "./connector.ts";
 import { type Budget, budgetName, dollars, periodStart, priceOf, spendOf } from "./cost.ts";
 import type { FactCheck, FactChecker } from "./factcheck.ts";
 import type { Guard } from "./guard.ts";
+import { alreadySays, type Learner } from "./memory/learn.ts";
 import { Memory } from "./memory/memory.ts";
 import type { Flow, Step } from "./schema.ts";
-import type { Approval, Run, Store } from "./store.ts";
+import type { Approval, Note, Run, Store } from "./store.ts";
+
+/** The setting that turns learning from what you say on ("on") or off. */
+export const LEARNING = "memory.learn";
 import { type RunContext, render } from "./template.ts";
 
 /**
@@ -46,6 +50,8 @@ export interface EngineOptions {
   readonly budget?: Budget | null;
   /** Checks the facts in an approval's message on the web, for steps that ask (`check: true`); none by default. */
   readonly checker?: FactChecker;
+  /** Suggests notes from what you said in runs you start yourself, once you turn learning on; none by default. */
+  readonly learner?: Learner;
 }
 
 /** A hand-off to a paid assistant when the budget is spent. */
@@ -67,6 +73,9 @@ export class Engine {
   readonly guard: Guard | null;
   readonly budget: Budget | null;
   readonly checker: FactChecker | null;
+  readonly learner: Learner | null;
+  /** Runs to learn from once they end, with what the person said. */
+  private readonly toLearn = new Map<string, string>();
 
   constructor(store: Store, connectors: Readonly<Record<string, Connector>>, options: EngineOptions = {}) {
     this.store = store;
@@ -75,6 +84,7 @@ export class Engine {
     this.guard = options.guard ?? null;
     this.budget = options.budget ?? null;
     this.checker = options.checker ?? null;
+    this.learner = options.learner ?? null;
   }
 
   /** What hand-offs with a known cost have spent in the budget's period (this month without one). */
@@ -305,11 +315,57 @@ export class Engine {
     return this.end(runId, "failed", stepId, context, error);
   }
 
-  /** A run is over: saved, and the guard told. */
+  /** A run is over: saved, the guard told, and what was said in it learned from when that was asked for. */
   private end(runId: string, state: "done" | "failed" | "declined", at: string | null, context: RunContext, error: string | null): RunView {
     this.store.saveRun({ id: runId, state, at, context, error });
     void this.guard?.finish(runId, state);
+    const said = this.toLearn.get(runId);
+    if (said !== undefined) {
+      this.toLearn.delete(runId);
+      void this.learn(runId, said);
+    }
     return this.view(runId);
+  }
+
+  /** Whether learning from what you say is on (Memory's setting; off until you turn it on). */
+  learning(): boolean {
+    return this.learner !== null && this.store.setting(LEARNING) === "on";
+  }
+
+  /**
+   * Learns from what the person said in a run they started themselves, once it ends. Call it only with the
+   * person's own words: never mail, a webhook's body, or what another person or an assistant sent.
+   */
+  learnFrom(runId: string, said: string): void {
+    if (!this.learning() || said.trim().length < 12) return;
+    const run = this.store.run(runId);
+    if (!run || run.flow.learn === false) return;
+    if (run.state === "running" || run.state === "waiting") this.toLearn.set(runId, said);
+    else void this.learn(runId, said);
+  }
+
+  private async learn(runId: string, said: string): Promise<void> {
+    const learner = this.learner;
+    const run = this.store.run(runId);
+    if (!learner || !run) return;
+    const text = said.trim().slice(0, 4_000);
+    const slices = [...new Set([...this.store.notes().map((note) => note.slice), ...run.flow.assistants.flatMap((assistant) => assistant.memory)])];
+    const sent = { by: learner.by, to: learner.to, host: learner.host, chars: text.length };
+    try {
+      const learned = await learner.learn(text, slices);
+      const source = `learned from what you said in run ${runId}`;
+      const known = this.store.notes();
+      const added: Note[] = [];
+      for (const { slice, note } of learned.notes) {
+        if (alreadySays(note, known.filter((other) => other.slice === slice).map((other) => other.note))) continue;
+        const suggested = this.store.suggest(slice, note, source);
+        if (suggested.source === source && !added.some((other) => other.id === suggested.id)) added.push(suggested);
+      }
+      this.store.log(runId, "learn", "learned", { ...sent, notes: added.map((note) => ({ id: note.id, slice: note.slice, text: note.note })), costUsd: learned.costUsd });
+      if (learned.costUsd > 0) this.store.addSpend(run, "learn", "memory: learning", { inputTokens: 0, outputTokens: 0, costUsd: learned.costUsd, estimated: false });
+    } catch (error) {
+      this.store.log(runId, "learn", "learned", { ...sent, notes: [], error: error instanceof Error ? error.message : String(error) });
+    }
   }
 }
 
