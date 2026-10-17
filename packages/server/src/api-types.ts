@@ -169,6 +169,15 @@ export interface ApiError {
 }
 
 /** One event on GET /api/events (Server-Sent Events, event name "change"). */
+/** Learning from what you say: on or off, and the model that reads your words and where it runs. */
+export interface LearningView {
+  readonly on: boolean;
+  /** A model is set up to learn with. */
+  readonly available: boolean;
+  readonly by: string | null;
+  readonly to: string | null;
+}
+
 export type ChangeEvent =
   | { readonly kind: "run"; readonly runId: string }
   | { readonly kind: "approval"; readonly runId: string }
@@ -240,6 +249,8 @@ export interface SandboxRequests {
  *   POST   /api/memory { slice, note }     -> Note                (a person's own note: kept; 400 if it holds a secret)
  *   POST   /api/memory/:id/keep            -> { ok: true }        (400 if it holds a secret)
  *   DELETE /api/memory/:id                 -> { ok: true }
+ *   GET    /api/memory/learning            -> LearningView        (whether memory learns from what you say, and who reads it)
+ *   PUT    /api/memory/learning { on }     -> LearningView        (409 when no model is set up)
  *   POST   /api/memory/tidy                -> Tidy                (proposals only: copies, and with a model, merges and notes that disagree)
  *   POST   /api/memory/merge { ids, note } -> Note                (those notes, all in one slice, replaced by one kept note; 409 if one is gone)
  *   POST   /api/describe { text }          -> { flow }            (501 when no model is set up)

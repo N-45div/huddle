@@ -1,5 +1,5 @@
 import { nextRun, receiptOf } from "@huddle/core";
-import { type Assistant, Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type MemoryHit, type Note, ollamaModels, type PactIdentity, tokenFactoryModels, vllmModels, periodStart, type Presenter, present, rulesPresenter, VIEW_KINDS, type ViewKind, type ViewWriter, type Router, type SavedFlow, SensitiveNote, type SignIns, type Store, type Tidy, tidyMemory } from "@huddle/core";
+import { type Assistant, Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type MemoryHit, type Note, ollamaModels, type PactIdentity, tokenFactoryModels, vllmModels, periodStart, type Presenter, present, rulesPresenter, VIEW_KINDS, type ViewKind, type ViewWriter, type Router, type SavedFlow, SensitiveNote, type SignIns, type Store, type Tidy, tidyMemory, LEARNING } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { a2aRoutes } from "./a2a.ts";
@@ -7,7 +7,7 @@ import { type EmailOptions, emailRoutes } from "./email.ts";
 import { mcpRoutes, toolNames } from "./mcp.ts";
 import { routerRoutes } from "./router.ts";
 import { bearerOf, same } from "./auth.ts";
-import type { ApiError, FlowView, Info, PresentedView, RouterUsage, RouterView, RunDetail, RunSummary, SpendView, WaitingApproval } from "./api-types.ts";
+import type { ApiError, FlowView, Info, LearningView, PresentedView, RouterUsage, RouterView, RunDetail, RunSummary, SpendView, WaitingApproval } from "./api-types.ts";
 import { CONNECTORS } from "./connectors-info.ts";
 import type { MonidCatalog } from "./monid.ts";
 import { noSandboxes, type SandboxInbox, Stale } from "./sandbox-requests.ts";
@@ -92,6 +92,7 @@ export function imagesIn(value: unknown): string[] | string {
 export function createApp(options: AppOptions): Hono {
   const { store, engine } = options;
   const app = new Hono();
+  const learningView = (): LearningView => ({ on: engine.learning(), available: engine.learner !== null, by: engine.learner?.by ?? null, to: engine.learner?.to ?? null });
   // A flow's MCP tool name depends on the other flows' names, so a list works them out once.
   const view = (saved: SavedFlow, names = toolNames(store.flows())): FlowView => ({
     id: saved.id,
@@ -309,7 +310,11 @@ export function createApp(options: AppOptions): Hono {
     const given = await body(c);
     const images = imagesIn(given.images);
     if (typeof images === "string") return bad(c, images);
-    return c.json({ runId: engine.launch(saved.flow, typeof given.input === "string" ? given.input : "", saved.id, undefined, images) }, 202);
+    const input = typeof given.input === "string" ? given.input : "";
+    const runId = engine.launch(saved.flow, input, saved.id, undefined, images);
+    // You typed it here yourself: memory may learn from it, when learning is on.
+    engine.learnFrom(runId, input);
+    return c.json({ runId }, 202);
   });
   app.post("/api/flows/:id/webhook/rotate", (c) => {
     if (!store.flow(c.req.param("id"))) return bad(c, "There's no such flow.", 404);
@@ -379,6 +384,15 @@ export function createApp(options: AppOptions): Hono {
     }
   });
   app.delete("/api/memory/:id", (c) => (store.forget(c.req.param("id")) ? c.json({ ok: true }) : bad(c, "There's no such note.", 404)));
+  // Learning from what you say: off until you turn it on; says which model reads your words and where.
+  app.get("/api/memory/learning", (c) => c.json(learningView()));
+  app.put("/api/memory/learning", async (c) => {
+    const { on } = await body(c);
+    if (typeof on !== "boolean") return bad(c, 'Send { "on": true } or { "on": false }.');
+    if (on && !engine.learner) return bad(c, "Learning needs a model: set NEBIUS_API_KEY, or HUDDLE_LLM_URL and HUDDLE_LLM_MODEL.", 409);
+    store.saveSetting(LEARNING, on ? "on" : "off");
+    return c.json(learningView());
+  });
   // Tidying up proposes only: the page applies each proposal the person agrees to, with merge and delete.
   app.post("/api/memory/tidy", async (c) => c.json<Tidy>(await (options.tidy ?? ((notes) => tidyMemory(notes)))(store.notes())));
   app.post("/api/memory/merge", async (c) => {
@@ -488,7 +502,7 @@ export function createApp(options: AppOptions): Hono {
   });
 
   app.route("/", emailRoutes(options));
-  if (options.router) app.route("/", routerRoutes({ store, router: options.router, keys: [options.routerKey, options.token].filter((key): key is string => Boolean(key)), present: presenting }));
+  if (options.router) app.route("/", routerRoutes({ store, router: options.router, engine, keys: [options.routerKey, options.token].filter((key): key is string => Boolean(key)), present: presenting }));
   app.route("/", a2aRoutes(options));
   app.route("/", mcpRoutes(options));
   return app;

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, factChecker, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, SignIns, Store, storedGrants, tidyMemory, viewWriter } from "@huddle/core";
+import { type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, factChecker, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, noteTaker, SignIns, Store, storedGrants, tidyMemory, viewWriter } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
 import { monidCatalog } from "./monid.ts";
@@ -131,7 +131,11 @@ try {
 // Approvals that ask (check: true) have their facts checked on the web first: the quick model lists them, Tavily searches, the other model weighs the sources.
 const tavilyKey = env("TAVILY_API_KEY");
 const checker = tavilyKey && llmUrl && quickModel && fillModel ? factChecker({ tavilyKey, lister: { url: llmUrl, model: quickModel, key: llmKey }, judge: { url: llmUrl, model: fillModel, key: llmKey } }) : undefined;
-const engine = new Engine(store, { ...defaultConnectors(), openshell: openshell(() => shell), pact: pact(() => identity, undefined, { signIns, grants: storedGrants(store) }) }, { memory, guard: guard ?? undefined, budget: spendCap, checker });
+// Learning from what you say (once you turn it on in Memory): the fill-in model reads your words after runs you
+// start. Super, not Lightning: on 18 Oct Lightning kept the request itself ("Weekend trip with a companion") and
+// misfiled notes; Super didn't, for about $0.00013 a message, after the run.
+const learner = llmUrl && fillModel ? noteTaker({ model: { url: llmUrl, model: fillModel, key: llmKey } }) : undefined;
+const engine = new Engine(store, { ...defaultConnectors(), openshell: openshell(() => shell), pact: pact(() => identity, undefined, { signIns, grants: storedGrants(store) }) }, { memory, guard: guard ?? undefined, budget: spendCap, checker, learner });
 const sandboxes = shell ? new SandboxWatcher(shell, store) : undefined;
 // Hand-offs ArmorIQ held before a restart: wait on them again, so they carry on once approved there.
 const held = engine.resumeHolds();
@@ -198,6 +202,7 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   else if (env("ARMORIQ_API_KEY")) console.log("  ARMORIQ_API_KEY is set but no guard is on: set HUDDLE_GUARD=armoriq to have ArmorIQ check every hand-off.");
   const finds = [memory.embedder ? `words and meaning (${memory.embedder.model})` : "words", ...(memory.reranker ? [`reranked by ${memory.reranker.model}`] : [])];
   console.log(`  Memory: up to ${budget} characters of kept notes per request, found by ${finds.join(", ")}`);
+  console.log(`  Learning from what you say: ${learner ? `${engine.learning() ? "on" : "off (turn it on in Memory)"}, read by ${learner.by}` : "needs a model (NEBIUS_API_KEY, or HUDDLE_LLM_*)"}`);
   console.log(`  Tidy up (Memory page): exact copies${llmUrl && fillModel ? `, and notes that say the same thing or disagree, read by ${fillModel} when you ask` : " only (set NEBIUS_API_KEY, or HUDDLE_LLM_*, for the rest)"}`);
   if (env("RESEND_WEBHOOK_SECRET")) {
     console.log(`  Email in: point Resend's inbound webhook (email.received) at ${publicUrl}/hooks/email`);

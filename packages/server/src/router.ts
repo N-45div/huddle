@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { askFrom, AUTO, type ChatMessage, NoAnswer, PREFER, type Prefer, type Presenter, present, type Router, type Store, type ViewWriter } from "@huddle/core";
+import { askFrom, AUTO, type ChatMessage, type Engine, lastSaid, NoAnswer, PREFER, type Prefer, type Presenter, present, type Router, type Store, type ViewWriter } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { bearerOf, same } from "./auth.ts";
@@ -20,6 +20,8 @@ import { bearerOf, same } from "./auth.ts";
 export interface RouterOptions {
   readonly store: Store;
   readonly router: Router;
+  /** Learns from what you say in a chat, when learning is on. */
+  readonly engine?: Engine;
   /** Who may call: HUDDLE_ROUTER_KEY or HUDDLE_TOKEN. Neither set (this machine only): anyone local. */
   readonly keys: readonly string[];
   /** For huddle.present: how to show an answer, and a model to fill views in. */
@@ -93,6 +95,9 @@ export function routerRoutes(options: RouterOptions): Hono {
       }
       throw error;
     }
+
+    // Your last message alone (never the replies) may teach memory something, when learning is on.
+    if (!routed.reused) options.engine?.learnFrom(routed.runId, lastSaid(body.messages as ChatMessage[]));
 
     const id = `chatcmpl-${randomUUID()}`;
     const created = Math.floor(Date.now() / 1000);
