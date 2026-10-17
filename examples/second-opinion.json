@@ -1,9 +1,11 @@
 {
   "name": "Second opinion",
+  "description": "Ask OpenClaw and Hermes the same thing, each with only its own notes, and NVIDIA Nemotron 3 Super weighs the two answers and says which to go with. Needs OpenClaw and Hermes running, and NEBIUS_API_KEY.",
+  "example": "Should I take a job offer in Pune at 20% more pay, or stay in Bengaluru?",
   "assistants": [
     { "id": "claw", "name": "OpenClaw", "connector": "openclaw", "memory": ["work"], "description": "My work assistant." },
     { "id": "hermes", "name": "Hermes", "connector": "hermes", "memory": ["home"], "description": "My home assistant." },
-    { "id": "judge", "name": "Judge", "connector": "openai", "url": "https://api.openai.com", "model": "gpt-5.4-mini", "keyEnv": "OPENAI_API_KEY", "description": "Weighs two answers.", "price": { "input": 0.75, "output": 4.5 }, "maxTokens": 900 }
+    { "id": "judge", "name": "Judge", "connector": "nebius", "model": "nvidia/nemotron-3-super-120b-a12b", "description": "Weighs two answers.", "maxTokens": 900 }
   ],
   "steps": [
     { "id": "one", "type": "agent", "agent": "claw", "ask": "{{input}}" },

@@ -1,6 +1,7 @@
 {
   "name": "Who's this?",
   "description": "Someone you don't know wrote to you: context.dev looks up the company behind their email address (a personal address is skipped, at no cost), NVIDIA Nemotron 3 Super says who they are and whether it's worth a reply, and you choose whether to remember them. Needs CONTEXT_DEV_API_KEY and NEBIUS_API_KEY.",
+  "example": "From: Nithin <nithin@zerodha.com>\nSubject: Partnering on your trading app\n\nHi, we'd love to talk about listing your app on our developer platform. Free for a call this week?",
   "assistants": [
     {
       "id": "lookup",

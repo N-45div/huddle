@@ -1,6 +1,7 @@
 {
   "name": "Read it for me",
   "description": "Paste a link, with a question if you have one: context.dev reads the page (only the passages that answer your question, when there is one) and NVIDIA Nemotron 3.5 Lightning answers from what it read. Your notes go to neither. Needs CONTEXT_DEV_API_KEY and NEBIUS_API_KEY.",
+  "example": "How much is the entry ticket for Indian adults, and what are the timings? https://www.mysoretourism.org.in/mysore-maharaja-palace",
   "assistants": [
     {
       "id": "page",

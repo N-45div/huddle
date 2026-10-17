@@ -1,8 +1,10 @@
 {
   "name": "Morning brief",
+  "description": "Every morning, NVIDIA Nemotron 3 Super writes a short brief from what it may read about you (your work and home notes): three things to focus on, one to drop, and any deadline. You say yes before it's emailed to you. Needs NEBIUS_API_KEY, and RESEND_API_KEY to email it.",
+  "example": "Today",
   "trigger": { "type": "schedule", "every": "1d", "input": "Today" },
   "assistants": [
-    { "id": "briefer", "name": "Briefer", "connector": "openai", "url": "https://api.openai.com", "model": "gpt-5.4-mini", "keyEnv": "OPENAI_API_KEY", "memory": ["work", "home"], "description": "Writes a short morning brief from what it may read about you.", "price": { "input": 0.75, "output": 4.5 }, "maxTokens": 700 },
+    { "id": "briefer", "name": "Briefer", "connector": "nebius", "model": "nvidia/nemotron-3-super-120b-a12b", "memory": ["work", "home"], "description": "Writes a short morning brief from what it may read about you.", "maxTokens": 700 },
     { "id": "me", "name": "My inbox", "connector": "email", "to": ["you@example.com"], "from": "Huddle <huddle@mail.example.com>" }
   ],
   "steps": [

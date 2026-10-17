@@ -1,5 +1,7 @@
 {
   "name": "Invoices",
+  "description": "Stand-in assistants, so nothing to set up: one reads an invoice, a big one waits for your yes, a reminder goes in the calendar, and the vendor goes into your money notes. The quickest way to see a flow run.",
+  "example": "Invoice INV-2041 from Northwind Traders: ₹45,000 for October design work, due 30 October 2026.",
   "assistants": [
     {
       "id": "finance",

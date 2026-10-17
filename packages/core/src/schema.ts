@@ -277,6 +277,8 @@ export const Flow = z
   .object({
     name: z.string().min(1),
     description: z.string().optional(),
+    /** A request to try it with: the run box starts with it. */
+    example: z.string().max(4_000).optional(),
     trigger: Trigger.default({ type: "manual" }),
     /** Who may start it from outside Huddle; without it, only you. */
     callers: Callers.optional(),

@@ -1,6 +1,7 @@
 {
   "name": "Weekend plan",
   "description": "NVIDIA Nemotron on Nebius Token Factory in three sizes: Ultra plans the weekend (thinking first), Lightning checks it against the budget, and Super writes the message to your partner once you approve. With TAVILY_API_KEY set, the plan's facts (train times, prices, opening hours) are checked on the web before you're asked. Needs NEBIUS_API_KEY.",
+  "example": "A weekend in Mysuru for two from Bengaluru, by train, under ₹8,000. We're vegetarian and don't drink.",
   "assistants": [
     {
       "id": "planner",

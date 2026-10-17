@@ -1,6 +1,7 @@
 {
   "name": "Bill reader",
   "description": "Snap a bill and run this with the photo: NVIDIA Nemotron 3.5 Super VL reads it (only that assistant sees the photo), you're asked before it's remembered, and it goes into your money memory. Needs NEBIUS_API_KEY.",
+  "example": "This month's electricity bill (attach the photo).",
   "assistants": [
     {
       "id": "reader",

@@ -1,5 +1,7 @@
 {
   "name": "Plan my week",
+  "description": "OpenClaw lists next week's work, Hermes adds what's on at home, and Sochen puts a price on it; if the week costs more than $300, you're asked before it goes ahead. Needs OpenClaw, Hermes and a Sochen key.",
+  "example": "Next week",
   "assistants": [
     { "id": "claw", "name": "OpenClaw", "connector": "openclaw", "memory": ["work"] },
     { "id": "hermes", "name": "Hermes", "connector": "hermes", "memory": ["home"] },

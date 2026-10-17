@@ -1,6 +1,7 @@
 {
   "name": "Hermes on Nemotron, sandboxed",
   "description": "Hermes Agent in an NVIDIA OpenShell sandbox, on NVIDIA Nemotron through Nebius Token Factory. OpenShell holds the key and decides what Hermes may reach; what it asks for waits in Huddle's Approvals.",
+  "example": "In one line: where do I live, and how do I like to travel?",
   "assistants": [
     {
       "id": "hermes",
