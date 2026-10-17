@@ -106,6 +106,16 @@ function describe(line: LogLine): Described {
       const parts = [`${count("supported")} backed`, `${count("contradicted")} contradicted`, `${count("unclear")} not settled`];
       return { title: `Checked ${count("facts")} facts on the web: ${parts.join(", ")}`, body: `By ${text(detail, "by")}`, ...(count("contradicted") > 0 ? { tone: "danger" as const } : {}) };
     }
+    case "learned": {
+      const notes = field(detail, "notes");
+      const learned = Array.isArray(notes) ? notes.map((note) => `(${text(note, "slice")}) ${text(note, "text")}`) : [];
+      if (text(detail, "error")) return { title: "Couldn't learn from what you said", body: text(detail, "error"), tone: "warn" };
+      return {
+        title: learned.length ? `Suggested ${learned.length === 1 ? "a note" : `${learned.length} notes`} from what you said` : "Nothing lasting to remember in what you said",
+        body: [...learned, `Read by ${text(detail, "by")}.${learned.length ? " They wait in Memory until you keep them." : ""}`].join("\n"),
+        ...(learned.length ? { tone: "ok" as const } : {}),
+      };
+    }
     case "unchecked":
       return { title: "Facts not checked", body: text(detail, "reason"), tone: "warn" };
     case "waiting":

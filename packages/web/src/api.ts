@@ -8,6 +8,7 @@ import type {
   FlowView,
   FoundTool,
   Info,
+  LearningView,
   MemoryHit,
   Note,
   Tidy,
@@ -234,6 +235,8 @@ export const api = {
   keepNote: (noteId: string) => call<{ ok: true }>("POST", `/memory/${id(noteId)}/keep`),
   deleteNote: (noteId: string) => call<{ ok: true }>("DELETE", `/memory/${id(noteId)}`),
   tidyMemory: () => call<Tidy>("POST", "/memory/tidy", {}),
+  learning: () => call<LearningView>("GET", "/memory/learning"),
+  setLearning: (on: boolean) => call<LearningView>("PUT", "/memory/learning", { on }),
   mergeNotes: (ids: readonly string[], note: string) => call<Note>("POST", "/memory/merge", { ids, note }),
 
   describe: (text: string) => call<{ flow: Flow }>("POST", "/describe", { text }),

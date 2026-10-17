@@ -603,6 +603,8 @@ function Editor({ flowId, openDescribe, openRun }: { readonly flowId: string; re
                 onDescription={(description) => setMeta((current) => ({ ...current, description }))}
                 example={meta.example}
                 onExample={(example) => setMeta((current) => ({ ...current, example }))}
+                learn={meta.learn !== false}
+                onLearn={(learn) => setMeta(({ learn: _learn, ...current }) => (learn ? current : { ...current, learn: false }))}
                 canDescribe={info?.describe ?? false}
                 focusDescribe={focusDescribe}
                 onDescribed={(described) => (dirty ? setConfirming({ kind: "describe", flow: described }) : loadDescribed(described))}

@@ -10,13 +10,16 @@ interface Props {
   readonly onDescription: (description: string) => void;
   readonly example: string;
   readonly onExample: (example: string) => void;
+  /** Memory may learn from what you type to start it (when learning is on). */
+  readonly learn: boolean;
+  readonly onLearn: (learn: boolean) => void;
   /** Whether the server can draw a flow from a sentence (/api/info.describe). */
   readonly canDescribe: boolean;
   readonly focusDescribe: boolean;
   readonly onDescribed: (flow: Flow) => void;
 }
 
-export function FlowPanel({ view, description, onDescription, example, onExample, canDescribe, focusDescribe, onDescribed }: Props) {
+export function FlowPanel({ view, description, onDescription, example, onExample, learn, onLearn, canDescribe, focusDescribe, onDescribed }: Props) {
   return (
     <div className="inspector-section">
       {canDescribe && <DescribeBox autoFocus={focusDescribe} onDescribed={onDescribed} />}
@@ -31,6 +34,14 @@ export function FlowPanel({ view, description, onDescription, example, onExample
         <label htmlFor="flow-example">Try it with</label>
         <textarea id="flow-example" rows={2} value={example} aria-describedby="flow-example-hint" onChange={(event) => onExample(event.target.value)} />
         <Hint id="flow-example-hint">A request to try it with: the Run tab starts with it.</Hint>
+      </div>
+
+      <div className="field">
+        <label className="check">
+          <input type="checkbox" checked={learn} aria-describedby="flow-learn-hint" onChange={(event) => onLearn(event.target.checked)} />
+          Memory may learn from what I type to start it
+        </label>
+        <Hint id="flow-learn-hint">Turn this off when what starts it isn't your own words, like a pasted email. Learning itself is switched on in Memory.</Hint>
       </div>
 
       <dl className="facts">

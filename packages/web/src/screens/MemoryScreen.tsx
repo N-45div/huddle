@@ -4,6 +4,7 @@ import { useApp } from "../app-context.ts";
 import { Empty, ErrorNote, Hint, Loading } from "../components/bits.tsx";
 import { ConfirmDialog } from "../components/Dialog.tsx";
 import { TabPanel, Tabs } from "../components/Tabs.tsx";
+import { Learning } from "../components/Learning.tsx";
 import { TidyUp } from "../components/TidyUp.tsx";
 import { useChanges } from "../events.ts";
 import { ago, fullTime } from "../format.ts";
@@ -82,6 +83,8 @@ export function MemoryScreen() {
           setTab("kept");
         }}
       />
+
+      <Learning />
 
       {(kept.data?.length ?? 0) + suggestedCount >= 2 && <TidyUp onChanged={refetch} />}
 

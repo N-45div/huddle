@@ -18,6 +18,7 @@ export type {
   FoundTool,
   HeldBy,
   Info,
+  LearningView,
   LogLine,
   MemoryHit,
   Note,

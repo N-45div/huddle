@@ -32,6 +32,8 @@ export interface Meta {
   readonly description: string;
   /** A request to try it with: the run box starts with it. */
   readonly example: string;
+  /** false: memory never learns from what starts it. */
+  readonly learn?: boolean;
   readonly trigger: Trigger;
   /** Who may start it from outside; none means only you. */
   readonly callers?: Callers;
@@ -272,6 +274,7 @@ export function flowToGraph(flow: Flow): Graph {
       name: flow.name ?? "",
       description: flow.description ?? "",
       example: flow.example ?? "",
+      ...(flow.learn === false ? { learn: false } : {}),
       trigger: flow.trigger ?? { type: "manual" },
       ...(flow.callers ? { callers: flow.callers } : {}),
       assistants: flow.assistants ?? [],
@@ -346,6 +349,7 @@ export function graphToFlow(meta: Meta, nodes: readonly EditorNode[], edges: rea
     name: meta.name,
     ...(description ? { description: meta.description } : {}),
     ...(meta.example.trim() ? { example: meta.example } : {}),
+    ...(meta.learn === false ? { learn: false } : {}),
     trigger: meta.trigger,
     ...(meta.callers ? { callers: meta.callers } : {}),
     assistants: [...meta.assistants],
