@@ -123,6 +123,18 @@ export function receiptOf(flow: Flow, log: readonly LogLine[], notes: readonly N
       });
     }
     if (line.kind === "fact-checked") searches.push({ stepId: line.stepId, queries: strings(detail.claims), sentTo: strings(detail.sentTo) });
+    // Your voice, when a run was started by talking to the button: heard on this machine, never sent on.
+    if (line.kind === "heard") {
+      disclosures.push({
+        stepId: line.stepId,
+        assistant: `Your voice (${typeof detail.seconds === "number" ? `${detail.seconds} s` : "audio"})`,
+        to: { label: `${typeof detail.by === "string" ? detail.by : "Speech"}`, host: null, local: true },
+        chars: 0,
+        images: 0,
+        notes: [],
+        at: line.at,
+      });
+    }
     // Learning from what you said: your words, and nothing else, went to the model that reads them.
     if (line.kind === "learned") {
       const host = typeof detail.host === "string" ? detail.host : null;
