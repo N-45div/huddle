@@ -108,7 +108,17 @@ export type Change =
   /** The list of your assistants changed. */
   | { readonly kind: "assistants" }
   | { readonly kind: "contacts" }
+  /** A gadget was added, removed or seen (the Huddle button). */
+  | { readonly kind: "devices" }
   | { readonly kind: "signin" };
+
+/** A gadget of yours (the Huddle button) that shows what's waiting for you and takes your yes or no. */
+export interface Device {
+  readonly id: string;
+  readonly name: string;
+  readonly createdAt: string;
+  readonly lastSeenAt: string | null;
+}
 
 /** Someone you know, who reaches Huddle with their own token, or by mailing a flow from one of their addresses. */
 export interface Contact {
@@ -151,6 +161,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS log (seq INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, step_id TEXT NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL, at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS assistants (id TEXT PRIMARY KEY, position INTEGER NOT NULL, assistant TEXT NOT NULL, updated_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, last_seen_at TEXT);
       CREATE TABLE IF NOT EXISTS contacts (id TEXT PRIMARY KEY, name TEXT NOT NULL, tier TEXT NOT NULL, emails TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, last_seen_at TEXT);
       CREATE TABLE IF NOT EXISTS spend (seq INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, step_id TEXT NOT NULL, flow_id TEXT, flow_name TEXT NOT NULL, assistant TEXT NOT NULL, input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, cached_tokens INTEGER NOT NULL, cost_usd REAL, estimated INTEGER NOT NULL, saved_usd REAL, saved_by TEXT, at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS answers (key TEXT PRIMARY KEY, assistant TEXT NOT NULL, run_id TEXT NOT NULL, text TEXT NOT NULL, data TEXT NOT NULL, cost_usd REAL, expires_at TEXT NOT NULL);
@@ -291,6 +302,36 @@ export class Store {
     const removed = Number(this.db.prepare("DELETE FROM contacts WHERE id = ?").run(id).changes) > 0;
     if (removed) this.changed({ kind: "contacts" });
     return removed;
+  }
+
+  // Devices: your gadgets, each with its own token (shown once; only its hash is kept) ---------------
+
+  devices(): Device[] {
+    return (this.db.prepare("SELECT * FROM devices ORDER BY created_at").all() as Row[]).map(toDevice);
+  }
+
+  /** Adds a gadget; its token is returned this once. */
+  addDevice(name: string): { readonly device: Device; readonly token: string } {
+    const id = newId("device");
+    const token = `${DEVICE_PREFIX}${randomBytes(24).toString("base64url")}`;
+    this.db.prepare("INSERT INTO devices (id, name, token_hash, created_at, last_seen_at) VALUES (?, ?, ?, ?, NULL)").run(id, name, hashToken(token), now());
+    this.changed({ kind: "devices" });
+    return { device: toDevice(this.db.prepare("SELECT * FROM devices WHERE id = ?").get(id) as Row), token };
+  }
+
+  removeDevice(id: string): boolean {
+    const removed = Number(this.db.prepare("DELETE FROM devices WHERE id = ?").run(id).changes) > 0;
+    if (removed) this.changed({ kind: "devices" });
+    return removed;
+  }
+
+  /** The device a token belongs to (noting that it was seen), or null. */
+  deviceByToken(token: string): Device | null {
+    if (!token.startsWith(DEVICE_PREFIX)) return null;
+    const row = this.db.prepare("SELECT * FROM devices WHERE token_hash = ?").get(hashToken(token)) as Row | undefined;
+    if (!row) return null;
+    this.db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now(), String(row.id));
+    return toDevice({ ...row, last_seen_at: now() });
   }
 
   /** The contact a token belongs to (noting that they were seen), or null. */
@@ -650,6 +691,11 @@ function toNote(row: Row): Note {
 
 /** Contact tokens start with this, so one can't be mistaken for Huddle's own token. */
 const TOKEN_PREFIX = "hdl_c_";
+const DEVICE_PREFIX = "hdl_d_";
+
+function toDevice(row: Row): Device {
+  return { id: String(row.id), name: String(row.name), createdAt: String(row.created_at), lastSeenAt: row.last_seen_at ? String(row.last_seen_at) : null };
+}
 
 function contactToken(): string {
   return `${TOKEN_PREFIX}${randomBytes(24).toString("base64url")}`;

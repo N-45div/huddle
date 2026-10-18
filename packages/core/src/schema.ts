@@ -212,6 +212,8 @@ export const Trigger = z.discriminatedUnion("type", [
   z.object({ type: z.literal("webhook") }),
   /** Runs when mail to `address` reaches Huddle, through Resend's inbound webhook; the email is the input. */
   z.object({ type: z.literal("email"), address: emailAddress }),
+  /** Runs when you start it from your Huddle button (or the canvas's virtual one); `input` is the run's input unless you say one. */
+  z.object({ type: z.literal("button"), input: z.string().max(4_000).default("") }),
 ]);
 export type Trigger = z.infer<typeof Trigger>;
 
