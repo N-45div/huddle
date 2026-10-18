@@ -1537,6 +1537,24 @@ h1 .badge {
   gap: 10px;
 }
 
+.talk-button {
+  min-width: 260px;
+  min-height: 44px;
+  touch-action: none;
+  user-select: none;
+}
+
+.talk-button.talking {
+  box-shadow: var(--ring);
+}
+
+.gadget-heard {
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
 .gadget-start {
   display: grid;
   grid-template-columns: minmax(140px, 200px) minmax(0, 1fr) auto;

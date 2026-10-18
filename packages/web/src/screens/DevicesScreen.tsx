@@ -8,6 +8,7 @@ import { useResource } from "../hooks.ts";
 import { Huddler } from "../huddlers/Huddler.tsx";
 import type { Mood } from "../huddlers/huddler.ts";
 import type { Device, DeviceMessage } from "../types.ts";
+import { openMic, PcmPlayer } from "../voice.ts";
 import { TokenRow } from "./ContactsScreen.tsx";
 
 type Screen = Extract<DeviceMessage, { type: "approval" } | { type: "idle" }>;
@@ -55,14 +56,27 @@ function VirtualButton() {
   const speakRef = useRef(speak);
   const spoken = useRef<string | null>(null);
   const moodTimer = useRef<number | undefined>(undefined);
+  /** Whether Huddle can listen and speak (NVIDIA NeMo-Speech on its machine); without it, this browser's voice reads. */
+  const [serverSpeech, setServerSpeech] = useState(false);
+  const serverSpeechRef = useRef(false);
+  const [listening, setListening] = useState(false);
+  /** What Huddle heard you say last, until you talk again. */
+  const [heardText, setHeardText] = useState<string | null>(null);
+  const player = useRef(new PcmPlayer());
+  const mic = useRef<{ stop(): void } | null>(null);
   speakRef.current = speak;
+  /** Tells Huddle whether to send speech: only when you want it read aloud and Huddle can speak. */
+  const sendHello = () => {
+    if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify({ type: "hello", audio: speakRef.current && serverSpeechRef.current }));
+  };
 
   useEffect(() => {
     let closed = false;
     let retry = 1_000;
     let timer: number | undefined;
     const say = (text: string) => {
-      if (!speakRef.current || !("speechSynthesis" in window)) return;
+      // Huddle's own voice speaks when it can; this browser's only when it can't.
+      if (!speakRef.current || serverSpeechRef.current || !("speechSynthesis" in window)) return;
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
     };
@@ -72,7 +86,14 @@ function VirtualButton() {
       moodTimer.current = window.setTimeout(() => setMood((current) => (current === next ? "idle" : current)), 4_000);
     };
     const handle = (message: DeviceMessage) => {
-      if (message.type === "approval") {
+      if (message.type === "hello") {
+        serverSpeechRef.current = message.speech;
+        setServerSpeech(message.speech);
+        sendHello();
+      } else if (message.type === "heard") {
+        setHeardText(message.text || null);
+        if (!message.text) setNote("Didn't catch that.");
+      } else if (message.type === "approval") {
         setScreen(message);
         setMood("waiting");
         if (spoken.current !== message.id) {
@@ -103,6 +124,7 @@ function VirtualButton() {
     };
     const open = () => {
       const ws = new WebSocket(deviceSocketUrl());
+      ws.binaryType = "arraybuffer";
       socket.current = ws;
       setLink("connecting");
       ws.onopen = () => {
@@ -110,6 +132,7 @@ function VirtualButton() {
         retry = 1_000;
       };
       ws.onmessage = (event) => {
+        if (event.data instanceof ArrayBuffer) return player.current.play(event.data);
         try {
           handle(JSON.parse(String(event.data)) as DeviceMessage);
         } catch {
@@ -130,6 +153,8 @@ function VirtualButton() {
       window.clearTimeout(timer);
       window.clearTimeout(moodTimer.current);
       window.clearTimeout(replyTimer.current);
+      mic.current?.stop();
+      player.current.stop();
       socket.current?.close();
     };
   }, [authVersion]);
@@ -141,6 +166,9 @@ function VirtualButton() {
 
   const toggleSpeak = (on: boolean) => {
     setSpeak(on);
+    speakRef.current = on;
+    if (!on) player.current.stop();
+    sendHello();
     try {
       localStorage.setItem(SPEAK_KEY, on ? "1" : "0");
     } catch {
@@ -150,6 +178,30 @@ function VirtualButton() {
 
   const flows = screen?.type === "idle" ? screen.flows : [];
   const chosen = flows.find((flow) => flow.id === picked) ?? flows[0];
+
+  /** Hold to talk: the mic streams to Huddle until you let go; your words start the chosen flow, or go to the router. */
+  const startTalking = async () => {
+    if (listening || socket.current?.readyState !== WebSocket.OPEN) return;
+    player.current.stop();
+    try {
+      const opened = await openMic((pcm) => socket.current?.send(pcm));
+      mic.current = opened;
+      send({ type: "listen", ...(chosen ? { flow: chosen.id } : {}) });
+      setListening(true);
+      setNote(null);
+      setHeardText(null);
+    } catch (caught) {
+      setNote(caught instanceof Error && caught.name === "NotAllowedError" ? "The browser wasn't allowed to use the microphone." : "Couldn't open the microphone.");
+    }
+  };
+  const stopTalking = () => {
+    if (!mic.current) return;
+    mic.current.stop();
+    mic.current = null;
+    setListening(false);
+    send({ type: "stop" });
+    setNote("Listening done, working it out…");
+  };
 
   return (
     <section className="card gadget-card" aria-labelledby="virtual-title">
@@ -170,8 +222,9 @@ function VirtualButton() {
 
       <div className="gadget">
         <div className="gadget-screen" aria-live="polite">
-          <Huddler mood={mood} size={64} live />
-          {!screen && <p className="gadget-line">…</p>}
+          <Huddler mood={listening ? "thinking" : mood} size={64} live />
+          {listening && <p className="gadget-line">Listening…</p>}
+          {!screen && !listening && <p className="gadget-line">…</p>}
           {screen?.type === "approval" && (
             <>
               <p className="gadget-flow">{screen.flow}</p>
@@ -207,6 +260,33 @@ function VirtualButton() {
           </p>
         )}
       </div>
+
+      {serverSpeech && (screen?.type === "idle" || !screen) && (
+        <div className="gadget-actions">
+          <button
+            type="button"
+            className={listening ? "btn btn-primary talk-button talking" : "btn talk-button"}
+            onPointerDown={() => void startTalking()}
+            onPointerUp={stopTalking}
+            onPointerLeave={stopTalking}
+            onPointerCancel={stopTalking}
+            onKeyDown={(event) => {
+              if ((event.key === " " || event.key === "Enter") && !event.repeat) void startTalking();
+            }}
+            onKeyUp={(event) => {
+              if (event.key === " " || event.key === "Enter") stopTalking();
+            }}
+          >
+            {listening ? "Listening… let go to send" : `Hold to talk${chosen ? ` (${chosen.name})` : " (to the router)"}`}
+          </button>
+        </div>
+      )}
+      {heardText && (
+        <p className="gadget-heard">
+          You said: <q>{heardText}</q>
+        </p>
+      )}
+      {serverSpeech && <Hint>Your voice goes to Nemotron ASR on the Huddle machine, and nowhere else.</Hint>}
 
       {screen?.type === "approval" && (
         <div className="gadget-actions">
