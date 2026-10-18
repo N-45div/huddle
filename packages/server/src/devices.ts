@@ -36,7 +36,13 @@ export type Screen =
 export type ToDevice =
   | { readonly type: "hello"; readonly name: string; readonly version: string }
   | Screen
-  | { readonly type: "run"; readonly flow: string; readonly state: "done" | "failed" | "declined" }
+  | {
+      readonly type: "run";
+      readonly flow: string;
+      readonly state: "done" | "failed" | "declined";
+      /** For a run a button started: its answer, short enough to show and say. */
+      readonly answer: string | null;
+    }
   | { readonly type: "answered"; readonly id: string; readonly yes: boolean }
   | { readonly type: "started"; readonly runId: string; readonly flow: string }
   | { readonly type: "error"; readonly message: string }
@@ -108,6 +114,24 @@ export class DeviceHub {
     };
   }
 
+  /** A button-started run's last answer, as plain words that fit a small screen and a few seconds of speech. */
+  answerFor(runId: string): string | null {
+    const log = this.store.logOf(runId);
+    if (!log.some((line) => line.kind === "started" && (line.detail as { via?: unknown } | null)?.via === "device")) return null;
+    const answered = log.findLast((line) => line.kind === "answered");
+    const text = (answered?.detail as { text?: unknown } | null)?.text;
+    if (typeof text !== "string" || !text.trim()) return null;
+    const plain = text
+      .replace(/```[\s\S]*?```/g, " ")
+      .replace(/^\s*(?:[-*+]|\d+\.)\s+/gm, "")
+      .replace(/[*_`#>]+/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    // The last line of an answer is often its JSON for the flow; the person doesn't need to hear it.
+    const words = plain.replace(/\{[^{}]*\}\s*$/, "").trim() || plain;
+    return words.length <= 240 ? words : `${words.slice(0, words.lastIndexOf(" ", 239)).trimEnd()}…`;
+  }
+
   /** Starts a button flow for this device: what the person said, else the flow's own input. */
   start(flowId: string, said: string | null, device: string): { readonly runId: string; readonly flow: string } {
     const saved = this.store.flow(flowId);
@@ -136,9 +160,10 @@ export class DeviceHub {
     const onChange = (change: Change) => {
       if (change.kind === "run") {
         const run = this.store.run(change.runId);
-        if (run && (run.state === "done" || run.state === "failed" || run.state === "declined") && !finished.has(run.id)) {
+        // Saved flows only: a router chat ending isn't news for the button.
+        if (run?.flowId && (run.state === "done" || run.state === "failed" || run.state === "declined") && !finished.has(run.id)) {
           finished.add(run.id);
-          send({ type: "run", flow: run.flow.name, state: run.state });
+          send({ type: "run", flow: run.flow.name, state: run.state, answer: this.answerFor(run.id) });
         }
       }
       if (change.kind === "run" || change.kind === "approval" || change.kind === "flow") show();

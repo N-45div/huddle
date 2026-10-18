@@ -49,8 +49,9 @@ describe("the Huddle button", () => {
     const session = hub.connect((message) => sent.push(message), { name: "Desk button", version: "test" });
     assert.deepEqual(sent.map((message) => message.type), ["hello", "idle"]);
 
-    await engine.start(ASKS, "");
-    await engine.start(ASKS, "");
+    const saved = store.saveFlow(ASKS);
+    await engine.start(ASKS, "", saved.id);
+    await engine.start(ASKS, "", saved.id);
     const shown = sent.findLast((message) => message.type === "approval");
     assert.ok(shown && shown.type === "approval");
     assert.equal(shown.line, "Hermes wants to book the 6:40 train for ₹1,240.");
@@ -88,6 +89,8 @@ describe("the Huddle button", () => {
     const inputs = started.map((message) => (message.type === "started" ? store.run(message.runId)?.context.input : null));
     assert.deepEqual(inputs, ["Today", "What's on Friday?"]);
     assert.match(JSON.stringify(sent.findLast((message) => message.type === "error")), /isn't on the button/);
+    const answers = sent.filter((message) => message.type === "run").map((message) => (message.type === "run" ? message.answer : null));
+    assert.deepEqual(answers, ["Three things.", "Three things."], "a button run's answer comes back to say");
     const first = started[0]!.type === "started" ? started[0]!.runId : "";
     assert.deepEqual(store.logOf(first)[0]?.detail, { name: "Desk button", tier: "owner", via: "device" });
     session.close();

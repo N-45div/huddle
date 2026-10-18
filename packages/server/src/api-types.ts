@@ -8,6 +8,7 @@ import type { Assistant, Choice, Contact, Device, FactCheck, HeldBy, Receipt, Co
 export type { Assistant, Choice, Contact, Device, FactCheck, HeldBy, Receipt, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Tidy, TidyProposal, Trigger, View };
 export type { FoundTool, ToolDetails } from "./monid.ts";
 export type { Template } from "./templates.ts";
+export type { ToDevice as DeviceMessage } from "./devices.ts";
 
 /** GET /api/info: what this Huddle can do. */
 export interface Info {
@@ -186,6 +187,7 @@ export type ChangeEvent =
   | { readonly kind: "sandbox" }
   | { readonly kind: "assistants" }
   | { readonly kind: "contacts" }
+  | { readonly kind: "devices" }
   | { readonly kind: "signin" };
 
 /** A network rule an OpenShell sandbox needs, drafted by OpenShell after it blocked a connection. */
