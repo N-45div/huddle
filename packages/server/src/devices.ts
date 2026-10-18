@@ -1,13 +1,15 @@
-import { type Change, type Engine, nextRun, type Store } from "@huddle/core";
+import { AUTO, type Change, type Engine, nextRun, type Router, SAMPLE_RATE, sentences, type Speech, spokenForm, type Store } from "@huddle/core";
 import type { Hono } from "hono";
 import type { UpgradeWebSocket, WSContext } from "hono/ws";
 import { bearerOf, same } from "./auth.ts";
 
 /**
- * Your gadgets (the Huddle button, or the canvas's virtual one): what each should show, and the yes or no
- * it sends back. A device shows the oldest approval waiting for you, as one line it can say aloud, and
- * takes your answer to it; with nothing waiting, it shows what today has cost, and the next scheduled run.
- * Kept apart from the socket so it can be tested without one.
+ * Your gadgets (the Huddle button, or the canvas's virtual one): what each should show, and what it sends
+ * back. A device shows the oldest approval waiting for you, as one line, and takes your yes or no; with
+ * nothing waiting, it shows today at a glance and the flows you've put on the button. With speech set up
+ * (NVIDIA's NeMo-Speech on this machine), it also says the line and the answers aloud, and you can hold it
+ * and talk: your words start the chosen flow, or go to the router. Audio goes to the local speech server
+ * only. Kept apart from the socket so it can be tested without one.
  */
 
 /** What the device should show now. */
@@ -32,9 +34,9 @@ export type Screen =
       readonly flows: readonly { readonly id: string; readonly name: string }[];
     };
 
-/** Everything a device is sent: the screen, plus a word when a run ends (for its face) and replies. */
+/** Everything a device is sent (as JSON), besides the audio (binary frames between "speaking" and "spoken"). */
 export type ToDevice =
-  | { readonly type: "hello"; readonly name: string; readonly version: string }
+  | { readonly type: "hello"; readonly name: string; readonly version: string; readonly speech: boolean }
   | Screen
   | {
       readonly type: "run";
@@ -45,10 +47,18 @@ export type ToDevice =
     }
   | { readonly type: "answered"; readonly id: string; readonly yes: boolean }
   | { readonly type: "started"; readonly runId: string; readonly flow: string }
+  /** What it heard you say, once the speech server has listened. */
+  | { readonly type: "heard"; readonly text: string }
+  /** 16-bit mono PCM at sampleRate follows, in binary frames, then "spoken". */
+  | { readonly type: "speaking"; readonly text: string; readonly sampleRate: number; readonly bytes: number }
+  | { readonly type: "spoken" }
   | { readonly type: "error"; readonly message: string }
   | { readonly type: "pong" };
 
 const LINE = 90;
+/** The most a device may say in one go: 30 seconds of 16 kHz 16-bit audio. */
+const MAX_LISTEN_BYTES = 30 * SAMPLE_RATE * 2;
+const AUDIO_FRAME = 4_096;
 
 /** The first line of an approval's message, on one line, cut at a word to fit a small screen. */
 export function oneLine(message: string, max = LINE): string {
@@ -59,23 +69,51 @@ export function oneLine(message: string, max = LINE): string {
   return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), max / 2)).trimEnd()}…`;
 }
 
+/** An answer as plain words that fit a small screen and a few seconds of speech. */
+export function shortAnswer(text: string, max = 240): string {
+  const plain = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/^\s*(?:[-*+]|\d+\.)\s+/gm, "")
+    .replace(/[*_`#>]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  // The last line of an answer is often its JSON for the flow; the person doesn't need to hear it.
+  const words = plain.replace(/\{[^{}]*\}\s*$/, "").trim() || plain;
+  return words.length <= max ? words : `${words.slice(0, words.lastIndexOf(" ", max - 1)).trimEnd()}…`;
+}
+
 interface FromDevice {
   readonly type?: unknown;
   readonly id?: unknown;
   readonly yes?: unknown;
   readonly flow?: unknown;
   readonly input?: unknown;
+  readonly audio?: unknown;
 }
+
+export interface DeviceHubOptions {
+  readonly now?: () => number;
+  /** Listening and speaking, on this machine; without it, the button shows text only. */
+  readonly speech?: Speech;
+  /** Where a spoken ask goes when no flow is picked. */
+  readonly router?: Router;
+}
+
+const failure = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 export class DeviceHub {
   private readonly store: Store;
   private readonly engine: Engine;
   private readonly now: () => number;
+  readonly speech: Speech | null;
+  private readonly router: Router | null;
 
-  constructor(store: Store, engine: Engine, now: () => number = Date.now) {
+  constructor(store: Store, engine: Engine, options: DeviceHubOptions = {}) {
     this.store = store;
     this.engine = engine;
-    this.now = now;
+    this.now = options.now ?? Date.now;
+    this.speech = options.speech ?? null;
+    this.router = options.router ?? null;
   }
 
   /** The screen: the oldest approval waiting, else today at a glance. */
@@ -106,30 +144,21 @@ export class DeviceHub {
       const at = nextRun(saved.flow.trigger, this.now());
       if (!next || at < next.at) next = { flow: saved.flow.name, at };
     }
+    flows.sort((a, b) => a.name.localeCompare(b.name));
     return {
       type: "idle",
       spentTodayUsd: Math.round(spentTodayUsd * 1_000_000) / 1_000_000,
       nextRun: next ? { flow: next.flow, at: new Date(next.at).toISOString() } : null,
-      flows: flows.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 8),
+      flows: flows.slice(0, 8),
     };
   }
 
-  /** A button-started run's last answer, as plain words that fit a small screen and a few seconds of speech. */
+  /** A button-started run's last answer, short; null for runs a button didn't start. */
   answerFor(runId: string): string | null {
     const log = this.store.logOf(runId);
     if (!log.some((line) => line.kind === "started" && (line.detail as { via?: unknown } | null)?.via === "device")) return null;
-    const answered = log.findLast((line) => line.kind === "answered");
-    const text = (answered?.detail as { text?: unknown } | null)?.text;
-    if (typeof text !== "string" || !text.trim()) return null;
-    const plain = text
-      .replace(/```[\s\S]*?```/g, " ")
-      .replace(/^\s*(?:[-*+]|\d+\.)\s+/gm, "")
-      .replace(/[*_`#>]+/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-    // The last line of an answer is often its JSON for the flow; the person doesn't need to hear it.
-    const words = plain.replace(/\{[^{}]*\}\s*$/, "").trim() || plain;
-    return words.length <= 240 ? words : `${words.slice(0, words.lastIndexOf(" ", 239)).trimEnd()}…`;
+    const text = (log.findLast((line) => line.kind === "answered")?.detail as { text?: unknown } | null)?.text;
+    return typeof text === "string" && text.trim() ? shortAnswer(text) : null;
   }
 
   /** Starts a button flow for this device: what the person said, else the flow's own input. */
@@ -143,19 +172,55 @@ export class DeviceHub {
     return { runId, flow: saved.flow.name };
   }
 
+  /** Notes on a run that its input was spoken, and heard on this machine: the run's receipt shows it. */
+  private heard(runId: string, text: string, bytes: number): void {
+    this.store.log(runId, "voice", "heard", { by: this.speech?.name ?? "speech", local: true, seconds: Math.round((bytes / (SAMPLE_RATE * 2)) * 10) / 10, chars: text.length });
+  }
+
   /**
-   * A device connected: it's sent the screen now and whenever it changes, a word when a run ends, and the
-   * answers to what it sends. Returns what to call with each message it sends, and when it goes.
+   * A device connected: it's sent the screen now and whenever it changes, a word when a run ends, the
+   * answers to what it sends, and (when it says it plays audio and speech is set up) speech. Returns what
+   * to call with each message and audio frame it sends, and when it goes.
    */
-  connect(send: (message: ToDevice) => void, hello: { readonly name: string; readonly version: string }) {
+  connect(send: (message: ToDevice) => void, hello: { readonly name: string; readonly version: string }, sendAudio?: (chunk: Uint8Array<ArrayBuffer>) => void) {
     let last = "";
+    let spokenApproval: string | null = null;
+    let playsAudio = false;
+    let generation = 0;
+    let listening: { flow: string | null; chunks: Uint8Array[]; bytes: number } | null = null;
+
+    /** Says text in spoken form, a sentence at a time; something newer to say cuts it short. */
+    const say = async (text: string) => {
+      const speech = this.speech;
+      if (!speech || !playsAudio || !sendAudio || !text.trim()) return;
+      const mine = ++generation;
+      for (const part of sentences(spokenForm(text))) {
+        let pcm: Uint8Array<ArrayBuffer>;
+        try {
+          pcm = await speech.speak(part);
+        } catch (error) {
+          send({ type: "error", message: failure(error) });
+          return;
+        }
+        if (mine !== generation) return;
+        send({ type: "speaking", text: part, sampleRate: SAMPLE_RATE, bytes: pcm.byteLength });
+        for (let offset = 0; offset < pcm.byteLength; offset += AUDIO_FRAME) sendAudio(pcm.subarray(offset, offset + AUDIO_FRAME));
+        send({ type: "spoken" });
+      }
+    };
+
     const show = () => {
       const screen = this.screen();
       const key = JSON.stringify(screen);
       if (key === last) return;
       last = key;
       send(screen);
+      if (screen.type === "approval" && screen.id !== spokenApproval) {
+        spokenApproval = screen.id;
+        void say(`${screen.flow}. ${screen.line}${screen.warning ? ` Careful: ${screen.warning}.` : ""}`);
+      }
     };
+
     const finished = new Set<string>();
     const onChange = (change: Change) => {
       if (change.kind === "run") {
@@ -163,17 +228,58 @@ export class DeviceHub {
         // Saved flows only: a router chat ending isn't news for the button.
         if (run?.flowId && (run.state === "done" || run.state === "failed" || run.state === "declined") && !finished.has(run.id)) {
           finished.add(run.id);
-          send({ type: "run", flow: run.flow.name, state: run.state, answer: this.answerFor(run.id) });
+          const answer = this.answerFor(run.id);
+          send({ type: "run", flow: run.flow.name, state: run.state, answer });
+          if (answer) void say(answer);
         }
       }
       if (change.kind === "run" || change.kind === "approval" || change.kind === "flow") show();
     };
-    send({ type: "hello", ...hello });
+
+    /** The device stopped talking: hear it, then start its flow, or ask the router and say the answer. */
+    const heard = async (turn: { flow: string | null; chunks: Uint8Array[]; bytes: number }) => {
+      const speech = this.speech;
+      if (!speech) return send({ type: "error", message: "Voice isn't set up here: run NVIDIA NeMo-Speech and set HUDDLE_SPEECH_URL." });
+      const pcm = new Uint8Array(turn.bytes);
+      let offset = 0;
+      for (const chunk of turn.chunks) {
+        pcm.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      let text: string;
+      try {
+        text = await speech.transcribe(pcm);
+      } catch (error) {
+        return send({ type: "error", message: failure(error) });
+      }
+      send({ type: "heard", text });
+      if (!text) return void say("Sorry, I didn't catch that.");
+      try {
+        if (turn.flow) {
+          const started = this.start(turn.flow, text, hello.name);
+          this.heard(started.runId, text, pcm.byteLength);
+          send({ type: "started", ...started });
+          return;
+        }
+        if (!this.router) return send({ type: "error", message: "Pick a flow on the button to start with your words." });
+        const routed = await this.router.answer({ model: AUTO, ask: text });
+        this.heard(routed.runId, text, pcm.byteLength);
+        this.engine.learnFrom(routed.runId, text);
+        const answer = shortAnswer(routed.text);
+        send({ type: "run", flow: `Asked ${routed.assistant.name ?? routed.assistant.id}`, state: "done", answer });
+        void say(answer);
+      } catch (error) {
+        send({ type: "error", message: failure(error) });
+      }
+    };
+
+    send({ type: "hello", ...hello, speech: this.speech !== null });
     show();
     this.store.events.on("change", onChange);
     // Today's spend and the next run move without a change event: look again each minute.
     const tick = setInterval(show, 60_000);
     tick.unref?.();
+
     return {
       receive: (text: string) => {
         let message: FromDevice | null;
@@ -183,29 +289,55 @@ export class DeviceHub {
           send({ type: "error", message: "Send JSON." });
           return;
         }
-        if (message?.type === "ping") return send({ type: "pong" });
-        if (message?.type === "answer" && typeof message.id === "string" && typeof message.yes === "boolean") {
-          try {
-            this.engine.answer(message.id, message.yes);
-            send({ type: "answered", id: message.id, yes: message.yes });
-          } catch (error) {
-            send({ type: "error", message: error instanceof Error ? error.message : String(error) });
+        switch (message?.type) {
+          case "ping":
+            return send({ type: "pong" });
+          case "hello":
+            // The device says whether it plays audio; the virtual button does when you ask it to.
+            playsAudio = message.audio === true;
+            if (!playsAudio) generation++;
+            return;
+          case "answer":
+            if (typeof message.id !== "string" || typeof message.yes !== "boolean") break;
+            generation++; // stop saying the line: it's been answered
+            try {
+              this.engine.answer(message.id, message.yes);
+              send({ type: "answered", id: message.id, yes: message.yes });
+            } catch (error) {
+              send({ type: "error", message: failure(error) });
+            }
+            show();
+            return;
+          case "start":
+            if (typeof message.flow !== "string") break;
+            try {
+              const said = typeof message.input === "string" ? message.input.slice(0, 4_000) : null;
+              send({ type: "started", ...this.start(message.flow, said, hello.name) });
+            } catch (error) {
+              send({ type: "error", message: failure(error) });
+            }
+            return;
+          case "listen":
+            generation++; // you're talking: stop speaking
+            listening = { flow: typeof message.flow === "string" ? message.flow : null, chunks: [], bytes: 0 };
+            return;
+          case "stop": {
+            const turn = listening;
+            listening = null;
+            if (turn) void heard(turn);
+            return;
           }
-          show();
-          return;
         }
-        if (message?.type === "start" && typeof message.flow === "string") {
-          try {
-            const said = typeof message.input === "string" ? message.input.slice(0, 4_000) : null;
-            send({ type: "started", ...this.start(message.flow, said, hello.name) });
-          } catch (error) {
-            send({ type: "error", message: error instanceof Error ? error.message : String(error) });
-          }
-          return;
-        }
-        send({ type: "error", message: 'Send { "type": "answer", "id": "...", "yes": true }, { "type": "start", "flow": "..." } or { "type": "ping" }.' });
+        send({ type: "error", message: 'Send "answer", "start", "listen" then audio then "stop", "hello" or "ping".' });
+      },
+      /** Audio while listening: 16 kHz mono 16-bit PCM. */
+      receiveAudio: (chunk: Uint8Array) => {
+        if (!listening || listening.bytes + chunk.byteLength > MAX_LISTEN_BYTES) return;
+        listening.chunks.push(chunk.slice());
+        listening.bytes += chunk.byteLength;
       },
       close: () => {
+        generation++;
         clearInterval(tick);
         this.store.events.off("change", onChange);
       },
@@ -214,11 +346,14 @@ export class DeviceHub {
 }
 
 /**
- * /devices/ws: a device's socket. A device's own token (Settings → Devices), or the Huddle token for the
+ * /devices/ws: a device's socket. A device's own token (Devices in the canvas), or the Huddle token for the
  * canvas's virtual button, as a Bearer header or ?token= (browsers can't set headers on a WebSocket).
  */
-export function deviceRoutes(app: Hono, options: { readonly store: Store; readonly engine: Engine; readonly token?: string; readonly version: string; readonly upgradeWebSocket: UpgradeWebSocket }): DeviceHub {
-  const hub = new DeviceHub(options.store, options.engine);
+export function deviceRoutes(
+  app: Hono,
+  options: { readonly store: Store; readonly engine: Engine; readonly token?: string; readonly version: string; readonly upgradeWebSocket: UpgradeWebSocket; readonly speech?: Speech; readonly router?: Router },
+): DeviceHub {
+  const hub = new DeviceHub(options.store, options.engine, { ...(options.speech ? { speech: options.speech } : {}), ...(options.router ? { router: options.router } : {}) });
   app.get(
     "/devices/ws",
     async (c, next) => {
@@ -235,10 +370,18 @@ export function deviceRoutes(app: Hono, options: { readonly store: Store; readon
       let session: ReturnType<DeviceHub["connect"]> | null = null;
       return {
         onOpen: (_event, socket: WSContext) => {
-          session = hub.connect((message) => socket.send(JSON.stringify(message)), { name, version: options.version });
+          session = hub.connect(
+            (message) => socket.send(JSON.stringify(message)),
+            { name, version: options.version },
+            (chunk) => socket.send(chunk),
+          );
         },
         onMessage: (event) => {
-          if (typeof event.data === "string") session?.receive(event.data);
+          const data: unknown = event.data;
+          if (typeof data === "string") session?.receive(data);
+          else if (data instanceof Uint8Array) session?.receiveAudio(data);
+          else if (data instanceof ArrayBuffer) session?.receiveAudio(new Uint8Array(data));
+          else if (data instanceof Blob) void data.arrayBuffer().then((buffer) => session?.receiveAudio(new Uint8Array(buffer)));
         },
         onClose: () => session?.close(),
         onError: () => session?.close(),

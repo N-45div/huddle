@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
-import { type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, factChecker, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, noteTaker, SignIns, Store, storedGrants, tidyMemory, viewWriter } from "@huddle/core";
+import { type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, factChecker, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, nemoSpeech, noteTaker, SignIns, Store, storedGrants, tidyMemory, viewWriter } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
 import { deviceRoutes } from "./devices.ts";
@@ -24,6 +24,9 @@ import { webApp } from "./static.ts";
  *   HUDDLE_A2A_TOKEN   a separate token for assistants calling Huddle over A2A or MCP (default HUDDLE_TOKEN)
  *   HUDDLE_LLM_URL, HUDDLE_LLM_MODEL, HUDDLE_LLM_KEY   an OpenAI-compatible model for "describe it", for
  *                      judging "auto", and for showing answers as views
+ *   HUDDLE_SPEECH_URL  NVIDIA NeMo-Speech on this machine (nemo-speech serve): the Huddle button listens
+ *                      with Nemotron 3.5 ASR and speaks with Magpie TTS; audio never leaves the machine
+ *   HUDDLE_SPEECH_LANGUAGE  what the button listens for: auto (default), en-US, hi-IN, ...
  *   NEBIUS_API_KEY     NVIDIA Nemotron on Nebius Token Factory: the nebius connector's key, and, when no
  *                      HUDDLE_LLM_URL is set, Huddle's own model calls, each on the tier its job needs:
  *                      Lightning judges "auto" and picks views, Super fills them in, Ultra drafts flows
@@ -160,6 +163,7 @@ const monidKey = env("MONID_API_KEY");
 const monidCap = Number(env("HUDDLE_MONID_MAX_USD") ?? DEFAULT_MAX_USD);
 const monidMaxUsd = Number.isFinite(monidCap) && monidCap >= 0 && monidCap <= 100 ? monidCap : DEFAULT_MAX_USD;
 
+const router = new Router(store, engine, judge);
 const app = createApp({
   store,
   engine,
@@ -171,7 +175,7 @@ const app = createApp({
   sandboxes,
   signIns,
   pact: identity,
-  router: new Router(store, engine, judge),
+  router,
   routerKey: env("HUDDLE_ROUTER_KEY"),
   present: { presenter, writer },
   email: { webhookSecret: env("RESEND_WEBHOOK_SECRET"), apiKey: env("RESEND_API_KEY"), ownerEmails: (env("HUDDLE_OWNER_EMAILS") ?? "").split(",").filter((address) => address.trim()) },
@@ -181,7 +185,9 @@ const app = createApp({
 });
 // Your gadgets (the Huddle button, the canvas's virtual one) over a WebSocket, before the canvas's catch-all.
 const websockets = createNodeWebSocket({ app });
-deviceRoutes(app, { store, engine, token, version, upgradeWebSocket: websockets.upgradeWebSocket });
+const speechUrl = env("HUDDLE_SPEECH_URL");
+const speech = speechUrl ? nemoSpeech({ url: speechUrl, language: env("HUDDLE_SPEECH_LANGUAGE") ?? "auto" }) : undefined;
+deviceRoutes(app, { store, engine, token, version, upgradeWebSocket: websockets.upgradeWebSocket, speech, router });
 const web = env("HUDDLE_WEB") ?? fileURLToPath(new URL("../../web/dist", import.meta.url));
 const built = existsSync(join(web, "index.html"));
 app.use("*", webApp(web));
@@ -189,6 +195,7 @@ if (!built) app.get("/", (c) => c.text("Huddle is running, but the canvas isn't 
 
 const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   console.log(`  Devices (the Huddle button): ${publicUrl.replace(/^http/, "ws")}/devices/ws, with a device token from the canvas's Devices page`);
+  console.log(`  Voice: ${speech ? `${speech.name} at ${speech.url}` : "off (run NVIDIA NeMo-Speech and set HUDDLE_SPEECH_URL to talk to the button)"}`);
   scheduler.start();
   sandboxes?.start();
   console.log(`Huddle ${version} is on ${publicUrl}${token ? " (token required)" : ""}`);

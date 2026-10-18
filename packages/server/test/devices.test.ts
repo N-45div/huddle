@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { describe, it } from "node:test";
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
-import { Engine, mock, parseFlow, Store } from "@huddle/core";
+import { Engine, mock, parseFlow, type Speech, Store } from "@huddle/core";
 import { createApp } from "../src/app.ts";
 import { DeviceHub, deviceRoutes, oneLine, type ToDevice } from "../src/devices.ts";
 
@@ -33,7 +33,7 @@ describe("the Huddle button", () => {
     const engine = new Engine(store, { mock });
     store.saveFlow(BUTTON);
     store.saveFlow(SCHEDULED);
-    const screen = new DeviceHub(store, engine, () => Date.parse("2026-10-21T10:00:00+05:30")).screen();
+    const screen = new DeviceHub(store, engine, { now: () => Date.parse("2026-10-21T10:00:00+05:30") }).screen();
     assert.equal(screen.type, "idle");
     if (screen.type !== "idle") return;
     assert.equal(screen.spentTodayUsd, 0);
@@ -96,6 +96,59 @@ describe("the Huddle button", () => {
     session.close();
   });
 
+  it("with speech set up, says the approval in spoken form, and starts a flow with what you said", async () => {
+    const spoken: string[] = [];
+    const speech: Speech = {
+      name: "test speech, on this machine",
+      url: "http://127.0.0.1:8090",
+      async transcribe(pcm) {
+        return pcm.byteLength >= 32_000 ? "What's on Friday?" : "";
+      },
+      async speak(text) {
+        spoken.push(text);
+        return new Uint8Array(10_000);
+      },
+    };
+    const store = new Store();
+    const engine = new Engine(store, { mock });
+    const hub = new DeviceHub(store, engine, { speech });
+    const button = store.saveFlow(BUTTON);
+    const asks = store.saveFlow(ASKS);
+    const sent: ToDevice[] = [];
+    const audio: Uint8Array[] = [];
+    const session = hub.connect((message) => sent.push(message), { name: "Desk button", version: "test" }, (chunk) => audio.push(chunk));
+    assert.equal(sent[0]?.type === "hello" && sent[0].speech, true);
+
+    // Quiet until the device says it plays audio.
+    session.receive(JSON.stringify({ type: "hello", audio: true }));
+    await engine.start(ASKS, "", asks.id);
+    await settle();
+    assert.deepEqual(spoken, ["Train booking.", "Hermes wants to book the six forty train for one thousand two hundred forty rupees."], "in spoken form, a sentence at a time");
+    assert.deepEqual(sent.filter((message) => message.type === "speaking" || message.type === "spoken").map((message) => message.type), ["speaking", "spoken", "speaking", "spoken"]);
+    assert.equal(audio.reduce((sum, chunk) => sum + chunk.byteLength, 0), 20_000, "the audio, in frames");
+
+    // Hold and talk: a second of audio, then let go.
+    session.receive(JSON.stringify({ type: "listen", flow: button.id }));
+    session.receiveAudio(new Uint8Array(16_000));
+    session.receiveAudio(new Uint8Array(16_000));
+    session.receive(JSON.stringify({ type: "stop" }));
+    await settle();
+    assert.ok(sent.some((message) => message.type === "heard" && message.text === "What's on Friday?"));
+    const started = sent.find((message) => message.type === "started");
+    assert.ok(started && started.type === "started");
+    assert.equal(store.run(started.runId)?.context.input, "What's on Friday?");
+    assert.deepEqual(store.logOf(started.runId).find((line) => line.kind === "heard")?.detail, { by: "test speech, on this machine", local: true, seconds: 1, chars: 17 });
+
+    // Nothing said: it says so, and starts nothing.
+    const before = sent.filter((message) => message.type === "started").length;
+    session.receive(JSON.stringify({ type: "listen", flow: button.id }));
+    session.receive(JSON.stringify({ type: "stop" }));
+    await settle();
+    assert.equal(sent.filter((message) => message.type === "started").length, before);
+    assert.equal(spoken.at(-1), "Sorry, I didn't catch that.");
+    session.close();
+  });
+
   it("talks over a real WebSocket, with a device's token or the Huddle token, and nothing else", async () => {
     const store = new Store();
     const engine = new Engine(store, { mock });
@@ -107,6 +160,7 @@ describe("the Huddle button", () => {
     await new Promise((resolve) => server.once("listening", resolve));
     const port = (server.address() as AddressInfo).port;
 
+    try {
     const made = await app.request("/api/devices", { method: "POST", headers: { authorization: "Bearer t0ken", "content-type": "application/json" }, body: JSON.stringify({ name: "Desk button" }) });
     const { token } = (await made.json()) as { token: string };
     assert.match(token, /^hdl_d_/);
@@ -122,7 +176,7 @@ describe("the Huddle button", () => {
         socket.onerror = () => reject(new Error("refused"));
       });
     const device = await open(`?token=${encodeURIComponent(token)}`);
-    assert.deepEqual(device.messages[0], { type: "hello", name: "Desk button", version: "test" });
+    assert.deepEqual(device.messages[0], { type: "hello", name: "Desk button", version: "test", speech: false });
     assert.equal(device.messages[1]?.type, "idle");
     assert.ok(store.devices()[0]?.lastSeenAt, "seen");
     const virtual = await open("?token=t0ken");
@@ -131,6 +185,9 @@ describe("the Huddle button", () => {
 
     device.socket.close();
     virtual.socket.close();
-    await new Promise((resolve) => server.close(resolve));
+    } finally {
+      (server as { closeAllConnections?: () => void }).closeAllConnections?.();
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 });
