@@ -3,9 +3,9 @@
  * can't drift apart. All routes are under /api; when the server has a token, every call carries
  * `Authorization: Bearer <token>` (the event stream takes `?token=` instead).
  */
-import type { Assistant, Choice, Contact, FactCheck, HeldBy, Receipt, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Tidy, TidyProposal, Trigger, View } from "@huddle/core";
+import type { Assistant, Choice, Contact, Device, FactCheck, HeldBy, Receipt, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Tidy, TidyProposal, Trigger, View } from "@huddle/core";
 
-export type { Assistant, Choice, Contact, FactCheck, HeldBy, Receipt, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Tidy, TidyProposal, Trigger, View };
+export type { Assistant, Choice, Contact, Device, FactCheck, HeldBy, Receipt, ContactTier, Flow, LogLine, MemoryHit, Note, RunState, RunView, SignIn, Tidy, TidyProposal, Trigger, View };
 export type { FoundTool, ToolDetails } from "./monid.ts";
 export type { Template } from "./templates.ts";
 
@@ -244,6 +244,9 @@ export interface SandboxRequests {
  *   GET    /api/approvals                  -> WaitingApproval[]
  *   POST   /api/approvals/:id { yes }      -> 202 { runId }
  *   GET    /api/templates                  -> Template[]          (the example flows, with what each still needs here)
+ *   GET    /api/devices                    -> Device[]
+ *   POST   /api/devices { name }           -> 201 { device, token }   (the token is shown this once; for /devices/ws)
+ *   DELETE /api/devices/:id                -> 204
  *   GET    /api/memory?status=             -> Note[]
  *   GET    /api/memory/search?q=&slice=&status=&limit= -> MemoryHit[]   (best first; slice may repeat)
  *   POST   /api/memory { slice, note }     -> Note                (a person's own note: kept; 400 if it holds a secret)

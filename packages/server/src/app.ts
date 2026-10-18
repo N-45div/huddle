@@ -195,6 +195,15 @@ export function createApp(options: AppOptions): Hono {
     if (emails !== undefined && (!Array.isArray(emails) || emails.some((email) => typeof email !== "string") || emails.length > 20)) return "Emails are a list of up to 20 addresses.";
     return { ...(typeof name === "string" ? { name: name.trim() } : {}), ...(tier ? { tier: tier as ContactTier } : {}), ...(Array.isArray(emails) ? { emails: emails as string[] } : {}) };
   };
+  // Your gadgets: each gets its own token, shown once, for /devices/ws.
+  app.get("/api/devices", (c) => c.json(store.devices()));
+  app.post("/api/devices", async (c) => {
+    const { name } = await body(c);
+    if (typeof name !== "string" || !name.trim()) return bad(c, "Give the device a name.");
+    return c.json(store.addDevice(name.trim().slice(0, 80)), 201);
+  });
+  app.delete("/api/devices/:id", (c) => (store.removeDevice(c.req.param("id")) ? c.body(null, 204) : bad(c, "There's no such device.", 404)));
+
   app.get("/api/contacts", (c) => c.json(store.contacts()));
   app.post("/api/contacts", async (c) => {
     const fields = await contactFields(c);

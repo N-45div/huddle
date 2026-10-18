@@ -2,9 +2,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
+import { createNodeWebSocket } from "@hono/node-ws";
 import { type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, factChecker, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, noteTaker, SignIns, Store, storedGrants, tidyMemory, viewWriter } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
+import { deviceRoutes } from "./devices.ts";
 import { monidCatalog } from "./monid.ts";
 import { SandboxWatcher } from "./sandbox-requests.ts";
 import { Scheduler } from "./scheduler.ts";
@@ -177,12 +179,16 @@ const app = createApp({
   // Tidying memory up: the fill-in model reads each slice's kept notes, only when the person asks.
   tidy: llmUrl && fillModel ? (notes) => tidyMemory(notes, { model: { url: llmUrl, model: fillModel, key: llmKey } }) : undefined,
 });
+// Your gadgets (the Huddle button, the canvas's virtual one) over a WebSocket, before the canvas's catch-all.
+const websockets = createNodeWebSocket({ app });
+deviceRoutes(app, { store, engine, token, version, upgradeWebSocket: websockets.upgradeWebSocket });
 const web = env("HUDDLE_WEB") ?? fileURLToPath(new URL("../../web/dist", import.meta.url));
 const built = existsSync(join(web, "index.html"));
 app.use("*", webApp(web));
 if (!built) app.get("/", (c) => c.text("Huddle is running, but the canvas isn't built yet: run npm run build, then restart.", 503));
 
 const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
+  console.log(`  Devices (the Huddle button): ${publicUrl.replace(/^http/, "ws")}/devices/ws, with a device token from the canvas's Devices page`);
   scheduler.start();
   sandboxes?.start();
   console.log(`Huddle ${version} is on ${publicUrl}${token ? " (token required)" : ""}`);
@@ -236,5 +242,6 @@ function shutdown(): void {
   // Open event streams keep the server from closing; don't wait on them for long.
   setTimeout(() => process.exit(0), 3_000).unref();
 }
+websockets.injectWebSocket(server);
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
