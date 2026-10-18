@@ -15,6 +15,7 @@ import { MemoryScreen } from "./screens/MemoryScreen.tsx";
 import { RunScreen } from "./screens/RunScreen.tsx";
 import { RunsScreen } from "./screens/RunsScreen.tsx";
 import { QuickScreen } from "./screens/QuickScreen.tsx";
+import { DevicesScreen } from "./screens/DevicesScreen.tsx";
 import type { Info } from "./types.ts";
 
 export function App() {
@@ -143,6 +144,8 @@ function Screen({ route }: { readonly route: Route }) {
       return <ApprovalsScreen />;
     case "memory":
       return <MemoryScreen />;
+    case "devices":
+      return <DevicesScreen />;
   }
 }
 
@@ -156,6 +159,7 @@ function Sidebar({ route, onSaveToken }: { readonly route: Route; readonly onSav
     { to: href.runs(), label: "Runs", icon: "runs", active: route.name === "runs" || route.name === "run" },
     { to: href.approvals(), label: "Approvals", icon: "approvals", active: route.name === "approvals", badge: waiting },
     { to: href.memory(), label: "Memory", icon: "memory", active: route.name === "memory" },
+    { to: href.devices(), label: "Devices", icon: "devices", active: route.name === "devices" },
   ] as const;
 
   return (

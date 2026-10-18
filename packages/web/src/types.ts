@@ -11,6 +11,8 @@ export type {
   ConnectorField,
   ConnectorInfo,
   Contact,
+  Device,
+  DeviceMessage,
   ContactTier,
   FactCheck,
   Flow,

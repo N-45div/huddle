@@ -192,7 +192,7 @@ function ContactRow({ contact, onTier, onNewToken, onRemove }: { readonly contac
   );
 }
 
-function TokenRow({ token }: { readonly token: string }) {
+export function TokenRow({ token }: { readonly token: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="copy-row">

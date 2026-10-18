@@ -2,6 +2,7 @@ import type {
   ApiError,
   Assistant,
   Contact,
+  Device,
   ContactTier,
   ConnectorInfo,
   Flow,
@@ -235,6 +236,9 @@ export const api = {
   keepNote: (noteId: string) => call<{ ok: true }>("POST", `/memory/${id(noteId)}/keep`),
   deleteNote: (noteId: string) => call<{ ok: true }>("DELETE", `/memory/${id(noteId)}`),
   tidyMemory: () => call<Tidy>("POST", "/memory/tidy", {}),
+  devices: () => call<Device[]>("GET", "/devices"),
+  addDevice: (name: string) => call<{ device: Device; token: string }>("POST", "/devices", { name }),
+  removeDevice: (deviceId: string) => call<null>("DELETE", `/devices/${id(deviceId)}`),
   learning: () => call<LearningView>("GET", "/memory/learning"),
   setLearning: (on: boolean) => call<LearningView>("PUT", "/memory/learning", { on }),
   mergeNotes: (ids: readonly string[], note: string) => call<Note>("POST", "/memory/merge", { ids, note }),
@@ -243,6 +247,14 @@ export const api = {
 };
 
 /** The event stream's address; EventSource can't send headers, so the token rides in the query. */
+/** The address a device (or the virtual button) connects to, with the Huddle token when there is one. */
+export function deviceSocketUrl(): string {
+  const base = new URL("devices/ws", window.location.href);
+  base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
+  if (memoryToken) base.searchParams.set("token", memoryToken);
+  return base.toString();
+}
+
 export function eventsUrl(withToken: boolean): string {
   return withToken && memoryToken ? `api/events?token=${encodeURIComponent(memoryToken)}` : "api/events";
 }
