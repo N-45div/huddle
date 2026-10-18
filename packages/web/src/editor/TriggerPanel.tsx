@@ -48,6 +48,7 @@ export function TriggerPanel({ flowId, trigger, savedTrigger, nextRunAt, webhook
     if (trigger.type === "email") setLastAddress(trigger.address);
     if (type === "schedule") onChange({ type, every: lastEvery, input: "" });
     else if (type === "email") onChange({ type, address: lastAddress });
+    else if (type === "button") onChange({ type, input: "" });
     else onChange({ type });
   };
 
@@ -60,6 +61,7 @@ export function TriggerPanel({ flowId, trigger, savedTrigger, nextRunAt, webhook
           <Radio name="trigger" value="schedule" checked={trigger.type === "schedule"} onPick={pick} label="On a schedule" />
           <Radio name="trigger" value="webhook" checked={trigger.type === "webhook"} onPick={pick} label="When something posts to its address" />
           <Radio name="trigger" value="email" checked={trigger.type === "email"} onPick={pick} label="When an email arrives" />
+          <Radio name="trigger" value="button" checked={trigger.type === "button"} onPick={pick} label="From my Huddle button" />
         </div>
       </fieldset>
 
@@ -79,6 +81,16 @@ export function TriggerPanel({ flowId, trigger, savedTrigger, nextRunAt, webhook
             </Hint>
           </div>
         </>
+      )}
+
+      {trigger.type === "button" && (
+        <div className="field">
+          <label htmlFor="trigger-button-input">Input when you just press it</label>
+          <textarea id="trigger-button-input" rows={2} value={trigger.input} aria-describedby="trigger-button-hint" onChange={(event) => onChange({ ...trigger, input: event.target.value })} />
+          <Hint id="trigger-button-hint">
+            It shows on your Huddle button (and the virtual one in Devices) to pick and start. What you say holding the button is the input instead; steps read it as <code>{"{{input}}"}</code>.
+          </Hint>
+        </div>
       )}
 
       {trigger.type === "webhook" && <WebhookAddress flowId={flowId} webhookUrl={webhookUrl} onRotated={onRotated} />}

@@ -49,6 +49,7 @@ export function triggerSummary(trigger: Trigger | undefined): string {
   if (!trigger || trigger.type === "manual") return "Manual";
   if (trigger.type === "schedule") return scheduleSummary(trigger);
   if (trigger.type === "email") return `Email to ${trigger.address}`;
+  if (trigger.type === "button") return "Huddle button";
   return "Webhook";
 }
 
