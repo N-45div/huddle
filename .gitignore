@@ -5,3 +5,6 @@ node_modules/
 .env.*
 !.env.example
 dist/
+
+# The button's Wi-Fi password and device token
+firmware/huddle-button/config.h
