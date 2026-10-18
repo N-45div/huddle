@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import type { AddressInfo } from "node:net";
+import { type AddressInfo, connect } from "node:net";
 import { describe, it } from "node:test";
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { Engine, mock, parseFlow, type Speech, Store } from "@huddle/core";
 import { createApp } from "../src/app.ts";
-import { DeviceHub, deviceRoutes, oneLine, type ToDevice } from "../src/devices.ts";
+import { DeviceHub, deviceRoutes, guardUpgrades, oneLine, type ToDevice } from "../src/devices.ts";
 
 const ASKS = parseFlow({
   name: "Train booking",
@@ -147,6 +147,34 @@ describe("the Huddle button", () => {
     assert.equal(sent.filter((message) => message.type === "started").length, before);
     assert.equal(spoken.at(-1), "Sorry, I didn't catch that.");
     session.close();
+  });
+
+  it("keeps running when a device drops off in the middle of connecting", async () => {
+    const store = new Store();
+    const engine = new Engine(store, { mock });
+    const app = createApp({ store, engine, version: "test", publicUrl: "http://huddle.test", token: "t0ken" });
+    const websockets = createNodeWebSocket({ app });
+    deviceRoutes(app, { store, engine, token: "t0ken", version: "test", upgradeWebSocket: websockets.upgradeWebSocket });
+    const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" });
+    websockets.injectWebSocket(server);
+    guardUpgrades(server);
+    await new Promise((resolve) => server.once("listening", resolve));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      // A device with a wrong token drops off before hearing no (a page reloading does this too).
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const socket = connect(port, "127.0.0.1");
+        await new Promise((resolve) => socket.once("connect", resolve));
+        socket.write("GET /devices/ws?token=nope HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n");
+        socket.resetAndDestroy();
+      }
+      await settle();
+      const info = await fetch(`http://127.0.0.1:${port}/api/info`, { headers: { authorization: "Bearer t0ken" } });
+      assert.equal(info.status, 200, "still serving");
+    } finally {
+      (server as { closeAllConnections?: () => void }).closeAllConnections?.();
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 
   it("talks over a real WebSocket, with a device's token or the Huddle token, and nothing else", async () => {

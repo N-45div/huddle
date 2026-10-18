@@ -346,6 +346,17 @@ export class DeviceHub {
 }
 
 /**
+ * A device can drop off mid-handshake (power or Wi-Fi gone); the socket's error then has no listener until
+ * the WebSocket takes it over, and an unhandled socket error stops the whole server. Every upgrading
+ * socket gets one at once.
+ */
+export function guardUpgrades(server: { on(event: "upgrade", listener: (request: unknown, socket: { on(event: "error", listener: () => void): unknown }) => void): unknown }): void {
+  server.on("upgrade", (_request, socket) => {
+    socket.on("error", () => undefined);
+  });
+}
+
+/**
  * /devices/ws: a device's socket. A device's own token (Devices in the canvas), or the Huddle token for the
  * canvas's virtual button, as a Bearer header or ?token= (browsers can't set headers on a WebSocket).
  */

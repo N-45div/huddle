@@ -6,7 +6,7 @@ import { createNodeWebSocket } from "@hono/node-ws";
 import { type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, factChecker, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, nemoSpeech, noteTaker, SignIns, Store, storedGrants, tidyMemory, viewWriter } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
-import { deviceRoutes } from "./devices.ts";
+import { deviceRoutes, guardUpgrades } from "./devices.ts";
 import { monidCatalog } from "./monid.ts";
 import { SandboxWatcher } from "./sandbox-requests.ts";
 import { Scheduler } from "./scheduler.ts";
@@ -250,5 +250,6 @@ function shutdown(): void {
   setTimeout(() => process.exit(0), 3_000).unref();
 }
 websockets.injectWebSocket(server);
+guardUpgrades(server);
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
