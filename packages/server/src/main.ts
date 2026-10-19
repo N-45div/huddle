@@ -98,7 +98,8 @@ const fillModel = modelFor("super");
 const draftModel = modelFor("ultra");
 // The desktop app runs Huddle bundled into one file, with its version given.
 const version = env("HUDDLE_VERSION") ?? (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }).version;
-const publicUrl = (env("HUDDLE_PUBLIC_URL") ?? `http://${loopback || host === "0.0.0.0" || host === "::" ? "localhost" : host}:${port}`).replace(/\/$/, "");
+// On Render, its own address (RENDER_EXTERNAL_URL) is how others reach this Huddle unless you say otherwise.
+const publicUrl = (env("HUDDLE_PUBLIC_URL") ?? env("RENDER_EXTERNAL_URL") ?? `http://${loopback || host === "0.0.0.0" || host === "::" ? "localhost" : host}:${port}`).replace(/\/$/, "");
 
 const store = new Store(env("HUDDLE_DB") ?? "huddle.db");
 const interrupted = store.failInterrupted();

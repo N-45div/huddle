@@ -890,6 +890,14 @@ cp .env.example .env   # set HUDDLE_TOKEN (openssl rand -hex 32) and your assist
 docker compose up -d   # http://localhost:7700, data in the huddle-data volume
 ```
 
+### On Render
+
+`render.yaml` is a Render Blueprint: in Render, **New > Blueprint** and pick your copy of this repository.
+It builds the Dockerfile on a Starter instance with a 1 GB disk, asks for your Nebius, Tavily and
+context.dev keys, makes `HUDDLE_TOKEN` for you, and caps what Huddle spends at $2 a day. The canvas asks
+for the token: find it under the service's **Environment**. There's no voice there (NeMo-Speech runs on
+your own machine), so the Devices page's virtual button reads answers with your browser's voice.
+
 ### Settings
 
 | Variable | Default | What it's for |
@@ -914,7 +922,8 @@ docker compose up -d   # http://localhost:7700, data in the huddle-data volume
 | `RESEND_API_KEY` | none | sends email (the `email` connector's default key) and reads mail that arrives; reading needs a full-access key |
 | `RESEND_WEBHOOK_SECRET` | none | the signing secret of Resend's `email.received` webhook, pointed at `/hooks/email`; without it Huddle takes no mail |
 | `HUDDLE_OWNER_EMAILS` | none | your own addresses, comma-separated: mail from them counts as you |
-| `HUDDLE_BUDGET` | none | a cap on what assistants with a price may spend, in US dollars: `20/month` or `5/day` |
+| `HUDDLE_BUDGET` | none | a cap on what assistants with a price, and Huddle's own model calls, may spend, in US dollars: `20/month` or `5/day` |
+| `HUDDLE_OWN_CALLS_PER_MINUTE` | `30` | the most model calls Huddle makes for itself in a minute (drafting flows, judging `"auto"`, views, fact checks, learning, tidying); each is counted in spend |
 | `HUDDLE_GUARD` | none | something that checks every hand-off first: `armoriq` or `http` (see [above](#check-hand-offs-first-optional)) |
 | `HUDDLE_GUARD_URL`, `HUDDLE_GUARD_KEY`, `HUDDLE_GUARD_ON_FAILURE` | none, none, `block` | your own policy service, for `HUDDLE_GUARD=http` |
 | `ARMORIQ_API_KEY`, `HUDDLE_ARMORIQ_AGENT`, `HUDDLE_ARMORIQ_REQUESTER` | none, `huddle`, `huddle-agent@huddle.local` | for `HUDDLE_GUARD=armoriq` |

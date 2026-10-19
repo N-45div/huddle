@@ -1,0 +1,30 @@
+# Huddle on Render (render.com): New > Blueprint, pick this repository. Render builds the Dockerfile and
+# keeps everything on a 1 GB disk at /data. It asks for the keys marked sync: false, makes HUDDLE_TOKEN for
+# you (the canvas asks for it: Environment shows it), and serves Huddle at https://<name>.onrender.com.
+services:
+  - type: web
+    name: huddle
+    runtime: docker
+    plan: starter
+    # Close to Nebius Token Factory, where Huddle's Nemotron calls go. Render can't change this later.
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /.well-known/agent-card.json
+    disk:
+      name: huddle-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: PORT
+        value: "7700"
+      - key: HUDDLE_TOKEN
+        generateValue: true
+      # A cap on everything Huddle spends a day: hand-offs to priced assistants and its own model calls.
+      - key: HUDDLE_BUDGET
+        value: 2/day
+      - key: NEBIUS_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: CONTEXT_DEV_API_KEY
+        sync: false
