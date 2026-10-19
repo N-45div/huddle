@@ -62,6 +62,7 @@ export { askFrom, type Attempt, AUTO, type ChatMessage, type CostRoute, FIT, las
 export { evaluateFormula, FormulaError, namesIn, parseFormula } from "./formula.ts";
 export { type Answer, type Choice, FILLED, FilledView, jevPresenter, type JevPresenterOptions, type ModelOptions, modelPresenter, obviousChoice, present, type Presenter, rulesPresenter, type Table, tableOf, type View, VIEW_KINDS, type ViewKind, VIEWS, type ViewWriter, viewWriter } from "./present.ts";
 export { type Budget, CHARS_PER_TOKEN, costOf, dollars, estimateTokens, parseBudget, periodStart, type Price, priceOf, type Spend, spendOf, type Usage } from "./cost.ts";
+export { Meter, type MeterOptions, OWN_CALLS_PER_MINUTE, type OwnJob, OwnLimit } from "./meter.ts";
 export { type Candidate, jevJudge, type JevOptions, type Judge, modelJudge, type ModelJudgeOptions, type Ranking } from "./judge.ts";
 export { type Destination, destinationOf, type Disclosure, type Receipt, receiptOf, type Search, type SentNote } from "./receipt.ts";
 export { nextRun, type ScheduleTrigger, scheduleText, type Weekday, WEEKDAYS } from "./schedule.ts";

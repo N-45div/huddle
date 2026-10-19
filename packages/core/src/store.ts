@@ -557,6 +557,13 @@ export class Store {
       .run(run.id, stepId, run.flowId, run.flow.name, assistant, Math.round(spend.inputTokens), Math.round(spend.outputTokens), Math.round(spend.cachedTokens ?? 0), spend.costUsd, spend.estimated ? 1 : 0, now());
   }
 
+  /** What one of Huddle's own model calls took (drafting a flow, judging "auto", a view, tidying): no run of its own. */
+  addOwnSpend(job: string, spend: Spend): void {
+    this.db
+      .prepare("INSERT INTO spend (run_id, step_id, flow_id, flow_name, assistant, input_tokens, output_tokens, cached_tokens, cost_usd, estimated, at) VALUES ('huddle', ?, NULL, 'Huddle itself', ?, ?, ?, 0, ?, ?, ?)")
+      .run(job, `huddle: ${job}`, Math.round(spend.inputTokens), Math.round(spend.outputTokens), spend.costUsd, spend.estimated ? 1 : 0, now());
+  }
+
   /** The router picked a cheaper assistant than the judge's first choice for this run: what that saved. */
   savedByCheaperPick(runId: string, savedUsd: number): void {
     this.db.prepare("UPDATE spend SET saved_usd = ?, saved_by = 'cheaper' WHERE seq = (SELECT MAX(seq) FROM spend WHERE run_id = ?)").run(savedUsd, runId);
