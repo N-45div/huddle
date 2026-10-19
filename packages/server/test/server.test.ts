@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { a2a, Assistant, type Connector, Engine, type Flow, mock, newKey, type OpenShell, PactIdentity, parseFlow, Router, type Run, rulesPresenter, SignIns, Store, viewWriter } from "@huddle/core";
+import { a2a, Assistant, type Connector, Engine, type Flow, mock, newKey, type OpenShell, OwnLimit, PactIdentity, parseFlow, Router, type Run, rulesPresenter, SignIns, Store, viewWriter } from "@huddle/core";
 import { Hono } from "hono";
 import { createApp, imagesIn } from "../src/app.ts";
 import { describer } from "../src/describe.ts";
@@ -232,6 +232,15 @@ describe("the API", () => {
     const { app } = setup({ describe: async () => greeter });
     const drafted = await (await app.request("/api/describe", json({ text: "greet people" }))).json();
     assert.equal(drafted.flow.name, "Greeter");
+    // Past the budget or the minute's calls, it says to wait rather than that the request was wrong.
+    const held = setup({
+      describe: async () => {
+        throw new OwnLimit("Huddle has made 30 of its own model calls in the last minute, its most, so describe it waits: try again in a minute.");
+      },
+    });
+    const refused = await held.app.request("/api/describe", json({ text: "greet people" }));
+    assert.equal(refused.status, 429);
+    assert.match((await refused.json()).error, /try again in a minute/);
   });
 
   it("streams changes to the canvas, with the token in the query", async () => {

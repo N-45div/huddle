@@ -122,7 +122,9 @@ function SpendStrip({ spend, anyPriced }: { readonly spend: SpendView; readonly 
             <span style={{ width: `${Math.max(2, Math.round(share * 100))}%` }} />
           </span>
         )}
-        <p className="hint">{dollars(spend.routerUsd)} of it through the router</p>
+        <p className="hint">
+          {dollars(spend.routerUsd)} of it through the router{spend.huddleUsd > 0 ? `, ${dollars(spend.huddleUsd)} on Huddle's own model calls` : ""}
+        </p>
       </div>
       <div className="spend-figure">
         <p className="eyebrow">Saved</p>

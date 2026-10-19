@@ -1,5 +1,5 @@
 import { nextRun, receiptOf } from "@huddle/core";
-import { type Assistant, Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type MemoryHit, type Note, ollamaModels, type PactIdentity, tokenFactoryModels, vllmModels, periodStart, type Presenter, present, rulesPresenter, VIEW_KINDS, type ViewKind, type ViewWriter, type Router, type SavedFlow, SensitiveNote, type SignIns, type Store, type Tidy, tidyMemory, LEARNING } from "@huddle/core";
+import { type Assistant, Assistants, type Change, CONTACT_TIERS, type ContactTier, type Engine, Flow, type MemoryHit, type Note, ollamaModels, OwnLimit, type PactIdentity, tokenFactoryModels, vllmModels, periodStart, type Presenter, present, rulesPresenter, VIEW_KINDS, type ViewKind, type ViewWriter, type Router, type SavedFlow, SensitiveNote, type SignIns, type Store, type Tidy, tidyMemory, LEARNING } from "@huddle/core";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { a2aRoutes } from "./a2a.ts";
@@ -66,7 +66,7 @@ export function checkFlow(input: unknown): { flow: Flow } | { problems: string[]
   return { problems: result.error.issues.map((issue) => (issue.path.length ? `${issue.path.join(".")}: ${issue.message}` : issue.message)) };
 }
 
-const bad = (c: Context, error: string, status: 400 | 401 | 404 | 409 | 501 | 502 = 400, problems?: string[]) => c.json<ApiError>(problems ? { error, problems } : { error }, status);
+const bad = (c: Context, error: string, status: 400 | 401 | 404 | 409 | 429 | 501 | 502 = 400, problems?: string[]) => c.json<ApiError>(problems ? { error, problems } : { error }, status);
 
 async function body(c: Context): Promise<Record<string, unknown>> {
   return ((await c.req.json().catch(() => null)) ?? {}) as Record<string, unknown>;
@@ -264,6 +264,10 @@ export function createApp(options: AppOptions): Hono {
       spentUsd: engine.spent(),
       budgetUsd: budget?.usd ?? null,
       routerUsd: sum("usd"),
+      huddleUsd: store
+        .spendSince(since)
+        .filter((total) => total.assistant.startsWith("huddle: ") || total.assistant === "fact-check" || total.assistant === "memory: learning")
+        .reduce((sum, total) => sum + total.usd, 0),
       reused: sum("reused"),
       savedByReuseUsd: sum("savedByReuse"),
       cheaper: sum("cheaper"),
@@ -431,6 +435,7 @@ export function createApp(options: AppOptions): Hono {
       return c.json<PresentedView>(await present(answer, { ...presenting, ...(given.kind ? { kind: given.kind as ViewKind } : {}) }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (error instanceof OwnLimit) return bad(c, message, 429);
       // No model to fill views in is a setting; no records is the request; anything else is the model.
       return bad(c, message, presenting.writer === null && message.includes("HUDDLE_LLM") ? 501 : message.includes("no records") ? 400 : 502);
     }
@@ -443,7 +448,7 @@ export function createApp(options: AppOptions): Hono {
     try {
       return c.json({ flow: await options.describe(text.trim(), store.assistants()) });
     } catch (error) {
-      return bad(c, error instanceof Error ? error.message : String(error));
+      return bad(c, error instanceof Error ? error.message : String(error), error instanceof OwnLimit ? 429 : 400);
     }
   });
 

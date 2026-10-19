@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
-import { type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, factChecker, jevJudge, jevPresenter, type Judge, Memory, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, nemoSpeech, noteTaker, SignIns, Store, storedGrants, tidyMemory, viewWriter } from "@huddle/core";
+import { type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, factChecker, jevJudge, jevPresenter, type Judge, Memory, Meter, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, OWN_CALLS_PER_MINUTE, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, nemoSpeech, noteTaker, SignIns, Store, storedGrants, tidyMemory, viewWriter } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
 import { deviceRoutes, guardUpgrades } from "./devices.ts";
@@ -63,6 +63,9 @@ import { webApp } from "./static.ts";
  *                               Set the policy up once with: npm run huddle -- armoriq register
  *                      http     your own policy service: HUDDLE_GUARD_URL answers allow, block or hold
  *                               (HUDDLE_GUARD_KEY as a Bearer token; HUDDLE_GUARD_ON_FAILURE block|allow)
+ *   HUDDLE_OWN_CALLS_PER_MINUTE  the most model calls Huddle makes for itself in a minute (default 30): drafting
+ *                      flows, judging "auto", views, fact checks, learning, tidying. They count in spend and
+ *                      stop once HUDDLE_BUDGET is spent, so a Huddle others can reach can't run up a bill
  */
 
 const env = (name: string): string | undefined => process.env[name]?.trim() || undefined;
@@ -133,13 +136,20 @@ try {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
+const perMinute = Number(env("HUDDLE_OWN_CALLS_PER_MINUTE") ?? OWN_CALLS_PER_MINUTE);
+if (!Number.isInteger(perMinute) || perMinute < 1) {
+  console.error(`HUDDLE_OWN_CALLS_PER_MINUTE must be a whole number of calls, not "${env("HUDDLE_OWN_CALLS_PER_MINUTE")}".`);
+  process.exit(1);
+}
+// Huddle's own model calls are counted in spend, stop with the budget, and are held to so many a minute.
+const meter = new Meter(store, { budget: spendCap, perMinute });
 // Approvals that ask (check: true) have their facts checked on the web first: the quick model lists them, Tavily searches, the other model weighs the sources.
 const tavilyKey = env("TAVILY_API_KEY");
-const checker = tavilyKey && llmUrl && quickModel && fillModel ? factChecker({ tavilyKey, lister: { url: llmUrl, model: quickModel, key: llmKey }, judge: { url: llmUrl, model: fillModel, key: llmKey } }) : undefined;
+const checker = tavilyKey && llmUrl && quickModel && fillModel ? factChecker({ tavilyKey, lister: { url: llmUrl, model: quickModel, key: llmKey }, judge: { url: llmUrl, model: fillModel, key: llmKey }, fetcher: meter.fetchFor("fact check", { record: false }) }) : undefined;
 // Learning from what you say (once you turn it on in Memory): the fill-in model reads your words after runs you
 // start. Super, not Lightning: on 18 Oct Lightning kept the request itself ("Weekend trip with a companion") and
 // misfiled notes; Super didn't, for about $0.00013 a message, after the run.
-const learner = llmUrl && fillModel ? noteTaker({ model: { url: llmUrl, model: fillModel, key: llmKey } }) : undefined;
+const learner = llmUrl && fillModel ? noteTaker({ model: { url: llmUrl, model: fillModel, key: llmKey }, fetcher: meter.fetchFor("learning", { record: false }) }) : undefined;
 const engine = new Engine(store, { ...defaultConnectors(), openshell: openshell(() => shell), pact: pact(() => identity, undefined, { signIns, grants: storedGrants(store) }) }, { memory, guard: guard ?? undefined, budget: spendCap, checker, learner });
 const sandboxes = shell ? new SandboxWatcher(shell, store) : undefined;
 // Hand-offs ArmorIQ held before a restart: wait on them again, so they carry on once approved there.
@@ -149,12 +159,13 @@ const scheduler = new Scheduler(store, engine);
 
 const typesafeKey = env("TYPESAFE_API_KEY");
 let judge: Judge | null = null;
-if (typesafeKey) judge = jevJudge({ key: typesafeKey, model: env("HUDDLE_JEV_MODEL") });
-else if (llmUrl && quickModel) judge = modelJudge({ url: llmUrl, model: quickModel, key: llmKey });
+if (typesafeKey) judge = jevJudge({ key: typesafeKey, model: env("HUDDLE_JEV_MODEL"), fetcher: meter.fetchFor("auto judge") });
+else if (llmUrl && quickModel) judge = modelJudge({ url: llmUrl, model: quickModel, key: llmKey, fetcher: meter.fetchFor("auto judge") });
 
 // How answers are shown: Jev chooses the view if it's set up, else the HUDDLE_LLM_* model, else plain rules; a model fills charts and the like in.
-const presenter = typesafeKey ? jevPresenter({ key: typesafeKey, model: env("HUDDLE_JEV_MODEL") }) : llmUrl && quickModel ? modelPresenter({ url: llmUrl, model: quickModel, key: llmKey }) : rulesPresenter;
-const writer = llmUrl && fillModel ? viewWriter({ url: llmUrl, model: fillModel, key: llmKey }) : null;
+const viewsFetch = meter.fetchFor("views");
+const presenter = typesafeKey ? jevPresenter({ key: typesafeKey, model: env("HUDDLE_JEV_MODEL"), fetcher: viewsFetch }) : llmUrl && quickModel ? modelPresenter({ url: llmUrl, model: quickModel, key: llmKey, fetcher: viewsFetch }) : rulesPresenter;
+const writer = llmUrl && fillModel ? viewWriter({ url: llmUrl, model: fillModel, key: llmKey, fetcher: viewsFetch }) : null;
 // Token Factory's prices, read fresh when it's in use (the built-in ones stand if the catalog can't be reached).
 if (nebiusKey) refreshTokenFactoryPrices().catch(() => undefined);
 
@@ -171,7 +182,7 @@ const app = createApp({
   publicUrl,
   token,
   a2aToken: env("HUDDLE_A2A_TOKEN"),
-  describe: llmUrl && draftModel ? describer({ url: llmUrl, model: draftModel, key: llmKey }) : undefined,
+  describe: llmUrl && draftModel ? describer({ url: llmUrl, model: draftModel, key: llmKey, fetcher: meter.fetchFor("describe it") }) : undefined,
   sandboxes,
   signIns,
   pact: identity,
@@ -181,7 +192,7 @@ const app = createApp({
   email: { webhookSecret: env("RESEND_WEBHOOK_SECRET"), apiKey: env("RESEND_API_KEY"), ownerEmails: (env("HUDDLE_OWNER_EMAILS") ?? "").split(",").filter((address) => address.trim()) },
   monid: monidKey ? monidCatalog({ key: monidKey, maxUsd: monidMaxUsd }) : undefined,
   // Tidying memory up: the fill-in model reads each slice's kept notes, only when the person asks.
-  tidy: llmUrl && fillModel ? (notes) => tidyMemory(notes, { model: { url: llmUrl, model: fillModel, key: llmKey } }) : undefined,
+  tidy: llmUrl && fillModel ? (notes) => tidyMemory(notes, { model: { url: llmUrl, model: fillModel, key: llmKey }, fetcher: meter.fetchFor("tidy up") }) : undefined,
 });
 // Your gadgets (the Huddle button, the canvas's virtual one) over a WebSocket, before the canvas's catch-all.
 const websockets = createNodeWebSocket({ app });
@@ -202,7 +213,8 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   console.log(`  A2A Agent Card: ${publicUrl}/.well-known/agent-card.json`);
   console.log(`  MCP server (Claude, Cursor, any MCP client): ${publicUrl}/mcp`);
   console.log(`  Router (OpenAI-compatible): ${publicUrl}/v1, model = one of your assistants' ids, or "auto" (${judge ? `judged by ${judge.name}` : "no judge: your list's order"})`);
-  if (spendCap) console.log(`  Budget: ${dollars(spendCap.usd)} a ${spendCap.period} for priced assistants; ${dollars(engine.spent())} spent so far`);
+  if (spendCap) console.log(`  Budget: ${dollars(spendCap.usd)} a ${spendCap.period} for priced assistants and Huddle's own model calls; ${dollars(engine.spent())} spent so far`);
+  if (llmUrl || typesafeKey) console.log(`  Spending guard: Huddle's own model calls count in spend, at most ${meter.perMinute} a minute${spendCap ? ", and none once the budget is spent" : " (set HUDDLE_BUDGET to cap them)"}`);
   if (!built) console.log(`  The canvas isn't built (no ${join(web, "index.html")}): run npm run build.`);
   if (onNemotron) console.log(`  Huddle's own model calls: NVIDIA Nemotron on Nebius Token Factory (${llmModel ?? "Lightning judges and picks views, Super fills them in, Ultra drafts flows"})`);
   if (!llmUrl || !draftModel) console.log('  "Describe it" is off: set NEBIUS_API_KEY, or HUDDLE_LLM_URL and HUDDLE_LLM_MODEL, to turn it on.');

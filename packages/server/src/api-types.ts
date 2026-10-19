@@ -117,11 +117,13 @@ export interface RouterUsage {
 export interface SpendView {
   readonly period: "day" | "month";
   readonly since: string;
-  /** Every hand-off with a known cost, flows and router alike: what the budget counts. */
+  /** Every hand-off with a known cost, flows and router alike, and Huddle's own model calls: what the budget counts. */
   readonly spentUsd: number;
   readonly budgetUsd: number | null;
   /** Of that, through the router. */
   readonly routerUsd: number;
+  /** Of that, Huddle's own model calls: drafting flows, judging "auto", views, fact checks, learning, tidying. */
+  readonly huddleUsd: number;
   /** Router calls answered from a kept answer, and what they'd have cost. */
   readonly reused: number;
   readonly savedByReuseUsd: number;
