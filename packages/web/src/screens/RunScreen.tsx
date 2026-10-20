@@ -1,6 +1,6 @@
 import { api } from "../api.ts";
 import { useApp } from "../app-context.ts";
-import { AgentsTree } from "../components/AgentsTree.tsx";
+import { RunCrew } from "../components/RunCrew.tsx";
 import { ErrorNote, Icon, Link, Loading, StateBadge } from "../components/bits.tsx";
 import { ReceiptPanel } from "../components/ReceiptPanel.tsx";
 import { RunLog } from "../components/RunLog.tsx";
@@ -56,9 +56,9 @@ export function RunScreen({ runId }: { readonly runId: string }) {
             )}
           </header>
 
-          {/* Who's working on it, live; a card that needs you takes your answer, a failed run can be retried. */}
+          {/* Who's on it, live: a row waiting for you takes your answer, a failed run can be tried again. */}
           <section className="section">
-            <AgentsTree detail={data} onChange={refetch} />
+            <RunCrew detail={data} onChange={refetch} />
           </section>
 
           {run.state === "failed" && <ErrorNote message={`${run.at ? `Step "${run.at}" failed: ` : ""}${run.error ?? "The run failed."}`} />}
