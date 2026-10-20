@@ -3959,3 +3959,199 @@ h1 .badge {
   border: 1px solid var(--border);
   border-radius: 8px;
 }
+
+/* ---------- Agents: who's working on a run, as an org chart ---------- */
+
+.agt {
+  --agt-line: #9cc0f4;
+  --agt-card-w: 232px;
+  --agt-gap: 20px;
+  --agt-run: #2563d9;
+  --agt-run-soft: #e8f0fd;
+  --agt-ok: #23824a;
+  --agt-ok-soft: #e4f4e9;
+  --agt-wait: #b25e00;
+  --agt-wait-soft: #fdefdb;
+  --agt-bad: #c93a2f;
+  --agt-bad-soft: #fce7e5;
+  --agt-off: #77776f;
+  --agt-off-soft: #eeeeea;
+  position: relative;
+}
+
+@media (prefers-color-scheme: dark) {
+  .agt {
+    --agt-line: #3c5f97;
+    --agt-run: #8ab4ff;
+    --agt-run-soft: #1c2944;
+    --agt-ok: #6cc28a;
+    --agt-ok-soft: #1b3024;
+    --agt-wait: #e8b261;
+    --agt-wait-soft: #392b14;
+    --agt-bad: #f08a80;
+    --agt-bad-soft: #3b1d1a;
+    --agt-off: #a3a39b;
+    --agt-off-soft: #2a2a27;
+  }
+}
+
+.agt-head {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-bottom: 18px;
+}
+
+.agt .agt-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.agt-title .agt-glyph {
+  width: 18px;
+  height: 18px;
+  color: var(--agt-run);
+}
+
+.agt-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.agt-count-running {
+  color: var(--agt-run);
+}
+
+.agt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.agt-chip .agt-glyph {
+  width: 14px;
+  height: 14px;
+}
+
+.agt-chip-warn {
+  color: var(--agt-wait);
+  background: var(--agt-wait-soft);
+}
+
+.agt-chip-danger {
+  color: var(--agt-bad);
+  background: var(--agt-bad-soft);
+}
+
+.agt-cost {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* What failed, and Retry. */
+.agt-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  width: min(370px, 100%);
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  animation: agt-in 0.18s ease-out both;
+}
+
+.agt-pop-head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.agt-pop-head p {
+  margin: 3px 0 0;
+  font-size: 14.5px;
+  line-height: 1.35;
+}
+
+.agt-pop-task {
+  color: var(--muted);
+}
+
+.agt-pop-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--agt-bad);
+  background: var(--agt-bad-soft);
+  border-radius: 8px;
+}
+
+.agt-pop-icon .agt-glyph {
+  width: 15px;
+  height: 15px;
+}
+
+.agt-pop-error {
+  margin: 8px 0 12px 38px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.agt-pop-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.agt-btn {
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.agt-btn:hover {
+  background: var(--surface-3);
+}
+
+.agt-btn-dark,
+.agt-btn-dark:hover {
+  color: var(--surface);
+  background: var(--text);
+}
+
+.agt-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
