@@ -1,9 +1,12 @@
 // The Huddle button: an OceanLabz AI Explorer ESP32-S3 board that shows what's waiting for you in Huddle,
 // takes your yes or no, and starts the flows you put on it, by press or by voice.
 //
-//   Waiting approval: press = yes, hold (about a second) = no. It says the approval aloud.
+//   Waiting approval: hold (a second, the bar fills) = yes; a quick press = no. It says the approval aloud.
 //   Nothing waiting:  tap = next flow, hold and talk = start that flow with your words (or ask the router).
 //   Screen blank?     press five times quickly: it switches to the other screen wiring and restarts.
+//
+// At start-up it checks itself: a chime through the speaker, both mic channels listened to (it keeps the one
+// that hears), and the screen wiring in use; everything it does is also logged on USB at 115200 baud.
 //
 // It talks to Huddle over a WebSocket (/devices/ws) with its own device token. Audio is 16 kHz mono 16-bit
 // PCM both ways; Huddle hears and speaks with NVIDIA's NeMo-Speech on its own machine.
@@ -43,6 +46,7 @@ constexpr TftPins TFT_MAPS[2] = {{45, 1, 43, 44, 42, 38}, {45, 38, 1, 42, 43, 44
 constexpr uint32_t RATE = 16000;
 constexpr size_t MIC_FRAME = 1600;                   // 100 ms of samples
 constexpr size_t PLAY_BUFFER = 16000 * 2 * 12;       // 12 s of audio, in PSRAM
+constexpr unsigned long HOLD_YES_MS = 1000;          // how long a hold takes to say yes to an approval
 
 // ---- State --------------------------------------------------------------------------------------------
 enum class Mode { Connecting, Idle, Approval, Listening, Thinking };
@@ -70,6 +74,9 @@ String replyFlow, replyText, heardText, note;
 unsigned long moodUntil = 0, replyUntil = 0;
 bool redraw = true;
 int tftMap = 0;
+int micChannel = MIC_RIGHT_CHANNEL ? 1 : 0;  // 0 left, 1 right: picked at start-up from the one that hears
+unsigned long approvalAt = 0;                // when the approval on screen arrived
+float dcIn = 0, dcOut = 0;                   // the mic's DC blocker
 
 // Playback: a ring of PCM bytes filled by the socket, played by its own task.
 uint8_t *ring = nullptr;
@@ -77,6 +84,14 @@ volatile size_t ringHead = 0, ringTail = 0;
 portMUX_TYPE ringLock = portMUX_INITIALIZER_UNLOCKED;
 
 // ---- Small helpers ------------------------------------------------------------------------------------
+/** One line on USB (115200 baud): what the button is doing, for when the screen can't say. */
+template <typename... Args>
+void logLine(const char *format, Args... args) {
+  Serial.print("[huddle] ");
+  Serial.printf(format, args...);
+  Serial.println();
+}
+
 void setLed(uint8_t r, uint8_t g, uint8_t b) {
   led.setPixelColor(0, led.Color(r, g, b));
   led.show();
@@ -97,6 +112,21 @@ void queueAudio(const uint8_t *data, size_t length) {
     ringHead = next;
   }
   portEXIT_CRITICAL(&ringLock);
+}
+
+/** A short sine tone into the speaker's queue (the start-up chime), at a fraction of full scale. */
+void queueTone(float hz, int ms, float level) {
+  static int16_t chunk[160];
+  const int total = RATE * ms / 1000;
+  for (int done = 0; done < total;) {
+    int n = min(160, total - done);
+    for (int i = 0; i < n; i++) {
+      float fade = min(1.0f, min((done + i) / 160.0f, (total - done - i) / 160.0f));  // 10 ms in and out: no clicks
+      chunk[i] = (int16_t)(sinf(2 * PI * hz * (done + i) / RATE) * 32767 * level * fade);
+    }
+    queueAudio(reinterpret_cast<uint8_t *>(chunk), n * 2);
+    done += n;
+  }
 }
 
 void playTask(void *) {
@@ -224,7 +254,7 @@ void draw() {
     text(64, flow, 0xAD55, 1);
     text(76, approvalLine, ST77XX_WHITE, 5);
     if (approvalWarning.length()) text(128, approvalWarning, 0xFD34, 2);
-    footer(approvalMore > 0 ? "yes:press no:hold +" + String(approvalMore) : "yes: press  no: hold");
+    footer(approvalMore > 0 ? "hold:yes tap:no +" + String(approvalMore) : "hold: yes   tap: no");
     return;
   }
   if (millis() < replyUntil && replyText.length()) {
@@ -255,12 +285,15 @@ void onMessage(uint8_t *payload, size_t length) {
   JsonDocument doc;
   if (deserializeJson(doc, payload, length)) return;
   String type = doc["type"] | "";
+  logLine("from Huddle: %s", type.c_str());
   if (type == "hello") {
+    logLine("  Huddle %s calls this button \"%s\"; voice %s", (const char *)(doc["version"] | ""), (const char *)(doc["name"] | ""), doc["speech"] | false ? "on" : "off");
     JsonDocument hello;
     hello["type"] = "hello";
     hello["audio"] = true;
     sendJson(hello);
   } else if (type == "approval") {
+    if (mode != Mode::Approval || approvalId != String(doc["id"] | "")) approvalAt = millis();
     mode = Mode::Approval;
     approvalId = doc["id"] | "";
     approvalFlow = doc["flow"] | "";
@@ -280,6 +313,7 @@ void onMessage(uint8_t *payload, size_t length) {
     setLed(0, 0, 4);
   } else if (type == "heard") {
     heardText = doc["text"] | "";
+    logLine("  heard: \"%s\"", heardText.c_str());
     if (!heardText.length()) mode = Mode::Idle;
   } else if (type == "run") {
     String state = doc["state"] | "";
@@ -302,6 +336,7 @@ void onMessage(uint8_t *payload, size_t length) {
     setLed(0, 0, 4);
   } else if (type == "error") {
     note = doc["message"] | "Something went wrong.";
+    logLine("  error: %s", note.c_str());
     replyFlow = "Huddle";
     replyText = note;
     replyUntil = millis() + 8000;
@@ -316,13 +351,16 @@ void onMessage(uint8_t *payload, size_t length) {
 void onSocket(WStype_t type, uint8_t *payload, size_t length) {
   switch (type) {
     case WStype_CONNECTED:
+      logLine("connected to Huddle at %s:%d", HUDDLE_HOST, HUDDLE_PORT);
       note = "";
       mode = Mode::Idle;
       redraw = true;
       break;
     case WStype_DISCONNECTED:
+      if (mode != Mode::Connecting) logLine("lost Huddle; retrying every 3 s");
+      else logLine("can't reach Huddle at %s:%d (is it on HUDDLE_HOST=0.0.0.0, the firewall open, the token right?)", HUDDLE_HOST, HUDDLE_PORT);
       mode = Mode::Connecting;
-      note = "Huddle isn't answering. Retrying...";
+      note = String("Can't reach Huddle at ") + HUDDLE_HOST + ":" + HUDDLE_PORT + ". Retrying...";
       redraw = true;
       break;
     case WStype_TEXT:
@@ -339,6 +377,8 @@ void onSocket(WStype_t type, uint8_t *payload, size_t length) {
 // ---- Listening ------------------------------------------------------------------------------------------
 void startListening() {
   flushPlayback();
+  dcIn = dcOut = 0;
+  logLine("listening (mic %s)", micChannel ? "right" : "left");
   JsonDocument listen;
   listen["type"] = "listen";
   if (!flows.empty()) listen["flow"] = flows[picked % flows.size()].id;
@@ -358,17 +398,48 @@ void stopListening() {
   redraw = true;
 }
 
+/** One 100 ms frame from the mic, both channels: 32-bit words, left then right, the INMP441's 24 bits on top. */
+size_t readMic(int32_t *stereo) {
+  return mic.readBytes(reinterpret_cast<char *>(stereo), MIC_FRAME * 2 * sizeof(int32_t)) / (2 * sizeof(int32_t));
+}
+
 void streamMic() {
   static int32_t raw[MIC_FRAME * 2];
   static int16_t pcm[MIC_FRAME];
-  // Mono slot: one 32-bit word per sample, the INMP441's 24 bits at the top.
-  size_t got = mic.readBytes(reinterpret_cast<char *>(raw), MIC_FRAME * sizeof(int32_t));
-  size_t samples = got / sizeof(int32_t);
+  size_t samples = readMic(raw);
   for (size_t i = 0; i < samples; i++) {
-    int32_t value = raw[i] >> 14;  // about +12 dB over a plain 16-bit cut
-    pcm[i] = value > 32767 ? 32767 : value < -32768 ? -32768 : value;
+    float x = (float)(raw[i * 2 + micChannel] >> 14);  // about +12 dB over a plain 16-bit cut
+    float y = x - dcIn + 0.995f * dcOut;                // the mic's small DC offset, taken out
+    dcIn = x;
+    dcOut = y;
+    pcm[i] = y > 32767 ? 32767 : y < -32768 ? -32768 : (int16_t)y;
   }
   if (samples) socket.sendBIN(reinterpret_cast<uint8_t *>(pcm), samples * 2);
+}
+
+/** How loud each mic channel is right now (RMS around its own mean), over about half a second. */
+void micLevels(float &left, float &right) {
+  static int32_t raw[MIC_FRAME * 2];
+  double sum[2] = {0, 0}, squares[2] = {0, 0};
+  size_t count = 0;
+  readMic(raw);  // the first frame after start-up settles; skip it
+  for (int frame = 0; frame < 5; frame++) {
+    size_t samples = readMic(raw);
+    for (size_t i = 0; i < samples; i++) {
+      for (int c = 0; c < 2; c++) {
+        double v = raw[i * 2 + c] >> 14;
+        sum[c] += v;
+        squares[c] += v * v;
+      }
+    }
+    count += samples;
+  }
+  if (!count) {
+    left = right = 0;
+    return;
+  }
+  left = sqrt(max(0.0, squares[0] / count - (sum[0] / count) * (sum[0] / count)));
+  right = sqrt(max(0.0, squares[1] / count - (sum[1] / count) * (sum[1] / count)));
 }
 
 // ---- The button -----------------------------------------------------------------------------------------
@@ -382,6 +453,7 @@ void onTap() {
   tapTimes[taps % 5] = millis();
   taps++;
   if (taps >= 5 && millis() - tapTimes[taps % 5] < 2500) {
+    logLine("five quick taps: switching to screen wiring %d and restarting", 2 - tftMap);
     tftMap = 1 - tftMap;
     prefs.putInt("tft", tftMap);
     for (int i = 0; i < 6; i++) {
@@ -395,31 +467,50 @@ void onTap() {
   redraw = true;
 }
 
+/** While you hold on an approval: a bar fills along the bottom; once it's full, letting go says yes. */
+void drawHoldBar(unsigned long held) {
+  if (!tft) return;
+  static int drawn = -1;
+  int width = held >= HOLD_YES_MS ? 128 : (int)(128 * held / HOLD_YES_MS);
+  if (held == 0) {
+    drawn = -1;
+    return;
+  }
+  if (width == drawn) return;
+  tft->fillRect(0, 144, width, 4, 0x07E0);
+  if (held >= HOLD_YES_MS && drawn < 128) footer("let go to say yes");
+  drawn = width;
+}
+
 void readButton() {
   bool down = digitalRead(BUTTON_PIN) == LOW;
   unsigned long now = millis();
   if (down && !wasDown) downAt = now;
   unsigned long held = now - downAt;
   if (mode == Mode::Idle && down && held > 350 && socket.isConnected()) startListening();
+  // A press that began before this approval arrived isn't an answer to it.
+  bool forApproval = mode == Mode::Approval && approvalId.length() && downAt >= approvalAt;
+  if (forApproval && down && held > 120) drawHoldBar(held);
   if (!down && wasDown) {
     if (mode == Mode::Listening) {
       stopListening();
-    } else if (mode == Mode::Approval && approvalId.length()) {
+    } else if (forApproval && held > 30) {
+      // Yes takes a deliberate hold; a quick press, or letting go early, is no.
+      bool yes = held >= HOLD_YES_MS;
       JsonDocument answer;
       answer["type"] = "answer";
       answer["id"] = approvalId;
-      answer["yes"] = held < 900;
+      answer["yes"] = yes;
       sendJson(answer);
+      logLine("answered %s: %s", approvalId.c_str(), yes ? "yes" : "no");
       flushPlayback();
-      mood = held < 900 ? Mood::Happy : Mood::Idle;
+      mood = yes ? Mood::Happy : Mood::Idle;
       moodUntil = now + 2000;
       redraw = true;
-    } else if (held > 30 && held < 350) {
+    } else if (mode != Mode::Approval && held > 30 && held < 350) {
       onTap();
     }
-  }
-  if (mode == Mode::Approval && down && held > 900 && held < 960) {
-    footer("let go to say no");
+    drawHoldBar(0);
   }
   wasDown = down;
 }
@@ -437,6 +528,54 @@ void setupScreen() {
   tft->fillScreen(ST77XX_BLACK);
 }
 
+/** Start-up check: the screen wiring and memory on screen, a chime, and which mic channel hears it. */
+void bootCheck() {
+  logLine("Huddle button: screen wiring %d, PSRAM %u KB, free memory %u KB", tftMap + 1, ESP.getPsramSize() / 1024, ESP.getFreeHeap() / 1024);
+  if (!ring) logLine("no PSRAM, so no speech: compile with PSRAM=opi for the ESP32-S3 N16R8");
+  if (tft) {
+    tft->fillScreen(ST77XX_BLACK);
+    drawHud(Mood::Happy);
+    text(66, "Checking myself", ST77XX_WHITE, 1);
+    text(80, "Screen wiring " + String(tftMap + 1), 0xC618, 1);
+    text(92, "Memory " + String(ESP.getPsramSize() / 1048576) + " MB", 0xC618, 1);
+  }
+  // The speaker: a two-note chime. The mic listens while it plays, so the channel that hears it shows.
+  queueTone(660, 140, 0.3f);
+  queueTone(990, 200, 0.3f);
+  float left = 0, right = 0;
+  micLevels(left, right);
+  // Only a channel that was heard is remembered, so MIC_RIGHT_CHANNEL still counts until one has been.
+  int saved = prefs.getInt("mic", -1);
+  int chosen = saved >= 0 ? saved : micChannel;
+  const char *why = saved >= 0 ? "the one that heard last time" : "from config.h";
+  bool heard = true;
+  if (right > 3 * left && right > 8) {
+    chosen = 1;
+    why = "only the right channel hears";
+  } else if (left > 3 * right && left > 8) {
+    chosen = 0;
+    why = "only the left channel hears";
+  } else {
+    heard = false;
+  }
+  micChannel = chosen;
+  if (heard) prefs.putInt("mic", micChannel);
+  logLine("mic: left %.0f, right %.0f, using the %s (%s)", left, right, micChannel ? "right" : "left", why);
+  if (tft) {
+    // Level bars on a log scale, so a quiet room still shows something; the one in use is green.
+    auto bar = [](float level) { return (int)min(90.0f, max(1.0f, 20.0f * log10f(1 + level))); };
+    tft->setTextColor(0xC618);
+    tft->setCursor(1, 108);
+    tft->print("Mic L");
+    tft->fillRect(34, 108, bar(left), 7, micChannel == 0 ? 0x07E0 : 0x7BEF);
+    tft->setCursor(1, 120);
+    tft->print("Mic R");
+    tft->fillRect(34, 120, bar(right), 7, micChannel == 1 ? 0x07E0 : 0x7BEF);
+    text(134, String("Using the ") + (micChannel ? "right" : "left") + " mic", 0x07FF, 1);
+  }
+  delay(1200);
+}
+
 void setup() {
   Serial.begin(115200);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -452,23 +591,36 @@ void setup() {
     delay(200);
   }
   setupScreen();
-  note = "Joining " WIFI_SSID "...";
-  draw();
 
   ring = static_cast<uint8_t *>(ps_malloc(PLAY_BUFFER));
   amp.setPins(AMP_BCLK, AMP_LRC, AMP_DIN);
   amp.begin(I2S_MODE_STD, RATE, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
+  // Both channels, always: which one the INMP441 sends on isn't documented, so the check below picks.
   mic.setPins(MIC_SCK, MIC_WS, -1, MIC_SD);
-  mic.begin(I2S_MODE_STD, RATE, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO, MIC_RIGHT_CHANNEL ? I2S_STD_SLOT_RIGHT : I2S_STD_SLOT_LEFT);
+  mic.begin(I2S_MODE_STD, RATE, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO);
   if (ring) xTaskCreatePinnedToCore(playTask, "play", 4096, nullptr, 2, nullptr, 0);
+  bootCheck();
 
+  note = "Joining " WIFI_SSID "...";
+  draw();
+  logLine("joining Wi-Fi \"%s\"", WIFI_SSID);
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  unsigned long started = millis(), lastNote = 0;
   while (WiFi.status() != WL_CONNECTED) {
     readButton();
     delay(100);
+    unsigned long waited = millis() - started;
+    if (waited > 12000 && millis() - lastNote > 10000) {
+      lastNote = millis();
+      logLine("still joining \"%s\" after %lu s (status %d): it needs 2.4 GHz; check WIFI_SSID and WIFI_PASSWORD in config.h", WIFI_SSID, waited / 1000, (int)WiFi.status());
+      note = "Still joining " WIFI_SSID ". It needs 2.4 GHz Wi-Fi; check config.h.";
+      draw();
+    }
   }
-  note = "Connecting to Huddle...";
+  logLine("Wi-Fi joined: address %s, signal %d dBm", WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
+  logLine("connecting to Huddle at %s://%s:%d/devices/ws", HUDDLE_TLS ? "wss" : "ws", HUDDLE_HOST, HUDDLE_PORT);
+  note = String("Connecting to Huddle at ") + HUDDLE_HOST + "...";
   redraw = true;
 
   static String auth = String("Authorization: Bearer ") + DEVICE_TOKEN;
