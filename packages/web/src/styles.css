@@ -3960,583 +3960,265 @@ h1 .badge {
   border-radius: 8px;
 }
 
-/* ---------- Agents: who's working on a run, as an org chart ---------- */
+/* ---------- Who's on it: a run as a relay of hand-offs ---------- */
 
-.agt {
-  --agt-line: #9cc0f4;
-  --agt-card-w: 232px;
-  --agt-gap: 20px;
-  --agt-run: #2563d9;
-  --agt-run-soft: #e8f0fd;
-  --agt-ok: #23824a;
-  --agt-ok-soft: #e4f4e9;
-  --agt-wait: #b25e00;
-  --agt-wait-soft: #fdefdb;
-  --agt-bad: #c93a2f;
-  --agt-bad-soft: #fce7e5;
-  --agt-off: #77776f;
-  --agt-off-soft: #eeeeea;
-  position: relative;
-}
-
-@media (prefers-color-scheme: dark) {
-  .agt {
-    --agt-line: #3c5f97;
-    --agt-run: #8ab4ff;
-    --agt-run-soft: #1c2944;
-    --agt-ok: #6cc28a;
-    --agt-ok-soft: #1b3024;
-    --agt-wait: #e8b261;
-    --agt-wait-soft: #392b14;
-    --agt-bad: #f08a80;
-    --agt-bad-soft: #3b1d1a;
-    --agt-off: #a3a39b;
-    --agt-off-soft: #2a2a27;
-  }
-}
-
-.agt-head {
-  position: relative;
+.crew-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 10px 16px;
-  margin-bottom: 18px;
+  gap: 6px 16px;
+  margin-bottom: 10px;
 }
 
-.agt .agt-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+.crew-head h2 {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text);
-  text-transform: none;
-  letter-spacing: normal;
 }
 
-.agt-title .agt-glyph {
-  width: 18px;
-  height: 18px;
-  color: var(--agt-run);
-}
-
-.agt-counts {
+.crew-summary {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  font-size: 14px;
+  gap: 6px;
+  margin: 0;
+  font-size: 13.5px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
-.agt-count-running {
-  color: var(--agt-run);
-}
-
-.agt-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 9px;
+.crew-jump {
+  margin-left: 6px;
   border: 0;
-  border-radius: 7px;
   font: inherit;
-  font-size: 13.5px;
-  cursor: pointer;
-}
-
-.agt-chip .agt-glyph {
-  width: 14px;
-  height: 14px;
-}
-
-.agt-chip-warn {
-  color: var(--agt-wait);
-  background: var(--agt-wait-soft);
-}
-
-.agt-chip-danger {
-  color: var(--agt-bad);
-  background: var(--agt-bad-soft);
-}
-
-.agt-cost {
-  color: var(--text);
+  font-size: 12px;
   font-weight: 600;
-}
-
-/* What failed, and Retry. */
-.agt-pop {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 5;
-  width: min(370px, 100%);
-  padding: 14px 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  box-shadow: var(--shadow-lg);
-  animation: agt-in 0.18s ease-out both;
-}
-
-.agt-pop-head {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-}
-
-.agt-pop-head p {
-  display: -webkit-box;
-  margin: 3px 0 0;
-  overflow: hidden;
-  font-size: 14.5px;
-  line-height: 1.35;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-}
-
-.agt-pop-task {
-  color: var(--muted);
-}
-
-.agt-pop-icon {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  color: var(--agt-bad);
-  background: var(--agt-bad-soft);
-  border-radius: 8px;
-}
-
-.agt-pop-icon .agt-glyph {
-  width: 15px;
-  height: 15px;
-}
-
-.agt-pop-error {
-  margin: 8px 0 12px 38px;
-  font-size: 14px;
-  line-height: 1.4;
-}
-
-.agt-pop-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.agt-btn {
-  padding: 7px 14px;
-  border: 0;
-  border-radius: 8px;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text);
-  background: var(--surface-2);
   cursor: pointer;
 }
 
-.agt-btn:hover {
-  background: var(--surface-3);
-}
-
-.agt-btn-dark,
-.agt-btn-dark:hover {
-  color: var(--surface);
-  background: var(--text);
-}
-
-.agt-btn:disabled {
-  opacity: 0.6;
-  cursor: progress;
-}
-
-/* The chart: the run on top, a bus, a column per card, what each fanned out to stacked under it. */
-.agt-scroll {
-  overflow-x: auto;
-  padding: 2px 2px 14px;
-}
-
-.agt-tree {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: max-content;
-  min-width: 100%;
-}
-
-.agt-children {
-  position: relative;
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: var(--agt-card-w);
-  column-gap: var(--agt-gap);
+/* One card, rows down a rail of Huddlers. */
+.crew-list {
+  gap: 0;
   margin: 0;
-  padding: 30px 0 0;
+  padding: 6px 0;
   list-style: none;
 }
 
-/* Down from the run to the bus. */
-.agt-children::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 50%;
-  height: 16px;
-  border-left: 2px solid var(--agt-line);
-  transform: translateX(-1px);
-}
-
-.agt-col {
+.crew-row {
   position: relative;
-}
-
-/* The bus: each column carries its share, rounded down into the first and last. */
-.agt-col::before {
-  content: "";
-  position: absolute;
-  top: -14px;
-  left: calc(var(--agt-gap) / -2);
-  right: calc(var(--agt-gap) / -2);
-  border-top: 2px solid var(--agt-line);
-}
-
-.agt-col:first-child::before {
-  left: calc(50% - 1px);
-  height: 14px;
-  border-left: 2px solid var(--agt-line);
-  border-top-left-radius: 12px;
-}
-
-.agt-col:last-child::before {
-  right: calc(50% - 1px);
-  height: 14px;
-  border-right: 2px solid var(--agt-line);
-  border-top-right-radius: 12px;
-}
-
-.agt-only .agt-col::before {
-  display: none;
-}
-
-.agt-stub {
-  position: absolute;
-  top: -14px;
-  left: 50%;
-  height: 14px;
-  border-left: 2px solid var(--agt-line);
-  transform: translateX(-1px);
-}
-
-.agt-col:first-child:not(:only-child) > .agt-stub,
-.agt-col:last-child:not(:only-child) > .agt-stub {
-  display: none;
-}
-
-/* What a card fanned out to: a rail down its left, a rounded elbow into each. */
-.agt-stack {
-  margin: 0 0 0 16px;
-  padding: 0 0 0 26px;
-  list-style: none;
-}
-
-.agt-stack > li {
-  position: relative;
-  margin-top: 16px;
-}
-
-.agt-stack > li::before {
-  content: "";
-  position: absolute;
-  top: -16px;
-  left: -26px;
-  width: 26px;
-  height: 46px;
-  border-left: 2px solid var(--agt-line);
-  border-bottom: 2px solid var(--agt-line);
-  border-bottom-left-radius: 12px;
-}
-
-.agt-stack > li:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  top: 28px;
-  bottom: -16px;
-  left: -26px;
-  border-left: 2px solid var(--agt-line);
-}
-
-.agt-stack .agt-card {
-  width: calc(var(--agt-card-w) - 28px);
-}
-
-/* A card. */
-.agt-card {
-  position: relative;
-  width: var(--agt-card-w);
-  padding: 13px 14px 11px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  box-shadow: 0 1px 2px rgb(20 20 15 / 0.04), 0 4px 16px rgb(20 20 15 / 0.05);
-  text-align: left;
-  animation: agt-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-  transition: opacity 0.3s ease, box-shadow 0.3s ease;
-}
-
-.agt-root {
-  width: 300px;
-}
-
-.agt-card.agt-stopped,
-.agt-card.agt-declined {
-  opacity: 0.6;
-}
-
-/* Avatar on the left; the name and the status on top, the model under them across the card. */
-.agt-top {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  column-gap: 8px;
-  row-gap: 1px;
-  align-items: center;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  column-gap: 12px;
+  padding: 12px 18px 12px 12px;
+  animation: crew-in 0.4s ease-out both;
 }
 
-.agt-top > .agt-avatar {
-  grid-row: 1 / span 2;
+.crew-row + .crew-row {
+  border-top: 1px solid var(--border);
+}
+
+/* The rail: through every avatar, from the first row's to the last's. */
+.crew-row::before {
+  content: "";
+  position: absolute;
+  left: 39px;
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid var(--border-strong);
+}
+
+.crew-list > .crew-row:first-child::before {
+  top: 30px;
+}
+
+.crew-list > .crew-row:last-child::before {
+  bottom: calc(100% - 30px);
+}
+
+.crew-list > .crew-row:only-child::before {
+  display: none;
+}
+
+.crew-row.crew-running {
+  background: color-mix(in srgb, var(--accent-soft) 60%, transparent);
+}
+
+.crew-row.crew-needs-you {
+  background: color-mix(in srgb, var(--warn-soft) 70%, transparent);
+}
+
+.crew-row.crew-stopped .crew-main,
+.crew-row.crew-declined .crew-main,
+.crew-row.crew-stopped .crew-mark {
+  opacity: 0.55;
+}
+
+.crew-mark {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
   align-self: start;
+  width: 40px;
+  height: 40px;
+  margin-left: 8px;
+  background: var(--surface);
+  border-radius: 50%;
 }
 
-.agt-top > .agt-by {
-  grid-column: 2 / 4;
-}
-
-.agt-avatar {
+.crew-you {
   display: grid;
   place-items: center;
   width: 32px;
   height: 32px;
-  color: var(--muted);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 9px;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-radius: 50%;
 }
 
-.agt-avatar > .agt-glyph {
+.crew-you .crew-glyph {
   width: 18px;
   height: 18px;
 }
 
-.agt-name {
-  overflow: hidden;
-  font-size: 14.5px;
-  font-weight: 600;
-  line-height: 1.25;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.crew-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
-.agt-by {
-  overflow: hidden;
+.crew-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0;
+}
+
+.crew-line strong {
+  font-size: 14.5px;
+}
+
+.crew-by {
   font-size: 12.5px;
   color: var(--muted);
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
-.agt-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 7px;
-  border: 0;
-  border-radius: 7px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-  transition: color 0.3s ease, background-color 0.3s ease;
-}
-
-button.agt-status {
-  cursor: pointer;
-}
-
-.agt-status .agt-glyph {
-  width: 13px;
-  height: 13px;
-}
-
-.agt-running .agt-status {
-  color: var(--agt-run);
-  background: var(--agt-run-soft);
-}
-
-.agt-done .agt-status {
-  color: var(--agt-ok);
-  background: var(--agt-ok-soft);
-}
-
-.agt-needs-you .agt-status {
-  color: var(--agt-wait);
-  background: var(--agt-wait-soft);
-}
-
-.agt-failed .agt-status {
-  color: var(--agt-bad);
-  background: var(--agt-bad-soft);
-}
-
-.agt-stopped .agt-status,
-.agt-declined .agt-status {
-  color: var(--agt-off);
-  background: var(--agt-off-soft);
-}
-
-.agt-spin {
-  width: 11px;
-  height: 11px;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: agt-spin 0.8s linear infinite;
-}
-
-.agt-task {
+.crew-task {
   display: -webkit-box;
-  margin: 10px 0 0;
+  margin: 0;
   overflow: hidden;
   font-size: 13.5px;
-  line-height: 1.42;
+  line-height: 1.45;
+  color: var(--text);
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
 
-.agt-tools {
-  display: inline-flex;
-  gap: 3px;
+.crew-tool {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
   margin-right: 6px;
   vertical-align: -4px;
-}
-
-.agt-tool {
-  display: grid;
-  place-items: center;
-  width: 19px;
-  height: 19px;
   color: var(--muted);
-  border: 1px solid var(--border);
+  background: var(--surface-2);
   border-radius: 5px;
 }
 
-.agt-tool .agt-glyph {
-  width: 12px;
-  height: 12px;
+.crew-tool .crew-glyph {
+  width: 11px;
+  height: 11px;
 }
 
-.agt-card .answer {
-  margin-top: 10px;
+.crew-main .answer {
+  margin-top: 6px;
 }
 
-.agt-card .answer-buttons .btn {
-  padding: 5px 14px;
+.crew-error {
+  margin-top: 6px;
 }
 
-.agt-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 10px;
-  font-size: 13px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.agt-foot b {
-  font-weight: 600;
-  color: var(--text);
-}
-
-.agt-fold {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 5px;
+.crew-toggle {
+  align-self: flex-start;
+  padding: 0;
   border: 0;
-  border-radius: 6px;
   font: inherit;
-  color: var(--muted);
+  font-size: 12.5px;
+  color: var(--accent);
   background: none;
   cursor: pointer;
 }
 
-.agt-fold:hover {
-  background: var(--surface-2);
+.crew-toggle:hover {
+  text-decoration: underline;
 }
 
-.agt-fold .agt-glyph {
-  width: 13px;
-  height: 13px;
+.crew-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  text-align: right;
 }
 
-/* Where lines leave a card: under the run's middle, and under a column card's left. */
-.agt-joint {
-  position: absolute;
-  bottom: -6px;
-  left: 11px;
-  width: 11px;
-  height: 11px;
-  background: var(--bg);
-  border: 2px solid var(--agt-line);
-  border-radius: 50%;
+.crew-numbers {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 12.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
-.agt-root > .agt-joint {
-  left: 50%;
-  transform: translateX(-50%);
+.crew-numbers b {
+  font-weight: 600;
+  color: var(--text);
 }
 
-.agt-pulse {
-  animation: agt-pulse 1.4s ease-out;
+/* What a row fanned out to: indented under it, on a short rail of its own. */
+.crew-sub {
+  grid-column: 2 / 4;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  border-left: 2px dotted var(--border-strong);
 }
 
-@keyframes agt-in {
+.crew-row.crew-nested {
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  padding: 8px 0 8px 10px;
+  background: none;
+}
+
+.crew-row.crew-nested::before {
+  display: none;
+}
+
+.crew-row.crew-nested + .crew-row.crew-nested {
+  border-top: 1px dashed var(--border);
+}
+
+.crew-nested .crew-mark {
+  width: 30px;
+  height: 30px;
+  margin-left: 0;
+}
+
+.crew-glyph {
+  display: block;
+}
+
+@keyframes crew-in {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.98);
-  }
-}
-
-@keyframes agt-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes agt-pulse {
-  from {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agt-wait) 55%, transparent);
-  }
-  to {
-    box-shadow: 0 0 0 16px transparent;
+    transform: translateX(-6px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .agt-card,
-  .agt-pop,
-  .agt-pulse {
+  .crew-row {
     animation: none;
-  }
-  .agt-spin {
-    animation-duration: 2.4s;
   }
 }
