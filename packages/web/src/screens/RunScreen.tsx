@@ -1,6 +1,6 @@
 import { api } from "../api.ts";
 import { useApp } from "../app-context.ts";
-import { AnswerButtons } from "../components/Answer.tsx";
+import { AgentsTree } from "../components/AgentsTree.tsx";
 import { ErrorNote, Icon, Link, Loading, StateBadge } from "../components/bits.tsx";
 import { ReceiptPanel } from "../components/ReceiptPanel.tsx";
 import { RunLog } from "../components/RunLog.tsx";
@@ -56,13 +56,10 @@ export function RunScreen({ runId }: { readonly runId: string }) {
             )}
           </header>
 
-          {run.state === "waiting" && run.waiting && (
-            <section className="card waiting-card" aria-label="Waiting for you">
-              <p className="eyebrow">Waiting for you</p>
-              <p className="waiting-message">{run.waiting.message}</p>
-              <AnswerButtons approvalId={run.waiting.id} heldBy={run.waiting.heldBy} onAnswered={refetch} />
-            </section>
-          )}
+          {/* Who's working on it, live; a card that needs you takes your answer, a failed run can be retried. */}
+          <section className="section">
+            <AgentsTree detail={data} onChange={refetch} />
+          </section>
 
           {run.state === "failed" && <ErrorNote message={`${run.at ? `Step "${run.at}" failed: ` : ""}${run.error ?? "The run failed."}`} />}
 

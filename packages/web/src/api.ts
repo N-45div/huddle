@@ -224,6 +224,7 @@ export const api = {
     return call<RunSummary[]>("GET", `/runs${search ? `?${search}` : ""}`);
   },
   run: (runId: string) => call<RunDetail>("GET", `/runs/${id(runId)}`),
+  retryRun: (runId: string) => call<{ runId: string }>("POST", `/runs/${id(runId)}/retry`, {}),
 
   approvals: () => call<WaitingApproval[]>("GET", "/approvals"),
   sandboxRequests: () => call<SandboxRequests>("GET", "/sandbox-requests"),
