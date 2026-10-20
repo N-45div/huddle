@@ -5,7 +5,7 @@ import { mock } from "../../core/src/connectors/mock.ts";
 import { Engine } from "../../core/src/engine.ts";
 import { parseFlow } from "../../core/src/schema.ts";
 import { Store } from "../../core/src/store.ts";
-import { agentsTree, elapsed, modelName, nodesOf, plain } from "../src/agents-tree.ts";
+import { crewOf, elapsed, modelName, nodesOf, plain } from "../src/run-crew.ts";
 
 const PLAN = parseFlow({
   name: "Weekend plan",
@@ -22,13 +22,13 @@ const PLAN = parseFlow({
 
 const detailOf = (store: Store, engine: Engine, runId: string) => ({ run: engine.view(runId), flow: store.run(runId)!.flow, log: store.logOf(runId) });
 
-describe("the Agents tree", () => {
+describe("who is on a run", () => {
   it("shows the flow at the top and each hand-off and approval under it, as they happen", async () => {
     const store = new Store();
     const engine = new Engine(store, { mock });
     const run = await engine.start(PLAN, "two of us, vegetarian");
 
-    const waiting = agentsTree(detailOf(store, engine, run.id));
+    const waiting = crewOf(detailOf(store, engine, run.id));
     assert.equal(waiting.name, "Weekend plan");
     assert.equal(waiting.status, "needs-you");
     assert.equal(waiting.task, "two of us, vegetarian");
@@ -38,7 +38,7 @@ describe("the Agents tree", () => {
     assert.equal(waiting.children[1]!.approvalId, run.waiting!.id, "the card can take your answer");
 
     await engine.decide(run.waiting!.id, true);
-    const done = agentsTree(detailOf(store, engine, run.id));
+    const done = crewOf(detailOf(store, engine, run.id));
     assert.equal(done.status, "done");
     assert.deepEqual(done.children.map((node) => [node.name, node.status]), [["Planner", "done"], ["You", "done"], ["Mailer", "done"]]);
     assert.equal(done.children[2]!.by, "Stand-in", "no model: the connector's name");
@@ -53,13 +53,13 @@ describe("the Agents tree", () => {
     const engine = new Engine(store, { http: slow });
     const runId = engine.launch(flow, "");
     await new Promise((resolve) => setTimeout(resolve, 10));
-    const working = agentsTree(detailOf(store, engine, runId));
+    const working = crewOf(detailOf(store, engine, runId));
     assert.equal(working.status, "running");
     assert.equal(working.children[0]!.status, "running");
     assert.equal(working.children[0]!.endedAt, null);
     finish("Planned.");
     for (let wait = 0; wait < 50 && store.run(runId)?.state !== "done"; wait++) await new Promise((resolve) => setTimeout(resolve, 5));
-    assert.equal(agentsTree(detailOf(store, engine, runId)).children[0]!.status, "done");
+    assert.equal(crewOf(detailOf(store, engine, runId)).children[0]!.status, "done");
   });
 
   it("keeps a failed try under the newest one, stopped, once the step is tried again", async () => {
@@ -76,14 +76,14 @@ describe("the Agents tree", () => {
     const engine = new Engine(store, { http: flaky });
     const run = await engine.start(flow, "");
 
-    const failed = agentsTree(detailOf(store, engine, run.id));
+    const failed = crewOf(detailOf(store, engine, run.id));
     assert.equal(failed.status, "failed");
     assert.equal(failed.children[0]!.status, "failed");
     assert.match(failed.children[0]!.error ?? "", /coupon codes/);
 
     engine.retry(run.id);
     for (let wait = 0; wait < 50 && store.run(run.id)?.state !== "done"; wait++) await new Promise((resolve) => setTimeout(resolve, 5));
-    const retried = agentsTree(detailOf(store, engine, run.id));
+    const retried = crewOf(detailOf(store, engine, run.id));
     const tester = retried.children[0]!;
     assert.equal(tester.status, "done");
     assert.deepEqual(tester.children.map((node) => [node.status, node.error]), [["stopped", "2 of 14 checkout tests fail: coupon codes aren't applied"]]);

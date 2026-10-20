@@ -1,20 +1,20 @@
 import type { Flow, LogLine, RunDetail } from "./types.ts";
 
 /**
- * A run as a tree of who's working on it, for the Agents view: the flow at the top, then each hand-off to an
- * assistant, each time it needed you, the voice that started it and what Huddle learned after, in the order
- * they happened. Under a card: what it fanned out to (an approval's fact check) and earlier tries of a step
- * that failed and was tried again. Built from the run's log alone, so it's the same live or afterwards.
+ * Who's on a run, for the run page: the run itself, then each hand-off to an assistant, each time it needed
+ * you, the voice that started it and what Huddle learned after, in the order they happened. Under a row: what
+ * it fanned out to (an approval's fact check) and earlier tries of a step that failed and was tried again.
+ * Built from the run's log alone, so it's the same live or afterwards.
  */
 
-export type AgentStatus = "running" | "done" | "needs-you" | "failed" | "stopped" | "declined";
-export type AgentKind = "run" | "assistant" | "you" | "facts" | "learning" | "voice";
-/** What a card's small icons say it touched. */
+export type CrewStatus = "running" | "done" | "needs-you" | "failed" | "stopped" | "declined";
+export type CrewKind = "run" | "assistant" | "you" | "facts" | "learning" | "voice";
+/** What a row's small icons say it touched. */
 export type ToolMark = "memory" | "image" | "web" | "sandbox" | "mail" | "mic" | "business" | "tools";
 
-export interface AgentNode {
+export interface CrewNode {
   readonly key: string;
-  readonly kind: AgentKind;
+  readonly kind: CrewKind;
   readonly name: string;
   /** The model or service doing it: "Nemotron 3 Super", "Tavily · Nemotron 3 Super". */
   readonly by: string;
@@ -22,7 +22,7 @@ export interface AgentNode {
   readonly avatar: { readonly id?: string; readonly connector?: string };
   readonly task: string;
   readonly tools: readonly ToolMark[];
-  readonly status: AgentStatus;
+  readonly status: CrewStatus;
   /** What it cost, where that's known. */
   readonly costUsd: number | null;
   readonly startedAt: string;
@@ -30,7 +30,7 @@ export interface AgentNode {
   readonly error: string | null;
   /** The approval to answer, while it needs you. */
   readonly approvalId: string | null;
-  readonly children: readonly AgentNode[];
+  readonly children: readonly CrewNode[];
 }
 
 const CONNECTORS: Record<string, string> = {
@@ -75,17 +75,21 @@ const CONNECTOR_TOOL: Record<string, ToolMark> = { tavily: "web", contextdev: "w
 /** Any "vendor/model" ids inside a line, made readable. */
 const readableModels = (text: string): string => text.replace(/\b[\w.-]+\/[\w.-]+\b/g, (id) => modelName(id));
 
-/** A line of text as a card shows it: markdown's marks and a table's pipes taken out, on one line. */
+/**
+ * A line of text as a row shows it: markdown's marks and a table's pipes taken out, on one line. Simple
+ * patterns and a split, no nested repeats, so a long message can't make the page stall.
+ */
 export function plain(value: string): string {
-  return value
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/\|?\s*:?-{3,}:?\s*(?=\||$)/gm, " ")
+  const flat = value
+    .replace(/```[^`]*```/g, " ")
+    .replace(/:?-{3,}:?/g, " ")
     .replace(/[*_`#>~]+/g, "")
-    .replace(/\s*\|\s*/g, " · ")
-    .replace(/\s+/g, " ")
-    .replace(/^(\s*·\s*)+|(\s*·\s*)+$/g, "")
-    .replace(/(\s*·\s*){2,}/g, " · ")
-    .trim();
+    .replaceAll("|", "·");
+  return flat
+    .split("·")
+    .map((part) => part.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** An assistant's name without a trailing "(model)": the card says the model underneath. */
@@ -125,7 +129,7 @@ function attemptsOf(lines: readonly LogLine[]): Attempt[] {
   return attempts;
 }
 
-export function agentsTree(detail: Pick<RunDetail, "run" | "flow" | "log">): AgentNode {
+export function crewOf(detail: Pick<RunDetail, "run" | "flow" | "log">): CrewNode {
   const { run, flow, log } = detail;
   const live = run.state === "running" || run.state === "waiting";
   const steps = new Map<string, LogLine[]>();
@@ -137,7 +141,7 @@ export function agentsTree(detail: Pick<RunDetail, "run" | "flow" | "log">): Age
   // The step being worked on: the run says which once it's moved on from its first, the log says before that.
   const current = live ? (run.at ?? log.findLast((line) => steps.has(line.stepId))?.stepId ?? null) : null;
 
-  const children: AgentNode[] = [];
+  const children: CrewNode[] = [];
   const heard = log.find((line) => line.kind === "heard");
   if (heard) {
     const seconds = number(heard.detail, "seconds");
@@ -190,7 +194,7 @@ export function agentsTree(detail: Pick<RunDetail, "run" | "flow" | "log">): Age
   }
 
   const started = log.find((line) => line.kind === "started");
-  const all = (nodes: readonly AgentNode[]): AgentNode[] => nodes.flatMap((node) => [node, ...all(node.children)]);
+  const all = (nodes: readonly CrewNode[]): CrewNode[] => nodes.flatMap((node) => [node, ...all(node.children)]);
   const costs = all(children).flatMap((node) => (node.costUsd === null ? [] : [node.costUsd]));
   const input = run.context.input.trim();
   return {
@@ -211,18 +215,18 @@ export function agentsTree(detail: Pick<RunDetail, "run" | "flow" | "log">): Age
   };
 }
 
-function assistantNode(flow: Flow, run: Pick<RunDetail["run"], "state" | "at" | "waiting">, stepId: string, agentId: string, lines: readonly LogLine[], working: boolean): AgentNode {
+function assistantNode(flow: Flow, run: Pick<RunDetail["run"], "state" | "at" | "waiting">, stepId: string, agentId: string, lines: readonly LogLine[], working: boolean): CrewNode {
   const assistant = flow.assistants.find((candidate) => candidate.id === agentId);
   const by = assistant?.model ? modelName(assistant.model) : (CONNECTORS[assistant?.connector ?? ""] ?? assistant?.connector ?? "Assistant");
   const attempts = attemptsOf(lines);
-  const nodes = attempts.map((attempt, index): AgentNode => {
+  const nodes = attempts.map((attempt, index): CrewNode => {
     const last = index === attempts.length - 1;
     const answered = attempt.lines.find((line) => line.kind === "answered");
     const failed = attempt.lines.find((line) => line.kind === "failed");
     const declined = attempt.lines.find((line) => line.kind === "declined" || line.kind === "refused");
     const waiting = attempt.lines.findLast((line) => line.kind === "waiting");
     const held = waiting && !attempt.lines.some((line) => line.at >= waiting.at && (line.kind === "approved" || line.kind === "released" || line.kind === "declined" || line.kind === "refused")) && !attempt.asked;
-    let status: AgentStatus;
+    let status: CrewStatus;
     if (answered) status = "done";
     else if (failed) status = last ? "failed" : "stopped";
     else if (declined) status = "declined";
@@ -256,10 +260,10 @@ function assistantNode(flow: Flow, run: Pick<RunDetail["run"], "state" | "at" | 
   return { ...latest, key: stepId, children: nodes.slice(0, -1).reverse() };
 }
 
-function approvalNode(run: Pick<RunDetail["run"], "state" | "at" | "waiting">, stepId: string, message: string, lines: readonly LogLine[], before: (line: LogLine) => string): AgentNode {
+function approvalNode(run: Pick<RunDetail["run"], "state" | "at" | "waiting">, stepId: string, message: string, lines: readonly LogLine[], before: (line: LogLine) => string): CrewNode {
   const waiting = lines.findLast((line) => line.kind === "waiting");
   const decided = lines.findLast((line) => line.kind === "approved" || line.kind === "declined");
-  const children: AgentNode[] = [];
+  const children: CrewNode[] = [];
   const checked = lines.find((line) => line.kind === "fact-checked");
   const unchecked = lines.find((line) => line.kind === "unchecked");
   if (checked) {
@@ -273,7 +277,7 @@ function approvalNode(run: Pick<RunDetail["run"], "state" | "at" | "waiting">, s
       key: `${stepId}:facts`,
       kind: "facts",
       name: "Fact check",
-      by: `Tavily · ${readableModels(text(checked.detail, "by")) || "a model"}`,
+      by: ((by) => (!by ? "Tavily" : /tavily/i.test(by) ? by : `Tavily · ${by}`))(readableModels(text(checked.detail, "by"))),
       avatar: { id: "fact-check", connector: "tavily" },
       tools: ["web"],
       task: facts ? `${facts} fact${facts === 1 ? "" : "s"} checked on the web: ${counts.filter(([count]) => count > 0).map(([count, word]) => `${count} ${word}`).join(", ")}` : "Nothing in it the web could check",
@@ -323,7 +327,7 @@ function approvalNode(run: Pick<RunDetail["run"], "state" | "at" | "waiting">, s
 }
 
 /** Every card in the tree, the run's own first. */
-export function nodesOf(root: AgentNode): AgentNode[] {
+export function nodesOf(root: CrewNode): CrewNode[] {
   return [root, ...root.children.flatMap((child) => nodesOf(child))];
 }
 
