@@ -291,10 +291,10 @@ function VirtualButton() {
       {screen?.type === "approval" && (
         <div className="gadget-actions">
           <button type="button" className="btn btn-primary" onClick={() => send({ type: "answer", id: screen.id, yes: true })}>
-            Yes <span className="muted">(press)</span>
+            Yes <span className="muted">(hold)</span>
           </button>
           <button type="button" className="btn" onClick={() => send({ type: "answer", id: screen.id, yes: false })}>
-            No <span className="muted">(hold)</span>
+            No <span className="muted">(tap)</span>
           </button>
         </div>
       )}
