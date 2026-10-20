@@ -107,6 +107,19 @@ export class Engine {
     return run.id;
   }
 
+  /**
+   * Tries a failed run's failed step again and carries on from there, in the background. The earlier try stays
+   * in the log, so the run shows it stopped and the new one under way. Throws straight away if it can't.
+   */
+  retry(runId: string): string {
+    const run = this.store.run(runId);
+    if (!run) throw new Error(`There's no run ${runId}.`);
+    if (run.state !== "failed" || !run.at) throw new Error("Only a run that failed at one of its steps can be tried again.");
+    this.store.log(run.id, run.at, "retried", {});
+    void this.advance(run, run.at).catch((error: unknown) => console.error(`[huddle] retrying run ${run.id}:`, error));
+    return run.id;
+  }
+
   /** Answers an approval and returns at once; the run carries on in the background. Throws straight away if it can't be answered. */
   answer(approvalId: string, yes: boolean): string {
     const approval = this.store.approval(approvalId);

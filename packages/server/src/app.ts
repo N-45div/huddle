@@ -346,6 +346,14 @@ export function createApp(options: AppOptions): Hono {
     const log = store.logOf(run.id);
     return c.json<RunDetail>({ run: engine.view(run.id), flow: run.flow, log, receipt: receiptOf(run.flow, log, store.notes()) });
   });
+  // A failed run's failed step, tried again: the run carries on in the background.
+  app.post("/api/runs/:id/retry", (c) => {
+    try {
+      return c.json({ runId: engine.retry(c.req.param("id")) }, 202);
+    } catch (error) {
+      return bad(c, error instanceof Error ? error.message : String(error), store.run(c.req.param("id")) ? 409 : 404);
+    }
+  });
   app.get("/api/approvals", (c) =>
     c.json<WaitingApproval[]>(
       store.waitingApprovals().map((approval) => ({ id: approval.id, runId: approval.runId, stepId: approval.stepId, flowName: store.run(approval.runId)?.flow.name ?? "", message: approval.message, createdAt: approval.createdAt, heldBy: approval.heldBy, checks: approval.checks })),

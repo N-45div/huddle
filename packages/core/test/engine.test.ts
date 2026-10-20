@@ -163,4 +163,26 @@ describe("shared memory", () => {
     await engine.decide((await engine.start(invoiceFlow, "x")).waiting!.id, true);
     assert.deepEqual(store.notes().map((note) => [note.slice, note.status]), [["money", "suggested"]]);
   });
+
+  it("tries a failed step again when asked, keeping the failed try in the log, and only for a failed run", async () => {
+    let calls = 0;
+    const flaky: Connector = {
+      async send() {
+        calls += 1;
+        if (calls === 1) throw new Error("The tests timed out.");
+        return { text: "All 14 pass." };
+      },
+    };
+    const flow = parseFlow({ name: "Checkout", assistants: [{ id: "tester", connector: "http", url: "http://tester.test" }], steps: [{ id: "test", type: "agent", agent: "tester", ask: "Run the checkout tests" }] });
+    const store = new Store();
+    const engine = new Engine(store, { http: flaky });
+    const failed = await engine.start(flow, "");
+    assert.equal(failed.state, "failed");
+    assert.throws(() => engine.retry("run_missing"), /no run/);
+    assert.equal(engine.retry(failed.id), failed.id);
+    for (let wait = 0; wait < 50 && store.run(failed.id)?.state !== "done"; wait++) await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(store.run(failed.id)?.state, "done");
+    assert.deepEqual(store.logOf(failed.id).map((line) => line.kind), ["asked", "failed", "retried", "asked", "answered"]);
+    assert.throws(() => engine.retry(failed.id), /Only a run that failed/);
+  });
 });
