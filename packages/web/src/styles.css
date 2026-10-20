@@ -4115,6 +4115,13 @@ h1 .badge {
   -webkit-box-orient: vertical;
 }
 
+/* Settled rows keep to one line; the row that's working, waiting for you or failed shows two. */
+.crew-row.crew-done .crew-task,
+.crew-row.crew-stopped .crew-task,
+.crew-row.crew-declined .crew-task {
+  -webkit-line-clamp: 1;
+}
+
 .crew-tool {
   display: inline-grid;
   place-items: center;
