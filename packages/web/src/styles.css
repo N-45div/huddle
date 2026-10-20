@@ -4091,9 +4091,13 @@ h1 .badge {
 }
 
 .agt-pop-head p {
+  display: -webkit-box;
   margin: 3px 0 0;
+  overflow: hidden;
   font-size: 14.5px;
   line-height: 1.35;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 
 .agt-pop-task {
