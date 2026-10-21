@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api, describeError, deviceSocketUrl } from "../api.ts";
 import { useApp } from "../app-context.ts";
 import { Empty, ErrorNote, Hint, Icon, Loading } from "../components/bits.tsx";
@@ -8,6 +8,7 @@ import { useResource } from "../hooks.ts";
 import { Huddler } from "../huddlers/Huddler.tsx";
 import type { Mood } from "../huddlers/huddler.ts";
 import type { Device, DeviceMessage } from "../types.ts";
+import { usbSession } from "../usb-session.ts";
 import { openMic, PcmPlayer } from "../voice.ts";
 import { TokenRow } from "./ContactsScreen.tsx";
 
@@ -28,9 +29,76 @@ export function DevicesScreen() {
           <p className="lede">The Huddle button shows what's waiting for you, takes your yes or no, and starts the flows you put on it. This one works the same, in the browser.</p>
         </div>
       </header>
+      <UsbButton />
       <VirtualButton />
       <YourDevices />
     </div>
+  );
+}
+
+const USB_STATE = { closed: "Not connected.", waiting: "Port open. Waiting for the button to say who it is…", connecting: "Connecting it to Huddle…", live: "Connected over USB." } as const;
+
+/**
+ * The real button on its USB cable: no Wi-Fi, no firewall rule. Chrome's Web Serial reads its frames and
+ * passes them to Huddle as that button (usb-link.ts); the link stays up on Huddle's other pages.
+ */
+function UsbButton() {
+  const usb = useSyncExternalStore(usbSession.subscribe, usbSession.snapshot);
+  const log = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    void usbSession.resume();
+  }, []);
+  useEffect(() => {
+    log.current?.scrollTo({ top: log.current.scrollHeight });
+  }, [usb.lines]);
+
+  if (!usbSession.supported()) {
+    return (
+      <section className="card" aria-labelledby="usb-title">
+        <h2 className="card-title" id="usb-title">
+          The button, by USB
+        </h2>
+        <Hint>This browser can't reach USB devices. Open Huddle in Chrome or Edge to connect the button by its cable.</Hint>
+      </section>
+    );
+  }
+  return (
+    <section className="card usb-card" aria-labelledby="usb-title">
+      <div className="tidy-head">
+        <div>
+          <h2 className="card-title" id="usb-title">
+            The button, by USB
+          </h2>
+          <p className="hint" aria-live="polite">
+            {USB_STATE[usb.state]}
+          </p>
+        </div>
+        {usb.state === "closed" ? (
+          <button type="button" className="btn btn-primary" onClick={() => void usbSession.choose()}>
+            Connect by USB
+          </button>
+        ) : (
+          <button type="button" className="btn" onClick={() => void usbSession.disconnect()}>
+            Disconnect
+          </button>
+        )}
+      </div>
+      <Hint>
+        No Wi-Fi or firewall rule needed: flash the button with <code>HUDDLE_LINK_USB 1</code>, plug it in and connect. The link stays up on Huddle's other
+        pages while this tab is open. Disconnect before you flash it again.
+      </Hint>
+      {usb.error && <ErrorNote message={usb.error} />}
+      {usb.lines.length > 0 && (
+        <pre className="usb-log" ref={log} aria-label="What the button says">
+          {usb.lines.map((line) => (
+            <span key={line.id} className={line.from === "link" ? "usb-note" : undefined}>
+              {line.text}
+              {"\n"}
+            </span>
+          ))}
+        </pre>
+      )}
+    </section>
   );
 }
 

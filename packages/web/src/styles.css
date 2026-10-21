@@ -4229,3 +4229,27 @@ h1 .badge {
     animation: none;
   }
 }
+
+/* The button on its USB cable: what it says, as it says it. */
+.usb-card {
+  gap: 12px;
+}
+
+.usb-log {
+  max-height: 240px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.usb-note {
+  color: var(--accent);
+}
