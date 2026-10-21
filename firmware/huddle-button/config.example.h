@@ -1,6 +1,10 @@
 // setup.mjs writes config.h for you (node firmware/huddle-button/setup.mjs). By hand: copy this file to config.h
 // and fill it in. config.h stays out of git: it holds your Wi-Fi password and the token.
 
+// How it reaches Huddle. 1: over its USB cable; the canvas passes its messages on (Devices, "Connect by USB"),
+// so the Wi-Fi settings below go unused and no firewall rule is needed. 0: over the Wi-Fi below.
+#define HUDDLE_LINK_USB 0
+
 // Your Wi-Fi (2.4 GHz: the ESP32-S3 can't join 5 GHz networks, and laptops are often on the 5 GHz one).
 #define WIFI_SSID "your-wifi-name"
 #define WIFI_PASSWORD "your-wifi-password"

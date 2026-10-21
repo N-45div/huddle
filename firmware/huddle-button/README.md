@@ -13,12 +13,22 @@ screen, INMP441 mic, MAX98357A speaker amp, one BOOT button) as a gadget for Hud
   your own machine through NeMo-Speech. Only the words go on to your assistants, and each run's receipt
   says your voice was heard on this machine.
 
-It talks to Huddle over a WebSocket (`/devices/ws`) with its own token. The canvas's **Devices** page has a
-virtual button that works the same way, to try it without the hardware.
+It talks to Huddle over a WebSocket (`/devices/ws`) with its own token, in one of two ways:
+
+- **Over its USB cable (the default):** the canvas passes its messages on. Open **Devices** in Chrome or Edge
+  and press **Connect by USB**; Chrome's Web Serial reads the button, and the ESP32-S3's own USB port needs no
+  driver. There's no Wi-Fi, no address and no firewall rule, so nothing needs an administrator. The card shows
+  everything the button logs, and the link stays up while you move around the canvas.
+- **Over Wi-Fi:** the button connects to Huddle on your network. Huddle has to listen beyond your machine,
+  and your firewall has to let it in, which on Windows takes an administrator.
+
+The **Devices** page also has a virtual button that works the same way, to try it without the hardware.
 
 ## Set up Huddle
 
-1. **Let the button reach Huddle:** start Huddle with `HUDDLE_HOST=0.0.0.0` and a `HUDDLE_TOKEN`. Huddle
+Over USB, start Huddle as usual (`npm start`), and skip to step 2.
+
+1. **Wi-Fi only: let the button reach Huddle.** Start Huddle with `HUDDLE_HOST=0.0.0.0` and a `HUDDLE_TOKEN`. Huddle
    refuses to listen beyond your machine without a token. Then allow its port through your firewall for
    your private network. On Windows, once, in an Administrator PowerShell:
 
@@ -52,14 +62,14 @@ virtual button that works the same way, to try it without the hardware.
    $env:HUDDLE_TOKEN="<your token>"; node firmware/huddle-button/setup.mjs         # PowerShell
    ```
 
-   It does the following:
-   - makes the button's device token;
+   It makes the button's device token and asks how the button connects: **usb** (press Enter) or **wifi**.
+   For Wi-Fi, it also does the following:
    - finds this computer's address on your Wi-Fi;
    - asks for the Wi-Fi name and password (the password is typed hidden);
-   - on Windows, warns if that network is 5 GHz;
-   - prints the start, firewall and upload commands for your machine.
+   - on Windows, warns if that network is 5 GHz.
 
-   Add `--huddle http://127.0.0.1:7760` if Huddle isn't on port 7700.
+   Then it prints the next steps for your machine. Add `--usb` or `--wifi` to skip the question, and
+   `--huddle http://127.0.0.1:7760` if Huddle isn't on port 7700.
 
    To do it by hand instead: copy `config.example.h` to `config.h`, and make the token in the canvas
    (**Devices**, then **Add and make a token**; it's shown once).
@@ -73,11 +83,15 @@ virtual button that works the same way, to try it without the hardware.
    arduino-cli upload --fqbn "$FQBN" -p COM5 firmware/huddle-button   # your board's port: arduino-cli board list
    ```
 
-   If the upload can't find the board, hold BOOT, tap RESET, let go of BOOT, and upload again.
+   If the upload can't find the board, hold BOOT, tap RESET, let go of BOOT, and upload again. Over USB,
+   press **Disconnect** on the Devices page first: only one program can hold the port.
+3. **Over USB, connect it:** in Chrome or Edge, open the canvas, go to **Devices**, press **Connect by USB**
+   and pick the ESP32-S3. Chrome remembers it, so the Devices page reconnects it by itself next time.
 
 ## The first start
 
-The button checks itself before it joins anything, and logs every step on USB:
+The button checks itself before it joins anything, and logs every step on USB. Over USB, the Devices card
+shows the log. Over Wi-Fi, read it with a serial monitor:
 
 ```bash
 arduino-cli monitor -p COM5 -c baudrate=115200
@@ -86,7 +100,8 @@ arduino-cli monitor -p COM5 -c baudrate=115200
 1. **Screen:** "Checking myself", the screen wiring in use and the memory it found.
 2. **Speaker and mic:** it plays a two-note chime and listens to it on both mic channels. It draws the two
    levels, keeps the channel that heard the chime, and remembers it for the next start.
-3. **Wi-Fi:** it joins the network in `config.h` and logs its address and signal strength.
+3. **The link:** over USB, it says who it is every 2 seconds until the canvas answers. Over Wi-Fi, it joins
+   the network in `config.h` and logs its address and signal strength.
 4. **Huddle:** it connects. Then it logs each message from Huddle, what it heard you say, and each answer
    you gave.
 
@@ -99,6 +114,11 @@ arduino-cli monitor -p COM5 -c baudrate=115200
   above (`PSRAM=opi`).
 - **It never hears you:** watch the mic levels at start-up. If neither channel hears the chime, it uses the
   channel that heard last time, or `MIC_RIGHT_CHANNEL` if none has yet, so try `1`.
+- **Connect by USB lists nothing:** use a cable that carries data, not one for charging only, and the
+  board's ESP32-S3 USB port. The page only offers Espressif's own USB.
+- **"Couldn't open the button's port":** a serial monitor or an upload has it. Close that, then connect again.
+- **"Huddle refused the button":** its token isn't one this Huddle made. Run the setup script again and
+  flash it.
 - **Stuck joining Wi-Fi:** it needs a 2.4 GHz network. Laptops are often on the router's 5 GHz name, and the
   button can't join that one. The router's 2.4 GHz network is still the same network as your laptop.
 - **"Can't reach Huddle":** check these, in order:
