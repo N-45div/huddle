@@ -1,10 +1,13 @@
 #!/usr/bin/env node
-// Sets a Huddle button up to talk to your Huddle: makes its device token, finds this computer's address on your
-// network, asks for your Wi-Fi (the password typed hidden, never printed), and writes config.h next to the
-// sketch. Then it says how to let the button in and how to flash it.
+// Sets a Huddle button up to talk to your Huddle: makes its device token and writes config.h next to the sketch,
+// then says how to flash it and connect it.
 //
-//   HUDDLE_TOKEN=... node firmware/huddle-button/setup.mjs [--huddle http://127.0.0.1:7700] [--name "Desk button"]
-//                                                            [--ssid "My Wi-Fi"] [--host 192.168.1.20] [--force]
+// Over USB (the default), the button talks through its cable and the canvas passes its messages on (Devices,
+// "Connect by USB"): no Wi-Fi, no address, no firewall rule, nothing that needs an administrator. Over Wi-Fi
+// (--wifi), it also finds this computer's address and asks for your Wi-Fi (the password typed hidden).
+//
+//   HUDDLE_TOKEN=... node firmware/huddle-button/setup.mjs [--usb | --wifi] [--huddle http://127.0.0.1:7700]
+//                      [--name "Desk button"] [--ssid "My Wi-Fi"] [--host 192.168.1.20] [--force]
 //
 // WIFI_PASSWORD in the environment skips the password question (for scripts).
 import { execFileSync } from "node:child_process";
@@ -93,97 +96,124 @@ const check = await fetch(`${huddle}/api/devices`, { headers });
 if (check.status === 401) fail("Huddle wants its token: set HUDDLE_TOKEN to the token Huddle was started with.");
 console.log(`Huddle ${info.version ?? ""} answers at ${huddle}.`);
 
-// 2. This computer's address on the Wi-Fi: what the button connects to.
-const addresses = Object.entries(networkInterfaces()).flatMap(([iface, list]) =>
-  (list ?? []).filter((entry) => entry.family === "IPv4" && !entry.internal).map((entry) => ({ iface, address: entry.address })),
-);
-const local = addresses.filter(({ address }) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(address));
-const wifiFirst = [...local].sort((a, b) => Number(/wi-?fi|wlan|wireless/i.test(b.iface)) - Number(/wi-?fi|wlan|wireless/i.test(a.iface)));
-const url = new URL(huddle);
-const reachable = url.hostname === "127.0.0.1" || url.hostname === "localhost" ? undefined : url.hostname;
-const host = flag("host") ?? reachable ?? wifiFirst[0]?.address;
-if (!host) fail("Couldn't find this computer's address on a local network. Pass --host with it (ipconfig shows it).");
-if (wifiFirst.length > 1 && !flag("host") && !reachable) console.log(`This computer has more than one address (${wifiFirst.map((entry) => `${entry.address} on ${entry.iface}`).join(", ")}); using ${host}. Pass --host to pick another.`);
-const tls = url.protocol === "https:";
-const port = Number(url.port || (tls ? 443 : 80));
-
-// 3. The Wi-Fi the button joins. It has to be 2.4 GHz (channels 1 to 14): the ESP32-S3 has no 5 GHz radio, and a
-// laptop is often on its router's 5 GHz name. On Windows, netsh says which band this computer and the networks
-// around it are on; elsewhere there's no telling, so the question only says it.
-const valueOf = (text, label) => {
-  const line = text.split("\n").map((each) => each.trim()).find((each) => each.startsWith(label) && /^\s*:/.test(each.slice(label.length)));
-  return line ? line.slice(line.indexOf(":") + 1).trim() : "";
-};
-let currentSsid = "";
-let currentChannel = 0;
-const bands = new Map(); // network name -> the bands it was seen on, "2.4" and/or "5"
-if (platform() === "win32") {
-  const now = run("netsh", ["wlan", "show", "interfaces"]);
-  currentSsid = valueOf(now, "SSID");
-  currentChannel = Number(valueOf(now, "Channel")) || 0;
-  let seen;
-  for (const line of run("netsh", ["wlan", "show", "networks", "mode=bssid"]).split("\n").map((each) => each.trim())) {
-    if (/^SSID \d+ :/.test(line)) {
-      seen = line.slice(line.indexOf(":") + 1).trim();
-      bands.set(seen, new Set());
-    } else if (seen !== undefined && line.startsWith("Channel")) bands.get(seen).add(Number(valueOf(line, "Channel")) <= 14 ? "2.4" : "5");
-  }
-} else if (platform() === "linux") currentSsid = run("iwgetid", ["-r"]).trim();
-const near24 = [...bands].filter(([, seenOn]) => seenOn.has("2.4")).map(([network]) => network).filter(Boolean);
-const on5 = currentChannel > 14;
-if (on5) {
-  console.log(`\nThis computer is on "${currentSsid}" at 5 GHz (channel ${currentChannel}). The button can't join 5 GHz: give it your router's 2.4 GHz network.`);
-  console.log(near24.length ? `2.4 GHz networks in range: ${near24.map((network) => `"${network}"`).join(", ")}.` : "No 2.4 GHz network shows up here. Turn the router's 2.4 GHz band on (its settings page or app), or put this computer and the button on a phone hotspot set to 2.4 GHz and run this again.");
-  console.log("The button and this computer can be on different bands of the same router: they're still one network.\n");
-}
-const suggestion = on5 ? (near24.find((network) => network.toLowerCase() === currentSsid.toLowerCase().replace(/[-_ ]?5(\.0)?g(hz)?$/i, "")) ?? "") : currentSsid;
-const ssid = flag("ssid") ?? (await ask("Wi-Fi name for the button (2.4 GHz)", suggestion));
-if (!ssid) fail("The button needs a Wi-Fi name.");
-if (bands.get(ssid)?.size && !bands.get(ssid).has("2.4")) console.log(`"${ssid}" only shows up at 5 GHz here, so the button probably won't join it.`);
-const password = process.env.WIFI_PASSWORD ?? (await askHidden(`Password for "${ssid}" (empty for an open network)`));
+// 2. How the button reaches Huddle: its USB cable through the canvas, or Wi-Fi.
+const chosen = args.includes("--wifi") ? "wifi" : args.includes("--usb") ? "usb" : await ask("Connect the button by usb (its cable: no Wi-Fi or firewall rule) or wifi", "usb");
+const viaUsb = !/^w/i.test(chosen);
+const wifi = viaUsb ? null : await askWifi();
 reader?.close();
-if (password === undefined) fail("Stopped before the Wi-Fi password was typed.");
 
-// 4. A device token, shown once: it goes straight into config.h.
+/** Wi-Fi only: this computer's address on the network, Huddle's port, and the network the button joins. */
+async function askWifi() {
+  // This computer's address on the Wi-Fi: what the button connects to.
+  const addresses = Object.entries(networkInterfaces()).flatMap(([iface, list]) =>
+    (list ?? []).filter((entry) => entry.family === "IPv4" && !entry.internal).map((entry) => ({ iface, address: entry.address })),
+  );
+  const local = addresses.filter(({ address }) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(address));
+  const wifiFirst = [...local].sort((a, b) => Number(/wi-?fi|wlan|wireless/i.test(b.iface)) - Number(/wi-?fi|wlan|wireless/i.test(a.iface)));
+  const url = new URL(huddle);
+  const reachable = url.hostname === "127.0.0.1" || url.hostname === "localhost" ? undefined : url.hostname;
+  const host = flag("host") ?? reachable ?? wifiFirst[0]?.address;
+  if (!host) fail("Couldn't find this computer's address on a local network. Pass --host with it (ipconfig shows it).");
+  if (wifiFirst.length > 1 && !flag("host") && !reachable) console.log(`This computer has more than one address (${wifiFirst.map((entry) => `${entry.address} on ${entry.iface}`).join(", ")}); using ${host}. Pass --host to pick another.`);
+  const tls = url.protocol === "https:";
+  const port = Number(url.port || (tls ? 443 : 80));
+
+  // The Wi-Fi the button joins. It has to be 2.4 GHz (channels 1 to 14): the ESP32-S3 has no 5 GHz radio, and a
+  // laptop is often on its router's 5 GHz name. On Windows, netsh says which band this computer and the networks
+  // around it are on; elsewhere there's no telling, so the question only says it.
+  const valueOf = (text, label) => {
+    const line = text.split("\n").map((each) => each.trim()).find((each) => each.startsWith(label) && /^\s*:/.test(each.slice(label.length)));
+    return line ? line.slice(line.indexOf(":") + 1).trim() : "";
+  };
+  let currentSsid = "";
+  let currentChannel = 0;
+  const bands = new Map(); // network name -> the bands it was seen on, "2.4" and/or "5"
+  if (platform() === "win32") {
+    const now = run("netsh", ["wlan", "show", "interfaces"]);
+    currentSsid = valueOf(now, "SSID");
+    currentChannel = Number(valueOf(now, "Channel")) || 0;
+    let seen;
+    for (const line of run("netsh", ["wlan", "show", "networks", "mode=bssid"]).split("\n").map((each) => each.trim())) {
+      if (/^SSID \d+ :/.test(line)) {
+        seen = line.slice(line.indexOf(":") + 1).trim();
+        bands.set(seen, new Set());
+      } else if (seen !== undefined && line.startsWith("Channel")) bands.get(seen).add(Number(valueOf(line, "Channel")) <= 14 ? "2.4" : "5");
+    }
+  } else if (platform() === "linux") currentSsid = run("iwgetid", ["-r"]).trim();
+  const near24 = [...bands].filter(([, seenOn]) => seenOn.has("2.4")).map(([network]) => network).filter(Boolean);
+  const on5 = currentChannel > 14;
+  if (on5) {
+    console.log(`\nThis computer is on "${currentSsid}" at 5 GHz (channel ${currentChannel}). The button can't join 5 GHz: give it your router's 2.4 GHz network.`);
+    console.log(near24.length ? `2.4 GHz networks in range: ${near24.map((network) => `"${network}"`).join(", ")}.` : "No 2.4 GHz network shows up here. Turn the router's 2.4 GHz band on (its settings page or app), or put this computer and the button on a phone hotspot set to 2.4 GHz and run this again.");
+    console.log("The button and this computer can be on different bands of the same router: they're still one network.\n");
+  }
+  const suggestion = on5 ? (near24.find((network) => network.toLowerCase() === currentSsid.toLowerCase().replace(/[-_ ]?5(\.0)?g(hz)?$/i, "")) ?? "") : currentSsid;
+  const ssid = flag("ssid") ?? (await ask("Wi-Fi name for the button (2.4 GHz)", suggestion));
+  if (!ssid) fail("The button needs a Wi-Fi name.");
+  if (bands.get(ssid)?.size && !bands.get(ssid).has("2.4")) console.log(`"${ssid}" only shows up at 5 GHz here, so the button probably won't join it.`);
+  const password = process.env.WIFI_PASSWORD ?? (await askHidden(`Password for "${ssid}" (empty for an open network)`));
+  if (password === undefined) fail("Stopped before the Wi-Fi password was typed.");
+  return { ssid, password, host, port, tls };
+}
+
+// 3. A device token, shown once: it goes straight into config.h.
 const made = await fetch(`${huddle}/api/devices`, { method: "POST", headers, body: JSON.stringify({ name }) });
 const device = await made.json().catch(() => ({}));
 if (!made.ok || !device.token) fail(`Huddle didn't make a device token: ${device.error ?? `HTTP ${made.status}`}`);
 
+const link = wifi
+  ? `#define WIFI_SSID "${cString(wifi.ssid)}"
+#define WIFI_PASSWORD "${cString(wifi.password)}"
+#define HUDDLE_HOST "${cString(wifi.host)}"
+#define HUDDLE_PORT ${wifi.port}
+#define HUDDLE_TLS ${wifi.tls ? 1 : 0}`
+  : `// Over the USB cable: the canvas passes messages on (Devices, "Connect by USB"). No Wi-Fi needed.
+#define HUDDLE_LINK_USB 1`;
 writeFileSync(
   out,
-  `// Written by setup.mjs for "${cString(name)}". Holds your Wi-Fi password and the device token: keep it out of git.
-#define WIFI_SSID "${cString(ssid)}"
-#define WIFI_PASSWORD "${cString(password)}"
-#define HUDDLE_HOST "${cString(host)}"
-#define HUDDLE_PORT ${port}
-#define HUDDLE_TLS ${tls ? 1 : 0}
+  `// Written by setup.mjs for "${cString(name)}". Holds the device token${wifi ? " and your Wi-Fi password" : ""}: keep it out of git.
+${link}
 #define DEVICE_TOKEN "${cString(device.token)}"
 #define VOLUME 70
 // The button finds its mic channel at start-up; this is what it uses until one has heard its chime.
 #define MIC_RIGHT_CHANNEL 0
 `,
 );
-console.log(`\nWrote ${out} for "${name}" (Huddle at ${tls ? "https" : "http"}://${host}:${port}).`);
+console.log(`\nWrote ${out} for "${name}" (${wifi ? `Wi-Fi, Huddle at ${wifi.tls ? "https" : "http"}://${wifi.host}:${wifi.port}` : "USB"}).`);
 
-// 5. What's left: let the button in, then flash it.
+// 4. What's left: flash it, then connect it.
 const ports = run("arduino-cli", ["board", "list"]).match(/^COM\d+|^\/dev\/tty(ACM|USB)\d+/gm) ?? [];
 const sketch = here;
-const env = { HUDDLE_HOST: "0.0.0.0", ...(port === 7700 || tls ? {} : { HUDDLE_PORT: String(port) }), HUDDLE_TOKEN: "<your token>" };
-const start =
-  platform() === "win32"
-    ? `${Object.entries(env).map(([key, value]) => `$env:${key}="${value}"`).join("; ")}; npm start    (in PowerShell)`
-    : `${Object.entries(env).map(([key, value]) => `${key}=${value}`).join(" ")} npm start`;
-console.log(`
+const flash = `       arduino-cli compile --fqbn "${FQBN}" "${sketch}"
+       arduino-cli upload --fqbn "${FQBN}" -p ${ports[0] ?? "<port: arduino-cli board list>"} "${sketch}"
+     If the upload can't find the board: hold BOOT, tap RESET, let go of BOOT, and upload again.`;
+if (!wifi) {
+  console.log(`
+Next:
+  1. Start Huddle on this machine as you always do (npm start). Nothing to open up: the button comes in
+     through the canvas, not the network.
+  2. Plug the board in by USB and flash it (close any serial monitor first):
+${flash}
+  3. Open Huddle in Chrome or Edge, go to Devices and press "Connect by USB", then pick the ESP32-S3.
+     The card shows the button's start-up check (screen, chime, mic), then "Connected over USB".
+     Press Disconnect there before you flash it again.
+`);
+} else {
+  const env = { HUDDLE_HOST: "0.0.0.0", ...(wifi.port === 7700 || wifi.tls ? {} : { HUDDLE_PORT: String(wifi.port) }), HUDDLE_TOKEN: "<your token>" };
+  const start =
+    platform() === "win32"
+      ? `${Object.entries(env).map(([key, value]) => `$env:${key}="${value}"`).join("; ")}; npm start    (in PowerShell)`
+      : `${Object.entries(env).map(([key, value]) => `${key}=${value}`).join(" ")} npm start`;
+  console.log(`
 Next:
   1. Start Huddle so the button can reach it (the token is required off this machine):
        ${start}
-${platform() === "win32" && !tls ? `  2. Let it through Windows Firewall, on private networks (an Administrator PowerShell, once):
-       New-NetFirewallRule -DisplayName "Huddle ${port}" -Direction Inbound -Protocol TCP -LocalPort ${port} -Action Allow -Profile Private
-     and make sure your Wi-Fi is set to a Private network in Windows settings.
-` : "  2. Make sure nothing blocks port " + port + " from your Wi-Fi.\n"}  3. Plug the board in by USB and flash it:
-       arduino-cli compile --fqbn "${FQBN}" "${sketch}"
-       arduino-cli upload --fqbn "${FQBN}" -p ${ports[0] ?? "<port: arduino-cli board list>"} "${sketch}"
-     If the upload can't find the board: hold BOOT, tap RESET, let go of BOOT, and upload again.
+${platform() === "win32" && !wifi.tls ? `  2. Let it through Windows Firewall, on private networks (an Administrator PowerShell, once):
+       New-NetFirewallRule -DisplayName "Huddle ${wifi.port}" -Direction Inbound -Protocol TCP -LocalPort ${wifi.port} -Action Allow -Profile Private
+     and make sure your Wi-Fi is set to a Private network in Windows settings. No administrator? Use --usb.
+` : `  2. Make sure nothing blocks port ${wifi.port} from your Wi-Fi.\n`}  3. Plug the board in by USB and flash it:
+${flash}
   4. Watch it start (screen wiring, chime, mic, Wi-Fi, Huddle):
        arduino-cli monitor -p ${ports[0] ?? "<port>"} -c baudrate=115200
 `);
+}
