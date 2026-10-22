@@ -151,7 +151,12 @@ export class UsbLink {
     this.reader = port.readable.getReader();
     this.setState("waiting");
     this.note("Port open. Waiting for the button to say who it is...");
-    this.ping = setInterval(() => this.sendToButton("T", JSON.stringify({ type: "usb-ping" })), 5_000);
+    // A button still linked to a page that's gone (reloaded, closed) would never say who it is again: tell it
+    // the link is closed, so it starts over. Pings only while Huddle is on the line, so a stale link times out.
+    this.sendToButton("T", JSON.stringify({ type: "usb-closed" }));
+    this.ping = setInterval(() => {
+      if (this.socket?.readyState === WebSocket.OPEN) this.sendToButton("T", JSON.stringify({ type: "usb-ping" }));
+    }, 5_000);
     void this.readLoop(this.reader);
   }
 
@@ -161,6 +166,8 @@ export class UsbLink {
     const socket = this.socket;
     this.socket = null;
     socket?.close();
+    // Tell the button right away, instead of letting it wait for pings that won't come.
+    if (socket) this.sendToButton("T", JSON.stringify({ type: "usb-closed" }));
     const { reader, writer, port } = this;
     this.reader = null;
     this.writer = null;
