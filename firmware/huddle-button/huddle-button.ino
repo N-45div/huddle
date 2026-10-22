@@ -150,7 +150,13 @@ void playTask(void *) {
     }
     portEXIT_CRITICAL(&ringLock);
     size_t samples = got / 2;
-    for (size_t i = 0; i < samples; i++) frame[i] = (int32_t)frame[i] * VOLUME / 100;
+    // VOLUME 100 plays what Huddle sends; above it boosts quiet speech, and past the knee loud peaks are
+    // softened instead of clipped (clipping crackles on a small speaker).
+    for (size_t i = 0; i < samples; i++) {
+      float y = frame[i] * (VOLUME / 100.0f), a = fabsf(y);
+      if (a > 22000.0f) a = min(32767.0f, 22000.0f + (a - 22000.0f) * 0.3f);
+      frame[i] = (int16_t)copysignf(a, y);
+    }
     for (size_t i = samples; i < 320; i++) frame[i] = 0;  // silence between things to say: no pops
     amp.write(reinterpret_cast<uint8_t *>(frame), sizeof(frame));
   }

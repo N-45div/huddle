@@ -174,7 +174,7 @@ writeFileSync(
   `// Written by setup.mjs for "${cString(name)}". Holds the device token${wifi ? " and your Wi-Fi password" : ""}: keep it out of git.
 ${link}
 #define DEVICE_TOKEN "${cString(device.token)}"
-#define VOLUME 70
+#define VOLUME 150
 // The button finds its mic channel at start-up; this is what it uses until one has heard its chime.
 #define MIC_RIGHT_CHANNEL 0
 `,
