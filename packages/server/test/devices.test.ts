@@ -150,6 +150,49 @@ describe("the Huddle button", () => {
     session.close();
   });
 
+  it("takes the photo the button sent while you talked to a flow that sees, and tells the button which flows see", async () => {
+    const speech: Speech = {
+      name: "test speech",
+      url: "http://127.0.0.1:8090",
+      async transcribe() {
+        return "What does this say?";
+      },
+      async speak() {
+        return new Uint8Array(0);
+      },
+    };
+    const LOOK = parseFlow({
+      name: "Look at this",
+      trigger: { type: "button", input: "What's this?" },
+      assistants: [{ id: "eye", connector: "mock", images: true, replies: { "*": "A bill for 340 rupees." } }],
+      steps: [{ id: "say", type: "agent", agent: "eye", ask: "{{input}}" }],
+    });
+    const store = new Store();
+    const engine = new Engine(store, { mock });
+    const hub = new DeviceHub(store, engine, { speech });
+    const look = store.saveFlow(LOOK);
+    store.saveFlow(BUTTON);
+    const screen = hub.screen();
+    assert.deepEqual(screen.type === "idle" ? screen.flows.map((flow) => [flow.name, flow.sees]) : [], [["Look at this", true], ["Morning brief", false]]);
+
+    const sent: ToDevice[] = [];
+    const session = hub.connect((message) => sent.push(message), { name: "Desk button", version: "test" });
+    session.receive(JSON.stringify({ type: "listen", flow: look.id }));
+    session.receive(JSON.stringify({ type: "photo", jpeg: "/9j/4AAQSkZJRg==" }));
+    session.receiveAudio(new Uint8Array(32_000));
+    session.receive(JSON.stringify({ type: "stop" }));
+    await settle();
+    const started = sent.find((message) => message.type === "started");
+    assert.ok(started && started.type === "started");
+    assert.deepEqual(store.run(started.runId)?.context.images, ["data:image/jpeg;base64,/9j/4AAQSkZJRg=="]);
+    assert.equal((store.logOf(started.runId).find((line) => line.kind === "asked")?.detail as { images?: number }).images, 1, "the assistant that sees got it");
+
+    // A photo that isn't base64, or comes when nothing's listening, is refused.
+    session.receive(JSON.stringify({ type: "photo", jpeg: "/9j/4AAQ" }));
+    assert.equal(sent.at(-1)?.type, "error");
+    session.close();
+  });
+
   it("with speech set up, says the approval in spoken form, and starts a flow with what you said", async () => {
     const spoken: string[] = [];
     const speech: Speech = {

@@ -32,7 +32,8 @@ export type Screen =
       /** `label` is `at` in this machine's own time, ready to show ("Fri 6:00 PM"): a gadget has no time zone. */
       readonly nextRun: { readonly flow: string; readonly at: string; readonly label: string } | null;
       /** The flows you can start from the button (their trigger is "button"), to pick from. */
-      readonly flows: readonly { readonly id: string; readonly name: string }[];
+      /** `sees`: one of its assistants takes images, so the button takes a photo as you start to talk. */
+      readonly flows: readonly { readonly id: string; readonly name: string; readonly sees: boolean }[];
     };
 
 /** An assistant as the button shows it: its Huddler comes from the id (colour) and connector (what it wears). */
@@ -79,6 +80,16 @@ const LINE = 90;
 /** The most a device may say in one go: 30 seconds of 16 kHz 16-bit audio. */
 const MAX_LISTEN_BYTES = 30 * SAMPLE_RATE * 2;
 const AUDIO_FRAME = 4_096;
+/** A photo from the button: a VGA JPEG is 20 to 60 KB; base64 makes that a third bigger. */
+const MAX_PHOTO_BASE64 = 200_000;
+
+/** What the device says while you hold it: the audio, and the photo it took if the flow sees. */
+interface Turn {
+  readonly flow: string | null;
+  readonly chunks: Uint8Array[];
+  bytes: number;
+  photo: string | null;
+}
 /** When the next scheduled run is, in this machine's time zone. */
 const NEXT_RUN_LABEL = new Intl.DateTimeFormat("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" });
 
@@ -152,6 +163,8 @@ interface FromDevice {
   readonly flow?: unknown;
   readonly input?: unknown;
   readonly audio?: unknown;
+  /** "photo": a JPEG the button took as you started to talk, base64. */
+  readonly jpeg?: unknown;
 }
 
 export interface DeviceHubOptions {
@@ -200,9 +213,9 @@ export class DeviceHub {
     start.setHours(0, 0, 0, 0);
     const spentTodayUsd = this.store.spendSince(start.toISOString()).reduce((sum, total) => sum + total.usd, 0);
     let next: { flow: string; at: number } | null = null;
-    const flows: { id: string; name: string }[] = [];
+    const flows: { id: string; name: string; sees: boolean }[] = [];
     for (const saved of this.store.flows()) {
-      if (saved.flow.trigger.type === "button") flows.push({ id: saved.id, name: saved.flow.name });
+      if (saved.flow.trigger.type === "button") flows.push({ id: saved.id, name: saved.flow.name, sees: saved.flow.assistants.some((assistant) => assistant.images === true) });
       if (saved.flow.trigger.type !== "schedule") continue;
       const at = nextRun(saved.flow.trigger, this.now());
       if (!next || at < next.at) next = { flow: saved.flow.name, at };
@@ -225,13 +238,13 @@ export class DeviceHub {
   }
 
   /** Starts a button flow for this device: what the person said, else the flow's own input. */
-  start(flowId: string, said: string | null, device: string): { readonly runId: string; readonly flow: string; readonly assistant: Who | null } {
+  start(flowId: string, said: string | null, device: string, images: readonly string[] = []): { readonly runId: string; readonly flow: string; readonly assistant: Who | null } {
     const saved = this.store.flow(flowId);
     if (!saved || saved.flow.trigger.type !== "button") throw new Error("That flow isn't on the button. Give it the button trigger in the canvas.");
     const input = said?.trim() || saved.flow.trigger.input;
     // Said out loud, it's answered out loud: as Hud, briefly.
     const flow = said?.trim() ? asSpoken(saved.flow) : saved.flow;
-    const runId = this.engine.launch(flow, input, saved.id, { name: device, tier: "owner", via: "device" });
+    const runId = this.engine.launch(flow, input, saved.id, { name: device, tier: "owner", via: "device" }, images);
     // Words the person said themselves may teach memory (when learning is on); a preset input never does.
     if (said?.trim()) this.engine.learnFrom(runId, said);
     return { runId, flow: saved.flow.name, assistant: answering(saved.flow) };
@@ -259,7 +272,7 @@ export class DeviceHub {
     let spokenApproval: string | null = null;
     let playsAudio = false;
     let generation = 0;
-    let listening: { flow: string | null; chunks: Uint8Array[]; bytes: number } | null = null;
+    let listening: Turn | null = null;
 
     /** Says text in spoken form, a sentence at a time; something newer to say cuts it short. */
     const say = async (text: string) => {
@@ -309,7 +322,7 @@ export class DeviceHub {
     };
 
     /** The device stopped talking: hear it, then start its flow, or ask the router and say the answer. */
-    const heard = async (turn: { flow: string | null; chunks: Uint8Array[]; bytes: number }) => {
+    const heard = async (turn: Turn) => {
       const speech = this.speech;
       if (!speech) return send({ type: "error", message: "Voice isn't set up here: run NVIDIA NeMo-Speech and set HUDDLE_SPEECH_URL." });
       const pcm = new Uint8Array(turn.bytes);
@@ -328,7 +341,7 @@ export class DeviceHub {
       if (!text) return void say("Sorry, I didn't catch that.");
       try {
         if (turn.flow) {
-          const started = this.start(turn.flow, text, hello.name);
+          const started = this.start(turn.flow, text, hello.name, turn.photo ? [turn.photo] : []);
           this.heard(started.runId, text, pcm.byteLength);
           send({ type: "started", ...started });
           return;
@@ -391,7 +404,12 @@ export class DeviceHub {
             return;
           case "listen":
             generation++; // you're talking: stop speaking
-            listening = { flow: typeof message.flow === "string" ? message.flow : null, chunks: [], bytes: 0 };
+            listening = { flow: typeof message.flow === "string" ? message.flow : null, chunks: [], bytes: 0, photo: null };
+            return;
+          case "photo":
+            // The photo the button took as you started to talk: it goes with what you say, to a flow that sees.
+            if (!listening || typeof message.jpeg !== "string" || message.jpeg.length > MAX_PHOTO_BASE64 || !/^[A-Za-z0-9+/]+=*$/.test(message.jpeg)) break;
+            listening.photo = `data:image/jpeg;base64,${message.jpeg}`;
             return;
           case "stop": {
             const turn = listening;
@@ -400,7 +418,7 @@ export class DeviceHub {
             return;
           }
         }
-        send({ type: "error", message: 'Send "answer", "start", "listen" then audio then "stop", "hello" or "ping".' });
+        send({ type: "error", message: 'Send "answer", "start", "listen" then audio (and a "photo") then "stop", "hello" or "ping".' });
       },
       /** Audio while listening: 16 kHz mono 16-bit PCM. */
       receiveAudio: (chunk: Uint8Array) => {
