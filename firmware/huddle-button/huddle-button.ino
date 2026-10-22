@@ -111,12 +111,14 @@ void flushPlayback() {
   portEXIT_CRITICAL(&ringLock);
 }
 
+/** Whole 16-bit samples into the ring, two bytes at a time: half a sample would shift every one after it. */
 void queueAudio(const uint8_t *data, size_t length) {
   portENTER_CRITICAL(&ringLock);
-  for (size_t i = 0; i < length; i++) {
-    size_t next = (ringHead + 1) % PLAY_BUFFER;
+  for (size_t i = 0; i + 1 < length; i += 2) {
+    size_t next = (ringHead + 2) % PLAY_BUFFER;
     if (next == ringTail) break;  // full: drop the rest
     ring[ringHead] = data[i];
+    ring[ringHead + 1] = data[i + 1];
     ringHead = next;
   }
   portEXIT_CRITICAL(&ringLock);
@@ -419,6 +421,25 @@ uint8_t frameHead[6];
 size_t headGot = 0, frameLeft = 0;
 String frameText;
 unsigned long lastAnnounce = 0, lastHeard = 0;
+// A frame's PCM comes off the cable in reads of any size: an odd byte waits for the next read, so the
+// samples reach the speaker whole.
+uint8_t halfSample = 0;
+bool holdingHalf = false;
+
+void queueFromCable(const uint8_t *data, size_t length) {
+  if (holdingHalf && length) {
+    const uint8_t pair[2] = {halfSample, data[0]};
+    queueAudio(pair, 2);
+    data++;
+    length--;
+    holdingHalf = false;
+  }
+  queueAudio(data, length & ~(size_t)1);
+  if (length & 1) {
+    halfSample = data[length - 1];
+    holdingHalf = true;
+  }
+}
 
 void onFrame() {
   lastHeard = millis();
@@ -445,11 +466,12 @@ void usbLoop() {
           continue;
         }
         frameText = "";
+        holdingHalf = false;
         if (frameLeft == 0) onFrame();
         continue;
       }
       size_t n = min(frameLeft, got - i);
-      if (frameHead[1] == 'B') queueAudio(chunk + i, n);
+      if (frameHead[1] == 'B') queueFromCable(chunk + i, n);
       else frameText.concat(reinterpret_cast<const char *>(chunk + i), n);
       i += n;
       frameLeft -= n;
