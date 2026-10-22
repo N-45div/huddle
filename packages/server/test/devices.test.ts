@@ -38,6 +38,10 @@ describe("the Huddle button", () => {
     if (screen.type !== "idle") return;
     assert.equal(screen.spentTodayUsd, 0);
     assert.equal(screen.nextRun?.flow, "Weekly review");
+    // In this machine's time, ready for a screen that has no time zone.
+    const at = new Date(screen.nextRun?.at ?? 0);
+    assert.equal(screen.nextRun?.label, at.toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }));
+    assert.match(screen.nextRun?.label ?? "", /^\w{3} \d{1,2}:\d{2} [AP]M$/);
     assert.deepEqual(screen.flows.map((flow) => flow.name), ["Morning brief"]);
   });
 

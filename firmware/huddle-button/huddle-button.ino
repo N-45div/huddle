@@ -388,7 +388,9 @@ void onMessage(uint8_t *payload, size_t length) {
     spentToday = doc["spentTodayUsd"] | 0.0f;
     nextFlow = doc["nextRun"].isNull() ? "" : String(doc["nextRun"]["flow"] | "");
     String at = doc["nextRun"].isNull() ? "" : String(doc["nextRun"]["at"] | "");
-    nextAt = at.length() >= 16 ? at.substring(11, 16) + " UTC" : "";
+    // Huddle's label is in its machine's time ("Fri 6:00 PM"); an older Huddle sends only UTC.
+    String label = doc["nextRun"].isNull() ? "" : String(doc["nextRun"]["label"] | "");
+    nextAt = label.length() ? label : at.length() >= 16 ? at.substring(11, 16) + " UTC" : "";
     flows.clear();
     for (JsonObject flow : doc["flows"].as<JsonArray>()) flows.push_back({flow["id"] | "", flow["name"] | ""});
     if (picked >= flows.size()) picked = 0;

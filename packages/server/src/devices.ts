@@ -29,7 +29,8 @@ export type Screen =
   | {
       readonly type: "idle";
       readonly spentTodayUsd: number;
-      readonly nextRun: { readonly flow: string; readonly at: string } | null;
+      /** `label` is `at` in this machine's own time, ready to show ("Fri 6:00 PM"): a gadget has no time zone. */
+      readonly nextRun: { readonly flow: string; readonly at: string; readonly label: string } | null;
       /** The flows you can start from the button (their trigger is "button"), to pick from. */
       readonly flows: readonly { readonly id: string; readonly name: string }[];
     };
@@ -59,6 +60,8 @@ const LINE = 90;
 /** The most a device may say in one go: 30 seconds of 16 kHz 16-bit audio. */
 const MAX_LISTEN_BYTES = 30 * SAMPLE_RATE * 2;
 const AUDIO_FRAME = 4_096;
+/** When the next scheduled run is, in this machine's time zone. */
+const NEXT_RUN_LABEL = new Intl.DateTimeFormat("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" });
 
 /** The first line of an approval's message, on one line, cut at a word to fit a small screen. */
 export function oneLine(message: string, max = LINE): string {
@@ -148,7 +151,7 @@ export class DeviceHub {
     return {
       type: "idle",
       spentTodayUsd: Math.round(spentTodayUsd * 1_000_000) / 1_000_000,
-      nextRun: next ? { flow: next.flow, at: new Date(next.at).toISOString() } : null,
+      nextRun: next ? { flow: next.flow, at: new Date(next.at).toISOString(), label: NEXT_RUN_LABEL.format(next.at) } : null,
       flows: flows.slice(0, 8),
     };
   }
