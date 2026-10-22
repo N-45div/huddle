@@ -72,6 +72,8 @@ describe("the Huddle button", () => {
     await settle();
     const askOf = (runId: string) => (store.logOf(runId).find((line) => line.kind === "asked")?.detail as { ask?: string } | null)?.ask ?? "";
     assert.ok(askOf(spoken.runId).startsWith(VOICE_NOTE) && askOf(spoken.runId).endsWith("who are you?"));
+    // Who'll answer, for the button to show their Huddler while they work.
+    assert.deepEqual(spoken.assistant, { id: "agent", name: "agent", connector: "mock" });
     assert.equal(askOf(preset.runId), "Today");
     assert.equal(store.flow(saved.id)?.flow.steps[0]?.type === "agent" && (store.flow(saved.id)?.flow.steps[0] as { ask: string }).ask, "{{input}}");
   });

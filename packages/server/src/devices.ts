@@ -35,6 +35,22 @@ export type Screen =
       readonly flows: readonly { readonly id: string; readonly name: string }[];
     };
 
+/** An assistant as the button shows it: its Huddler comes from the id (colour) and connector (what it wears). */
+export interface Who {
+  readonly id: string;
+  readonly name: string;
+  readonly connector: string;
+}
+
+const whoOf = (assistant: { readonly id: string; readonly name?: string | undefined; readonly connector: string } | undefined): Who | null =>
+  assistant ? { id: assistant.id, name: assistant.name ?? assistant.id, connector: assistant.connector } : null;
+
+/** The assistant whose answer a flow says: its last assistant step's. */
+function answering(flow: Flow): Who | null {
+  const last = flow.steps.findLast((step) => step.type === "agent");
+  return last?.type === "agent" ? whoOf(flow.assistants.find((assistant) => assistant.id === last.agent)) : null;
+}
+
 /** Everything a device is sent (as JSON), besides the audio (binary frames between "speaking" and "spoken"). */
 export type ToDevice =
   | { readonly type: "hello"; readonly name: string; readonly version: string; readonly speech: boolean }
@@ -45,9 +61,12 @@ export type ToDevice =
       readonly state: "done" | "failed" | "declined";
       /** For a run a button started: its answer, short enough to show and say. */
       readonly answer: string | null;
+      /** Who gave that answer, for the button to show as it's said. */
+      readonly assistant?: Who | null;
     }
   | { readonly type: "answered"; readonly id: string; readonly yes: boolean }
-  | { readonly type: "started"; readonly runId: string; readonly flow: string }
+  /** `assistant`: who'll answer (the flow's last assistant step), so the button can show its Huddler. */
+  | { readonly type: "started"; readonly runId: string; readonly flow: string; readonly assistant: Who | null }
   /** What it heard you say, once the speech server has listened. */
   | { readonly type: "heard"; readonly text: string }
   /** 16-bit mono PCM at sampleRate follows, in binary frames, then "spoken". */
@@ -204,7 +223,7 @@ export class DeviceHub {
   }
 
   /** Starts a button flow for this device: what the person said, else the flow's own input. */
-  start(flowId: string, said: string | null, device: string): { readonly runId: string; readonly flow: string } {
+  start(flowId: string, said: string | null, device: string): { readonly runId: string; readonly flow: string; readonly assistant: Who | null } {
     const saved = this.store.flow(flowId);
     if (!saved || saved.flow.trigger.type !== "button") throw new Error("That flow isn't on the button. Give it the button trigger in the canvas.");
     const input = said?.trim() || saved.flow.trigger.input;
@@ -213,7 +232,14 @@ export class DeviceHub {
     const runId = this.engine.launch(flow, input, saved.id, { name: device, tier: "owner", via: "device" });
     // Words the person said themselves may teach memory (when learning is on); a preset input never does.
     if (said?.trim()) this.engine.learnFrom(runId, said);
-    return { runId, flow: saved.flow.name };
+    return { runId, flow: saved.flow.name, assistant: answering(saved.flow) };
+  }
+
+  /** Who gave a run's last answer. */
+  private answeredBy(runId: string): Who | null {
+    const run = this.store.run(runId);
+    const id = (this.store.logOf(runId).findLast((line) => line.kind === "asked")?.detail as { assistant?: unknown } | null)?.assistant;
+    return run && typeof id === "string" ? whoOf(run.flow.assistants.find((assistant) => assistant.id === id)) : null;
   }
 
   /** Notes on a run that its input was spoken, and heard on this machine: the run's receipt shows it. */
@@ -273,7 +299,7 @@ export class DeviceHub {
         if (run?.flowId && (run.state === "done" || run.state === "failed" || run.state === "declined") && !finished.has(run.id)) {
           finished.add(run.id);
           const answer = this.answerFor(run.id);
-          send({ type: "run", flow: run.flow.name, state: run.state, answer });
+          send({ type: "run", flow: run.flow.name, state: run.state, answer, assistant: this.answeredBy(run.id) });
           if (answer) void say(answer);
         }
       }
@@ -310,7 +336,7 @@ export class DeviceHub {
         this.heard(routed.runId, text, pcm.byteLength);
         this.engine.learnFrom(routed.runId, text);
         const answer = shortAnswer(routed.text);
-        send({ type: "run", flow: `Asked ${routed.assistant.name ?? routed.assistant.id}`, state: "done", answer });
+        send({ type: "run", flow: `Asked ${routed.assistant.name ?? routed.assistant.id}`, state: "done", answer, assistant: whoOf(routed.assistant) });
         void say(answer);
       } catch (error) {
         send({ type: "error", message: failure(error) });
