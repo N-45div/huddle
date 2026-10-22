@@ -24,7 +24,9 @@ const AUDIO_BURST = 24_000;
 export type UsbEvent =
   | { readonly kind: "line"; readonly text: string }
   | { readonly kind: "text"; readonly text: string }
-  | { readonly kind: "audio"; readonly bytes: Uint8Array };
+  | { readonly kind: "audio"; readonly bytes: Uint8Array }
+  /** 'P': a JPEG the button took as you started to talk (on a flow that sees). */
+  | { readonly kind: "photo"; readonly bytes: Uint8Array };
 
 /** A picture for the button to keep (an assistant's Huddler), as 16-bit RGB565 pixels, row by row. */
 export interface Sprite {
@@ -32,6 +34,13 @@ export interface Sprite {
   readonly width: number;
   readonly height: number;
   readonly pixels: Uint16Array;
+}
+
+/** Bytes as base64, in slices (spreading 50 KB into one call overflows the stack). */
+export function base64(bytes: Uint8Array): string {
+  let text = "";
+  for (let at = 0; at < bytes.length; at += 0x8000) text += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+  return btoa(text);
 }
 
 /** RGBA bytes (a canvas's) as 16-bit RGB565, the button screen's own pixels. */
@@ -59,7 +68,7 @@ export function spritePayload(sprite: Sprite): Uint8Array {
   return out;
 }
 
-export function encodeFrame(kind: "T" | "B" | "I", payload: Uint8Array | string): Uint8Array {
+export function encodeFrame(kind: "T" | "B" | "I" | "P", payload: Uint8Array | string): Uint8Array {
   const bytes = typeof payload === "string" ? new TextEncoder().encode(payload) : payload;
   const frame = new Uint8Array(HEAD + bytes.length);
   frame[0] = STX;
@@ -94,7 +103,7 @@ export class FrameReader {
       }
       const kind = String.fromCharCode(all[stx + 1] ?? 0);
       const length = new DataView(all.buffer, all.byteOffset + stx + 2, 4).getUint32(0, true);
-      if ((kind !== "T" && kind !== "B") || length > MAX_FRAME) {
+      if ((kind !== "T" && kind !== "B" && kind !== "P") || length > MAX_FRAME) {
         at = stx + 1; // not a frame: skip the stray byte
         continue;
       }
@@ -103,7 +112,7 @@ export class FrameReader {
         break;
       }
       const payload = all.slice(stx + HEAD, stx + HEAD + length);
-      events.push(kind === "T" ? { kind: "text", text: this.decoder.decode(payload) } : { kind: "audio", bytes: payload });
+      events.push(kind === "T" ? { kind: "text", text: this.decoder.decode(payload) } : kind === "P" ? { kind: "photo", bytes: payload } : { kind: "audio", bytes: payload });
       at = stx + HEAD + length;
     }
     this.pending = all.slice(at);
@@ -159,6 +168,8 @@ export interface UsbLinkEvents {
   readonly onVolume?: (volume: number) => void;
   /** How its screen is shown: colours inverted, picture upside down. */
   readonly onScreen?: (screen: UsbScreen) => void;
+  /** A photo the button just took, as JPEG bytes. */
+  readonly onPhoto?: (jpeg: Uint8Array) => void;
   /** The /devices/ws address for the button's own token. */
   readonly socketUrl: (token: string) => string;
 }
@@ -276,13 +287,23 @@ export class UsbLink {
 
   private fromButton(event: UsbEvent): void {
     if (event.kind === "line") return this.events.onLine(event.text, "button");
+    if (event.kind === "photo") {
+      this.events.onPhoto?.(event.bytes);
+      if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify({ type: "photo", jpeg: base64(event.bytes) }));
+      return;
+    }
     if (event.kind === "audio") {
       if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(event.bytes);
       return;
     }
+    this.fromButtonText(event.text);
+  }
+
+  /** A JSON message from the button: the link's own (who it is, speech left) or one for Huddle. */
+  private fromButtonText(text: string): void {
     let message: { type?: unknown; token?: unknown; volume?: unknown; invert?: unknown; flip?: unknown };
     try {
-      message = JSON.parse(event.text) as typeof message;
+      message = JSON.parse(text) as typeof message;
     } catch {
       return this.note("The button sent something that isn't JSON; skipped.");
     }
@@ -313,7 +334,7 @@ export class UsbLink {
       if (!this.socket && Date.now() >= this.quietUntil) this.openSocket(message.token);
       return;
     }
-    if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(event.text);
+    if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(text);
   }
 
   private openSocket(token: string): void {

@@ -20,10 +20,12 @@ export interface UsbSnapshot {
   readonly volume: number | null;
   /** How its screen is shown, once it has said; null before. */
   readonly screen: UsbScreen | null;
+  /** The last photo it took (an object URL), to see what it saw. */
+  readonly photo: string | null;
 }
 
 const KEEP_LINES = 300;
-let snapshot: UsbSnapshot = { state: "closed", lines: [], error: null, volume: null, screen: null };
+let snapshot: UsbSnapshot = { state: "closed", lines: [], error: null, volume: null, screen: null, photo: null };
 let lineId = 0;
 const listeners = new Set<() => void>();
 
@@ -46,6 +48,10 @@ const link = new UsbLink({
   },
   onVolume: (volume) => update({ volume }),
   onScreen: (screen) => update({ screen }),
+  onPhoto: (jpeg) => {
+    if (snapshot.photo) URL.revokeObjectURL(snapshot.photo);
+    update({ photo: URL.createObjectURL(new Blob([jpeg as Uint8Array<ArrayBuffer>], { type: "image/jpeg" })) });
+  },
   socketUrl: (token) => {
     const url = new URL(deviceSocketUrl());
     url.searchParams.set("token", token);

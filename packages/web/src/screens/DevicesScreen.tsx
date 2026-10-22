@@ -102,6 +102,12 @@ function UsbButton() {
           </label>
         </div>
       )}
+      {usb.photo && (
+        <figure className="usb-photo">
+          <img src={usb.photo} alt="The last photo the button took" />
+          <figcaption className="hint">What the button saw last, sent with what you said.</figcaption>
+        </figure>
+      )}
       {usb.lines.length > 0 && (
         <pre className="usb-log" ref={log} aria-label="What the button says">
           {usb.lines.map((line) => (

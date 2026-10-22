@@ -4278,3 +4278,18 @@ h1 .badge {
   flex-wrap: wrap;
   gap: 8px 24px;
 }
+
+.usb-photo {
+  margin: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.usb-photo img {
+  width: 160px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { encodeFrame, FrameReader, spritePayload, toRgb565, type UsbEvent } from "../src/usb-link.ts";
+import { base64, encodeFrame, FrameReader, spritePayload, toRgb565, type UsbEvent } from "../src/usb-link.ts";
 
 const bytes = (...parts: (Uint8Array | string)[]) => {
   const chunks = parts.map((part) => (typeof part === "string" ? new TextEncoder().encode(part) : part));
@@ -39,7 +39,7 @@ describe("the USB link's frames", () => {
       const events: UsbEvent[] = [];
       for (let at = 0; at < stream.length; at += size) events.push(...reader.push(stream.slice(at, at + size)));
       assert.deepEqual(
-        events.map((event) => (event.kind === "audio" ? `audio ${event.bytes.length}` : `${event.kind} ${event.text}`)),
+        events.map((event) => (event.kind === "audio" || event.kind === "photo" ? `${event.kind} ${event.bytes.length}` : `${event.kind} ${event.text}`)),
         ["line [huddle] one", 'text {"type":"hello","audio":true}', "audio 3200", "line [huddle] two"],
         `chunks of ${size}`,
       );
@@ -63,6 +63,15 @@ describe("the USB link's frames", () => {
     const reader = new FrameReader();
     assert.deepEqual(shapes(reader.push(bytes(encodeFrame("T", ""), "[huddle] half"))), [{ kind: "text", text: "" }]);
     assert.deepEqual(shapes(reader.push(bytes(" a line\n"))), [{ kind: "line", text: "[huddle] half a line" }]);
+  });
+
+  it("reads a photo the button took, and base64s it for Huddle", () => {
+    const jpeg = new Uint8Array([0xff, 0xd8, 0x02, 0x50, 0xff, 0xd9]);
+    const events = new FrameReader().push(bytes("[huddle] snap\n", encodeFrame("P", jpeg)));
+    assert.deepEqual(shapes(events).map((event) => event.kind), ["line", "photo"]);
+    assert.deepEqual(events[1]?.kind === "photo" ? [...events[1].bytes] : [], [...jpeg], "kept whole, STX inside and all");
+    assert.equal(base64(jpeg), "/9gCUP/Z");
+    assert.equal(base64(new Uint8Array(100_000)).length, 133_336, "a 100 KB photo in one go, no stack overflow");
   });
 
   it("turns a canvas's RGBA into the screen's RGB565", () => {
