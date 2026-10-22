@@ -23,7 +23,40 @@ export type UsbEvent =
   | { readonly kind: "text"; readonly text: string }
   | { readonly kind: "audio"; readonly bytes: Uint8Array };
 
-export function encodeFrame(kind: "T" | "B", payload: Uint8Array | string): Uint8Array {
+/** A picture for the button to keep (an assistant's Huddler), as 16-bit RGB565 pixels, row by row. */
+export interface Sprite {
+  readonly key: string;
+  readonly width: number;
+  readonly height: number;
+  readonly pixels: Uint16Array;
+}
+
+/** RGBA bytes (a canvas's) as 16-bit RGB565, the button screen's own pixels. */
+export function toRgb565(rgba: ArrayLike<number>): Uint16Array {
+  const out = new Uint16Array(Math.floor(rgba.length / 4));
+  for (let i = 0; i < out.length; i += 1) {
+    const r = rgba[i * 4] ?? 0;
+    const g = rgba[i * 4 + 1] ?? 0;
+    const b = rgba[i * 4 + 2] ?? 0;
+    out[i] = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+  }
+  return out;
+}
+
+/** An 'I' frame's bytes: the key's length and bytes, the width and height (16-bit, little-endian), the pixels. */
+export function spritePayload(sprite: Sprite): Uint8Array {
+  const key = new TextEncoder().encode(sprite.key.slice(0, 40));
+  const out = new Uint8Array(1 + key.length + 4 + sprite.pixels.length * 2);
+  const view = new DataView(out.buffer);
+  out[0] = key.length;
+  out.set(key, 1);
+  view.setUint16(1 + key.length, sprite.width, true);
+  view.setUint16(3 + key.length, sprite.height, true);
+  for (let i = 0; i < sprite.pixels.length; i += 1) view.setUint16(5 + key.length + i * 2, sprite.pixels[i] ?? 0, true);
+  return out;
+}
+
+export function encodeFrame(kind: "T" | "B" | "I", payload: Uint8Array | string): Uint8Array {
   const bytes = typeof payload === "string" ? new TextEncoder().encode(payload) : payload;
   const frame = new Uint8Array(HEAD + bytes.length);
   frame[0] = STX;
@@ -160,6 +193,16 @@ export class UsbLink {
   /** Sets the button's speaker volume (0 to 300); it keeps it, and beeps at the new level. */
   setVolume(volume: number): void {
     this.sendToButton("T", JSON.stringify({ type: "volume", value: Math.round(Math.min(300, Math.max(0, volume))) }));
+  }
+
+  /**
+   * Sends the button pictures to keep (the Huddlers of your assistants), a few a second: each is about 15 KB
+   * and the button's USB buffer holds about 32.
+   */
+  sendSprites(sprites: readonly Sprite[]): void {
+    sprites.forEach((sprite, index) => {
+      setTimeout(() => this.sendToButton("I", spritePayload(sprite)), index * 250);
+    });
   }
 
   /** Inverts its screen's colours or turns the picture upside down; it keeps the setting. */
@@ -313,7 +356,7 @@ export class UsbLink {
     if (this.audio.length && this.writer) this.audioTimer = setTimeout(() => this.feedAudio(), 25);
   }
 
-  private sendToButton(kind: "T" | "B", payload: Uint8Array | string): void {
+  private sendToButton(kind: "T" | "B" | "I", payload: Uint8Array | string): void {
     const writer = this.writer;
     if (!writer) return;
     const frame = encodeFrame(kind, payload);

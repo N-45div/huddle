@@ -1,5 +1,6 @@
 import { deviceSocketUrl } from "./api.ts";
 import { ESPRESSIF_VENDOR_ID, type SerialPortLike, UsbLink, type UsbScreen, type UsbState, webSerial } from "./usb-link.ts";
+import { spritesForButton } from "./usb-sprites.ts";
 
 /**
  * The button's USB link for the whole canvas: it stays up while you move between pages (an approval on the
@@ -33,7 +34,16 @@ function update(next: Partial<UsbSnapshot>): void {
 
 const link = new UsbLink({
   onLine: (text, from) => update({ lines: [...snapshot.lines.slice(-(KEEP_LINES - 1)), { id: ++lineId, text, from }] }),
-  onState: (state) => update({ state }),
+  onState: (state) => {
+    update({ state });
+    // Each time it comes on the line (a restart forgets them), the button gets its Huddlers to draw.
+    if (state === "live") {
+      spritesForButton().then(
+        (sprites) => link.sendSprites(sprites),
+        (error: unknown) => update({ error: `Couldn't draw the Huddlers for the button: ${error instanceof Error ? error.message : String(error)}` }),
+      );
+    }
+  },
   onVolume: (volume) => update({ volume }),
   onScreen: (screen) => update({ screen }),
   socketUrl: (token) => {

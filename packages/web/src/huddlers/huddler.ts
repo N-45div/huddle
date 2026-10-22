@@ -124,6 +124,8 @@ export interface HuddlerOptions {
   /** Read out by screen readers; the drawing is decorative without it. */
   readonly title?: string;
   readonly size?: number;
+  /** false: an empty visor, for the Huddle button, which draws the faces itself (and moves them). */
+  readonly face?: boolean;
 }
 
 /** One Huddler as an SVG string. */
@@ -149,9 +151,9 @@ ${arms ? `<rect class="h-arm-l" x="5.5" y="32" width="9" height="13.5" rx="4.5" 
 <rect x="16" y="24.5" width="32" height="20.5" rx="10.25" fill="${SCREEN}"/>
 <circle cx="13.8" cy="42" r="2.4" fill="#ff8fa3" opacity=".75"/>
 <circle cx="50.2" cy="42" r="2.4" fill="#ff8fa3" opacity=".75"/>
-${face(mood)}
+${options.face === false ? "" : face(mood)}
 ${front}
-${mood === "thinking" ? `<g class="h-dots" fill="${dark}"><circle cx="53" cy="15" r="1.6"/><circle cx="57.5" cy="11" r="2"/><circle cx="62" cy="6.5" r="2.4"/></g>` : ""}
+${mood === "thinking" && options.face !== false ? `<g class="h-dots" fill="${dark}"><circle cx="53" cy="15" r="1.6"/><circle cx="57.5" cy="11" r="2"/><circle cx="62" cy="6.5" r="2.4"/></g>` : ""}
 </g>
 </svg>`;
 }

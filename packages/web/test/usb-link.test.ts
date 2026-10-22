@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { encodeFrame, FrameReader, type UsbEvent } from "../src/usb-link.ts";
+import { encodeFrame, FrameReader, spritePayload, toRgb565, type UsbEvent } from "../src/usb-link.ts";
 
 const bytes = (...parts: (Uint8Array | string)[]) => {
   const chunks = parts.map((part) => (typeof part === "string" ? new TextEncoder().encode(part) : part));
@@ -63,5 +63,19 @@ describe("the USB link's frames", () => {
     const reader = new FrameReader();
     assert.deepEqual(shapes(reader.push(bytes(encodeFrame("T", ""), "[huddle] half"))), [{ kind: "text", text: "" }]);
     assert.deepEqual(shapes(reader.push(bytes(" a line\n"))), [{ kind: "line", text: "[huddle] half a line" }]);
+  });
+
+  it("turns a canvas's RGBA into the screen's RGB565", () => {
+    // White, Hud's indigo (#5b63e6), the button's background (#13142a), with alpha ignored.
+    assert.deepEqual([...toRgb565([255, 255, 255, 255, 0x5b, 0x63, 0xe6, 255, 0x13, 0x14, 0x2a, 0])], [0xffff, 0x5b1c, 0x10a5]);
+  });
+
+  it("packs a Huddler for the button: key, size, then the pixels, little-endian", () => {
+    const payload = spritePayload({ key: "hud", width: 2, height: 1, pixels: new Uint16Array([0x5b1c, 0xffff]) });
+    assert.deepEqual([...payload], [3, 0x68, 0x75, 0x64, 2, 0, 1, 0, 0x1c, 0x5b, 0xff, 0xff]);
+    const frame = encodeFrame("I", payload);
+    assert.deepEqual([...frame.subarray(0, 6)], [0x02, 0x49, payload.length, 0, 0, 0]);
+    // A full-size Huddler fits in one frame, well under the 64 KB either side accepts.
+    assert.ok(spritePayload({ key: "planner", width: 88, height: 88, pixels: new Uint16Array(88 * 88) }).length < 65_536);
   });
 });
