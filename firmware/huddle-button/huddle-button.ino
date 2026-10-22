@@ -158,8 +158,29 @@ void queueTone(float hz, int ms, float level) {
   }
 }
 
+/** A two-pole filter (RBJ's cookbook), run a sample at a time. */
+struct Biquad {
+  float b0, b1, b2, a1, a2, x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  static Biquad make(bool highPass, float hz, float q = 0.707f) {
+    float w = 2 * PI * hz / RATE, c = cosf(w), alpha = sinf(w) / (2 * q), a0 = 1 + alpha;
+    float b = highPass ? (1 + c) / 2 : (1 - c) / 2;
+    return {b / a0, (highPass ? -(1 + c) : 1 - c) / a0, b / a0, -2 * c / a0, (1 - alpha) / a0};
+  }
+  float run(float x) {
+    float y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+    x2 = x1;
+    x1 = x;
+    y2 = y1;
+    y1 = y;
+    return y;
+  }
+};
+
 void playTask(void *) {
   static int16_t frame[320];  // 20 ms
+  // Voice for a small speaker: below 200 Hz it can't play, and trying makes it buzz; above 6.5 kHz is hiss.
+  Biquad low = Biquad::make(true, 200), high = Biquad::make(false, 6500);
+  bool wasPlaying = false;
   for (;;) {
     size_t got = 0;
     portENTER_CRITICAL(&ringLock);
@@ -169,16 +190,21 @@ void playTask(void *) {
     }
     portEXIT_CRITICAL(&ringLock);
     size_t samples = got / 2;
-    // 100 plays what Huddle sends; above it boosts quiet speech, and past the knee loud peaks are softened
-    // instead of clipped (clipping crackles on a small speaker).
-    const float gain = volume / 100.0f;
+    // 100 plays what Huddle sends; above it boosts quiet speech, and loud peaks bend smoothly toward full
+    // scale instead of clipping (clipping crackles on a small speaker).
+    const float gain = volume / 100.0f, knee = 14000.0f, room = 32000.0f - knee;
     float energy = 0;
     for (size_t i = 0; i < samples; i++) {
-      float y = frame[i] * gain, a = fabsf(y);
-      if (a > 16000.0f) a = min(32767.0f, 16000.0f + (a - 16000.0f) * 0.25f);
+      float y = high.run(low.run(frame[i])) * gain, a = fabsf(y);
+      if (a > knee) a = knee + room * tanhf((a - knee) / room);
+      // 5 ms fades where sound starts and stops, so there's no click between sentences.
+      if (!wasPlaying && i < 80) a *= i / 80.0f;
+      if (samples < 320 && i + 80 >= samples) a *= (samples - i) / 80.0f;
       frame[i] = (int16_t)copysignf(a, y);
       energy += a * a;
     }
+    wasPlaying = samples == 320;
+    if (!samples) low = Biquad::make(true, 200), high = Biquad::make(false, 6500);  // silent: start the filters afresh
     // How loud this slice is, for Hud's mouth and the LED.
     float rms = samples ? sqrtf(energy / samples) : 0;
     speakLevel = min(1.0f, rms / 7000.0f);
