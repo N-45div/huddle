@@ -110,12 +110,19 @@ export function webSerial(): SerialLike | null {
 
 export type UsbState = "closed" | "waiting" | "connecting" | "live";
 
+export interface UsbScreen {
+  readonly invert: boolean;
+  readonly flip: boolean;
+}
+
 export interface UsbLinkEvents {
   /** The button's log and this link's own notes, a line at a time. */
   readonly onLine: (line: string, from: "button" | "link") => void;
   readonly onState: (state: UsbState) => void;
   /** The button's speaker volume (0 to 300), as it says when it introduces itself. */
   readonly onVolume?: (volume: number) => void;
+  /** How its screen is shown: colours inverted, picture upside down. */
+  readonly onScreen?: (screen: UsbScreen) => void;
   /** The /devices/ws address for the button's own token. */
   readonly socketUrl: (token: string) => string;
 }
@@ -153,6 +160,11 @@ export class UsbLink {
   /** Sets the button's speaker volume (0 to 300); it keeps it, and beeps at the new level. */
   setVolume(volume: number): void {
     this.sendToButton("T", JSON.stringify({ type: "volume", value: Math.round(Math.min(300, Math.max(0, volume))) }));
+  }
+
+  /** Inverts its screen's colours or turns the picture upside down; it keeps the setting. */
+  setScreen(screen: UsbScreen): void {
+    this.sendToButton("T", JSON.stringify({ type: "screen", invert: screen.invert, flip: screen.flip }));
   }
 
   async connect(port: SerialPortLike): Promise<void> {
@@ -218,14 +230,15 @@ export class UsbLink {
       if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(event.bytes);
       return;
     }
-    let message: { type?: unknown; token?: unknown; volume?: unknown };
+    let message: { type?: unknown; token?: unknown; volume?: unknown; invert?: unknown; flip?: unknown };
     try {
-      message = JSON.parse(event.text) as { type?: unknown; token?: unknown; volume?: unknown };
+      message = JSON.parse(event.text) as typeof message;
     } catch {
       return this.note("The button sent something that isn't JSON; skipped.");
     }
     if (message.type === "usb") {
       if (typeof message.volume === "number") this.events.onVolume?.(message.volume);
+      if (typeof message.invert === "boolean" && typeof message.flip === "boolean") this.events.onScreen?.({ invert: message.invert, flip: message.flip });
       if (typeof message.token !== "string") return;
       // Announcing while connected means the button restarted (or stopped hearing the pings): start afresh,
       // so Huddle greets it again.

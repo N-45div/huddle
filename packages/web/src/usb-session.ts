@@ -1,5 +1,5 @@
 import { deviceSocketUrl } from "./api.ts";
-import { ESPRESSIF_VENDOR_ID, type SerialPortLike, UsbLink, type UsbState, webSerial } from "./usb-link.ts";
+import { ESPRESSIF_VENDOR_ID, type SerialPortLike, UsbLink, type UsbScreen, type UsbState, webSerial } from "./usb-link.ts";
 
 /**
  * The button's USB link for the whole canvas: it stays up while you move between pages (an approval on the
@@ -17,10 +17,12 @@ export interface UsbSnapshot {
   readonly error: string | null;
   /** The button's speaker volume (0 to 300), once it has said; null before. */
   readonly volume: number | null;
+  /** How its screen is shown, once it has said; null before. */
+  readonly screen: UsbScreen | null;
 }
 
 const KEEP_LINES = 300;
-let snapshot: UsbSnapshot = { state: "closed", lines: [], error: null, volume: null };
+let snapshot: UsbSnapshot = { state: "closed", lines: [], error: null, volume: null, screen: null };
 let lineId = 0;
 const listeners = new Set<() => void>();
 
@@ -33,6 +35,7 @@ const link = new UsbLink({
   onLine: (text, from) => update({ lines: [...snapshot.lines.slice(-(KEEP_LINES - 1)), { id: ++lineId, text, from }] }),
   onState: (state) => update({ state }),
   onVolume: (volume) => update({ volume }),
+  onScreen: (screen) => update({ screen }),
   socketUrl: (token) => {
     const url = new URL(deviceSocketUrl());
     url.searchParams.set("token", token);
@@ -96,6 +99,10 @@ export const usbSession = {
   setVolume: (volume: number): void => {
     link.setVolume(volume);
     update({ volume });
+  },
+  setScreen: (screen: UsbScreen): void => {
+    link.setScreen(screen);
+    update({ screen });
   },
 };
 

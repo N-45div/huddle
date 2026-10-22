@@ -4272,3 +4272,9 @@ h1 .badge {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+
+.usb-screen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}

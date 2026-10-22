@@ -8,6 +8,7 @@ import { useResource } from "../hooks.ts";
 import { Huddler } from "../huddlers/Huddler.tsx";
 import type { Mood } from "../huddlers/huddler.ts";
 import type { Device, DeviceMessage } from "../types.ts";
+import type { UsbScreen } from "../usb-link.ts";
 import { usbSession } from "../usb-session.ts";
 import { openMic, PcmPlayer } from "../voice.ts";
 import { TokenRow } from "./ContactsScreen.tsx";
@@ -89,6 +90,18 @@ function UsbButton() {
       </Hint>
       {usb.error && <ErrorNote message={usb.error} />}
       {usb.state !== "closed" && usb.volume !== null && <UsbVolume volume={usb.volume} />}
+      {usb.state !== "closed" && usb.screen && (
+        <div className="usb-screen">
+          <label className="switch">
+            <input type="checkbox" role="switch" checked={usb.screen.flip} onChange={(event) => usbSession.setScreen({ ...(usb.screen as UsbScreen), flip: event.target.checked })} />
+            <span>Screen upside down</span>
+          </label>
+          <label className="switch">
+            <input type="checkbox" role="switch" checked={usb.screen.invert} onChange={(event) => usbSession.setScreen({ ...(usb.screen as UsbScreen), invert: event.target.checked })} />
+            <span>Invert screen colours</span>
+          </label>
+        </div>
+      )}
       {usb.lines.length > 0 && (
         <pre className="usb-log" ref={log} aria-label="What the button says">
           {usb.lines.map((line) => (
