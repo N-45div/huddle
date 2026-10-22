@@ -19,8 +19,9 @@
 // The device token from Huddle's Devices page ("Add and make a token"), shown once.
 #define DEVICE_TOKEN "hdl_d_paste-yours-here"
 
-// How loud it speaks: 100 plays Huddle's voice as sent, up to 200 boosts it (loud peaks are softened, not clipped).
-#define VOLUME 150
+// How loud it speaks, 0 to 300: 100 plays Huddle's voice as sent, more boosts it (loud peaks are softened, not
+// clipped). The Devices page's slider changes it without flashing.
+#define VOLUME 250
 // The INMP441 sends on one I2S channel, and which one isn't documented for this board. At start-up the button
 // listens to its own chime on both and keeps the one that hears (and remembers it). This is what it uses
 // until a channel has heard the chime once.

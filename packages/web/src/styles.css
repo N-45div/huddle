@@ -4253,3 +4253,22 @@ h1 .badge {
 .usb-note {
   color: var(--accent);
 }
+
+.usb-volume {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.usb-volume input {
+  flex: 1;
+  max-width: 320px;
+  accent-color: var(--accent);
+}
+
+.usb-volume-value {
+  min-width: 48px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

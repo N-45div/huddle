@@ -15,10 +15,12 @@ export interface UsbSnapshot {
   readonly state: UsbState;
   readonly lines: readonly UsbLine[];
   readonly error: string | null;
+  /** The button's speaker volume (0 to 300), once it has said; null before. */
+  readonly volume: number | null;
 }
 
 const KEEP_LINES = 300;
-let snapshot: UsbSnapshot = { state: "closed", lines: [], error: null };
+let snapshot: UsbSnapshot = { state: "closed", lines: [], error: null, volume: null };
 let lineId = 0;
 const listeners = new Set<() => void>();
 
@@ -30,6 +32,7 @@ function update(next: Partial<UsbSnapshot>): void {
 const link = new UsbLink({
   onLine: (text, from) => update({ lines: [...snapshot.lines.slice(-(KEEP_LINES - 1)), { id: ++lineId, text, from }] }),
   onState: (state) => update({ state }),
+  onVolume: (volume) => update({ volume }),
   socketUrl: (token) => {
     const url = new URL(deviceSocketUrl());
     url.searchParams.set("token", token);
@@ -90,6 +93,10 @@ export const usbSession = {
     return link.disconnect();
   },
   clearLog: (): void => update({ lines: [] }),
+  setVolume: (volume: number): void => {
+    link.setVolume(volume);
+    update({ volume });
+  },
 };
 
 // The button unplugged and plugged back in (or restarted by a flash you didn't disconnect for): pick it up

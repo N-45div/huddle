@@ -82,6 +82,7 @@ unsigned long moodUntil = 0, replyUntil = 0;
 bool redraw = true;
 int tftMap = 0;
 int micChannel = MIC_RIGHT_CHANNEL ? 1 : 0;  // 0 left, 1 right: picked at start-up from the one that hears
+volatile int volume = VOLUME;                // 0 to 300: VOLUME, or what the canvas set last (kept in prefs)
 unsigned long approvalAt = 0;                // when the approval on screen arrived
 bool linkUp = false;                         // talking to Huddle now
 float dcIn = 0, dcOut = 0;                   // the mic's DC blocker
@@ -150,11 +151,12 @@ void playTask(void *) {
     }
     portEXIT_CRITICAL(&ringLock);
     size_t samples = got / 2;
-    // VOLUME 100 plays what Huddle sends; above it boosts quiet speech, and past the knee loud peaks are
-    // softened instead of clipped (clipping crackles on a small speaker).
+    // 100 plays what Huddle sends; above it boosts quiet speech, and past the knee loud peaks are softened
+    // instead of clipped (clipping crackles on a small speaker).
+    const float gain = volume / 100.0f;
     for (size_t i = 0; i < samples; i++) {
-      float y = frame[i] * (VOLUME / 100.0f), a = fabsf(y);
-      if (a > 22000.0f) a = min(32767.0f, 22000.0f + (a - 22000.0f) * 0.3f);
+      float y = frame[i] * gain, a = fabsf(y);
+      if (a > 16000.0f) a = min(32767.0f, 16000.0f + (a - 16000.0f) * 0.25f);
       frame[i] = (int16_t)copysignf(a, y);
     }
     for (size_t i = samples; i < 320; i++) frame[i] = 0;  // silence between things to say: no pops
@@ -356,6 +358,13 @@ void onMessage(uint8_t *payload, size_t length) {
   String type = doc["type"] | "";
   // The canvas's own messages on the USB link: Huddle is there, gone, or the canvas is still listening.
   if (type == "usb-ping") return;
+  if (type == "volume") {
+    volume = constrain((int)(doc["value"] | (int)volume), 0, 300);
+    prefs.putInt("vol", volume);
+    logLine("volume %d", (int)volume);
+    queueTone(880, 120, 0.2f);  // a short beep at the new volume
+    return;
+  }
   if (type == "usb-open") return linkOpened();
   if (type == "usb-closed") return linkClosed();
   logLine("from Huddle: %s", type.c_str());
@@ -490,6 +499,7 @@ void usbLoop() {
     JsonDocument hello;
     hello["type"] = "usb";
     hello["token"] = DEVICE_TOKEN;
+    hello["volume"] = (int)volume;
     sendJson(hello);
   }
   // The canvas pings every 5 s; quiet for 15, the tab is gone.
@@ -672,7 +682,8 @@ void setupScreen() {
 
 /** Start-up check: the screen wiring and memory on screen, a chime, and which mic channel hears it. */
 void bootCheck() {
-  logLine("Huddle button: screen wiring %d, PSRAM %u KB, free memory %u KB", tftMap + 1, ESP.getPsramSize() / 1024, ESP.getFreeHeap() / 1024);
+  volume = constrain(prefs.getInt("vol", VOLUME), 0, 300);
+  logLine("Huddle button: screen wiring %d, PSRAM %u KB, free memory %u KB, volume %d", tftMap + 1, ESP.getPsramSize() / 1024, ESP.getFreeHeap() / 1024, (int)volume);
   if (!ring) logLine("no PSRAM, so no speech: compile with PSRAM=opi for the ESP32-S3 N16R8");
   if (tft) {
     tft->fillScreen(ST77XX_BLACK);

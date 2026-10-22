@@ -114,6 +114,8 @@ export interface UsbLinkEvents {
   /** The button's log and this link's own notes, a line at a time. */
   readonly onLine: (line: string, from: "button" | "link") => void;
   readonly onState: (state: UsbState) => void;
+  /** The button's speaker volume (0 to 300), as it says when it introduces itself. */
+  readonly onVolume?: (volume: number) => void;
   /** The /devices/ws address for the button's own token. */
   readonly socketUrl: (token: string) => string;
 }
@@ -146,6 +148,11 @@ export class UsbLink {
 
   get current(): UsbState {
     return this.state;
+  }
+
+  /** Sets the button's speaker volume (0 to 300); it keeps it, and beeps at the new level. */
+  setVolume(volume: number): void {
+    this.sendToButton("T", JSON.stringify({ type: "volume", value: Math.round(Math.min(300, Math.max(0, volume))) }));
   }
 
   async connect(port: SerialPortLike): Promise<void> {
@@ -211,13 +218,14 @@ export class UsbLink {
       if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(event.bytes);
       return;
     }
-    let message: { type?: unknown; token?: unknown };
+    let message: { type?: unknown; token?: unknown; volume?: unknown };
     try {
-      message = JSON.parse(event.text) as { type?: unknown; token?: unknown };
+      message = JSON.parse(event.text) as { type?: unknown; token?: unknown; volume?: unknown };
     } catch {
       return this.note("The button sent something that isn't JSON; skipped.");
     }
     if (message.type === "usb") {
+      if (typeof message.volume === "number") this.events.onVolume?.(message.volume);
       if (typeof message.token !== "string") return;
       // Announcing while connected means the button restarted (or stopped hearing the pings): start afresh,
       // so Huddle greets it again.

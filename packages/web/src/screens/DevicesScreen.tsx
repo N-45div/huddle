@@ -88,6 +88,7 @@ function UsbButton() {
         pages while this tab is open. Disconnect before you flash it again.
       </Hint>
       {usb.error && <ErrorNote message={usb.error} />}
+      {usb.state !== "closed" && usb.volume !== null && <UsbVolume volume={usb.volume} />}
       {usb.lines.length > 0 && (
         <pre className="usb-log" ref={log} aria-label="What the button says">
           {usb.lines.map((line) => (
@@ -99,6 +100,32 @@ function UsbButton() {
         </pre>
       )}
     </section>
+  );
+}
+
+/** The button's speaker volume: set when you let go of the slider; the button keeps it and beeps at it. */
+function UsbVolume({ volume }: { readonly volume: number }) {
+  const [value, setValue] = useState(volume);
+  useEffect(() => setValue(volume), [volume]);
+  const commit = () => {
+    if (value !== volume) usbSession.setVolume(value);
+  };
+  return (
+    <label className="usb-volume">
+      <span>Speaker volume</span>
+      <input
+        type="range"
+        min={0}
+        max={300}
+        step={10}
+        value={value}
+        onChange={(event) => setValue(Number(event.target.value))}
+        onPointerUp={commit}
+        onKeyUp={commit}
+        onBlur={commit}
+      />
+      <span className="usb-volume-value">{value}%</span>
+    </label>
   );
 }
 
