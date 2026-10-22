@@ -23,6 +23,8 @@
 #include <ArduinoJson.h>
 #include <ESP_I2S.h>
 #include <Preferences.h>
+#include <esp_camera.h>
+#include <img_converters.h>
 #include <SPI.h>
 #include <WebSocketsClient.h>
 #include <WiFi.h>
@@ -63,6 +65,7 @@ enum class Face;
 
 struct Flow {
   String id, name;
+  bool sees = false;  // one of its assistants takes images: a photo goes with what you say
 };
 
 Adafruit_ST7735 *tft = nullptr;
@@ -98,6 +101,10 @@ volatile float speakLevel = 0;               // the last 20 ms the speaker playe
 volatile unsigned long lastSoundAt = 0;      // when the speaker last played something
 unsigned long listenStart = 0, muteMicUntil = 0, lastAnim = 0, lastTimer = 0;
 bool wasSpeaking = false;
+// The photo a turn came with (a flow that sees): shown, small, while you talk and while Huddle looks.
+constexpr int THUMB_W = 80, THUMB_H = 60;  // a VGA photo at an eighth
+bool photoNow = false;
+uint16_t *thumb = nullptr;
 // How the screen is shown, set from the canvas and kept: colours inverted (some panels need it), and
 // upside down (these screens look best from one side, so the button can be held either way up).
 bool screenInverted = false, screenFlipped = false;
@@ -515,7 +522,11 @@ void draw() {
   if (!tft) return;
   redraw = false;
   tft->fillScreen(BG);
-  drawWho();
+  bool speaking = speakingNow() && replyText.length() && (mode == Mode::Idle || mode == Mode::Thinking);
+  // A turn that came with a photo shows it while you talk and while Huddle looks; the answer is the Huddler's.
+  bool showPhoto = photoNow && thumb && !speaking && (mode == Mode::Listening || mode == Mode::Thinking);
+  if (showPhoto) drawPhoto();
+  else drawWho();
   if (mode == Mode::Connecting) {
     drawFace(Face::Sleep);
     caption(114, "Connecting", FACE);
@@ -523,12 +534,11 @@ void draw() {
     return;
   }
   if (mode == Mode::Listening) {
-    drawFace(Face::Listen);
+    if (!showPhoto) drawFace(Face::Listen);
     caption(116, "Listening...", CYAN);
     lastTimer = 0;  // the waveform, rings, timer and recording dot move in animate()
     return;
   }
-  bool speaking = speakingNow() && replyText.length() && (mode == Mode::Idle || mode == Mode::Thinking);
   if (speaking || replying()) {
     // The answer, in a bubble under whoever gave it.
     drawFace(speaking ? Face::Talk : Face::Happy);
@@ -545,8 +555,8 @@ void draw() {
     return;
   }
   if (mode == Mode::Thinking) {
-    drawFace(Face::Think);
-    caption(112, whoName.length() ? ascii(whoName) + " is on it" : "On it", FACE);
+    if (!showPhoto) drawFace(Face::Think);
+    caption(112, showPhoto ? "Looking..." : whoName.length() ? ascii(whoName) + " is on it" : "On it", FACE);
     if (heardText.length()) small(119, "\"" + ascii(heardText) + "\"", MUTED, 2);
     return;  // the dots hop in animate()
   }
@@ -689,7 +699,7 @@ void onMessage(uint8_t *payload, size_t length) {
     String label = doc["nextRun"].isNull() ? "" : String(doc["nextRun"]["label"] | "");
     nextAt = label.length() ? label : at.length() >= 16 ? at.substring(11, 16) + " UTC" : "";
     flows.clear();
-    for (JsonObject flow : doc["flows"].as<JsonArray>()) flows.push_back({flow["id"] | "", flow["name"] | ""});
+    for (JsonObject flow : doc["flows"].as<JsonArray>()) flows.push_back({flow["id"] | "", flow["name"] | "", flow["sees"] | false});
     if (picked >= flows.size()) picked = 0;
     setLed(0, 0, 4);
   } else if (type == "heard") {
@@ -867,21 +877,107 @@ void onSocket(WStype_t type, uint8_t *payload, size_t length) {
 }
 #endif
 
+// ---- The camera: a photo as you start to talk, for flows that see ---------------------------------------
+// OceanLabz's map (examples/05-camera/02_camera_streaming/camera_pins.h): the ESP32-S3-EYE's. The photo goes
+// up the cable as a 'P' frame (a VGA JPEG) and, small, onto the screen while Huddle looks at it.
+constexpr int CAM_XCLK = 15, CAM_SIOD = 4, CAM_SIOC = 5, CAM_VSYNC = 6, CAM_HREF = 7, CAM_PCLK = 13;
+constexpr int CAM_Y[8] = {11, 9, 8, 10, 12, 18, 17, 16};  // Y2 to Y9
+bool cameraReady = false;
+
+void startCamera() {
+  camera_config_t config = {};
+  config.ledc_channel = LEDC_CHANNEL_0;
+  config.ledc_timer = LEDC_TIMER_0;
+  config.pin_d0 = CAM_Y[0];
+  config.pin_d1 = CAM_Y[1];
+  config.pin_d2 = CAM_Y[2];
+  config.pin_d3 = CAM_Y[3];
+  config.pin_d4 = CAM_Y[4];
+  config.pin_d5 = CAM_Y[5];
+  config.pin_d6 = CAM_Y[6];
+  config.pin_d7 = CAM_Y[7];
+  config.pin_xclk = CAM_XCLK;
+  config.pin_pclk = CAM_PCLK;
+  config.pin_vsync = CAM_VSYNC;
+  config.pin_href = CAM_HREF;
+  config.pin_sccb_sda = CAM_SIOD;
+  config.pin_sccb_scl = CAM_SIOC;
+  config.pin_pwdn = -1;
+  config.pin_reset = -1;
+  config.xclk_freq_hz = 20000000;
+  config.pixel_format = PIXFORMAT_JPEG;
+  config.frame_size = FRAMESIZE_VGA;
+  config.jpeg_quality = 14;
+  // One frame, taken when asked for: nothing streams, and the photo is fresh.
+  config.fb_count = 1;
+  config.fb_location = CAMERA_FB_IN_PSRAM;
+  config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+  esp_err_t error = esp_camera_init(&config);
+  if (error != ESP_OK) {
+    logLine("camera didn't start (0x%x): no photos", error);
+    return;
+  }
+  cameraReady = true;
+  sensor_t *sensor = esp_camera_sensor_get();
+  logLine("camera on (sensor 0x%x)", sensor ? sensor->id.PID : 0);
+}
+
+/** A photo now: a shutter click and a white flash, then the JPEG up the cable and a small copy for the screen. */
+void snapPhoto() {
+  photoNow = false;
+  if (!cameraReady) return;
+  queueTone(2400, 15, 0.08f);
+  queueTone(1500, 25, 0.08f);
+  if (tft) tft->fillScreen(ST77XX_WHITE);
+  setLed(60, 60, 60);
+  // The one frame held may be old: let it go, and take the next.
+  camera_fb_t *frame = esp_camera_fb_get();
+  if (frame) esp_camera_fb_return(frame);
+  frame = esp_camera_fb_get();
+  if (!frame) {
+    logLine("camera: no photo");
+    return;
+  }
+#if HUDDLE_LINK_USB
+  if (frame->len <= 60000) writeFrame('P', frame->buf, frame->len);
+#endif
+  logLine("photo: %ux%u, %u KB%s", frame->width, frame->height, frame->len / 1024, frame->len > 60000 ? " (too big to send)" : "");
+  if (!thumb) thumb = static_cast<uint16_t *>(ps_malloc(THUMB_W * THUMB_H * 2));
+  if (thumb && frame->width == THUMB_W * 8 && jpg2rgb565(frame->buf, frame->len, reinterpret_cast<uint8_t *>(thumb), JPG_SCALE_8X)) {
+    for (int i = 0; i < THUMB_W * THUMB_H; i++) thumb[i] = (thumb[i] >> 8) | (thumb[i] << 8);  // the decoder writes high byte first
+    photoNow = frame->len <= 60000;
+  }
+  esp_camera_fb_return(frame);
+}
+
+/** The photo this turn came with, framed, where the Huddler stands. */
+void drawPhoto() {
+  tft->fillRoundRect(20, 12, THUMB_W + 8, THUMB_H + 8, 6, FACE);
+  tft->drawRGBBitmap(24, 16, thumb, THUMB_W, THUMB_H);
+}
+
 // ---- Listening ------------------------------------------------------------------------------------------
 void startListening() {
   flushPlayback();
-  // A soft rising blip: it's listening. The mic sends silence while the blip plays, so it isn't heard.
-  queueTone(523, 45, 0.12f);
-  queueTone(784, 60, 0.12f);
-  muteMicUntil = millis() + 160;
-  listenStart = millis();
-  for (float &level : micHistory) level = 0;
-  dcIn = dcOut = 0;
-  logLine("listening (mic %s)", micChannel ? "right" : "left");
+  bool sees = !flows.empty() && flows[picked % flows.size()].sees;
+  logLine("listening (mic %s)%s", micChannel ? "right" : "left", sees ? ", with a photo" : "");
   JsonDocument listen;
   listen["type"] = "listen";
   if (!flows.empty()) listen["flow"] = flows[picked % flows.size()].id;
   sendJson(listen);
+  // A flow that sees gets a photo as you start (with a shutter click); any other, a soft rising blip.
+  // The mic sends silence while either plays, so it isn't heard.
+  if (sees) {
+    snapPhoto();
+  } else {
+    photoNow = false;
+    queueTone(523, 45, 0.12f);
+    queueTone(784, 60, 0.12f);
+  }
+  muteMicUntil = millis() + 160;
+  listenStart = millis();
+  for (float &level : micHistory) level = 0;
+  dcIn = dcOut = 0;
   mode = Mode::Listening;
   heardText = "";
   replyText = "";
@@ -951,7 +1047,7 @@ void animate() {
     shown = -1;
     float level = micHistory[(micHead + WAVE_BARS - 1) % WAVE_BARS];
     // Rings around whoever's listening, lit by your voice.
-    for (int r = 0; r < 2; r++) tft->drawCircle(64, SY + 49, 46 + r * 5, level > 0.15f + r * 0.3f ? (r ? 0x3D9B : CYAN) : BG);
+    if (!photoNow) for (int r = 0; r < 2; r++) tft->drawCircle(64, SY + 49, 46 + r * 5, level > 0.15f + r * 0.3f ? (r ? 0x3D9B : CYAN) : BG);
     drawWave();
     if (now - lastTimer > 500) {
       lastTimer = now;
@@ -974,7 +1070,7 @@ void animate() {
   }
   if (mode == Mode::Thinking) {
     shown = -1;
-    drawFace(Face::Think, 2.2f * sinf(now / 380.0f));
+    if (!photoNow) drawFace(Face::Think, 2.2f * sinf(now / 380.0f));
     drawDots(now);
     float breath = 0.5f + 0.5f * sinf(now / 450.0f);
     setLed((uint8_t)(6 + breath * 30), 0, (uint8_t)(8 + breath * 40));
@@ -1195,6 +1291,7 @@ void setup() {
   mic.begin(I2S_MODE_STD, RATE, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO);
   if (ring) xTaskCreatePinnedToCore(playTask, "play", 4096, nullptr, 2, nullptr, 0);
   bootCheck();
+  startCamera();
 
 #if HUDDLE_LINK_USB
   linkClosed();  // waiting for the canvas
@@ -1251,6 +1348,7 @@ void loop() {
       replyUntil = 0;
       who = "hud";  // the answer's done: Hud's back
       whoName = "";
+      photoNow = false;
     }
     lastFace = millis();
     draw();
