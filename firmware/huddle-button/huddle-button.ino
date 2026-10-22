@@ -85,6 +85,24 @@ int micChannel = MIC_RIGHT_CHANNEL ? 1 : 0;  // 0 left, 1 right: picked at start
 volatile int volume = VOLUME;                // 0 to 300: VOLUME, or what the canvas set last (kept in prefs)
 unsigned long approvalAt = 0;                // when the approval on screen arrived
 bool linkUp = false;                         // talking to Huddle now
+
+// Live state for the animations: your voice while you talk, Huddle's while it speaks.
+constexpr size_t WAVE_BARS = 32;
+float micHistory[WAVE_BARS];                 // the last 32 slices of your voice (20 ms each), 0 to 1
+size_t micHead = 0;
+volatile float speakLevel = 0;               // the last 20 ms the speaker played, 0 to 1
+volatile unsigned long lastSoundAt = 0;      // when the speaker last played something
+unsigned long listenStart = 0, muteMicUntil = 0, lastAnim = 0, lastTimer = 0;
+bool wasSpeaking = false;
+// How the screen is shown, set from the canvas and kept: colours inverted (some panels need it), and
+// upside down (these screens look best from one side, so the button can be held either way up).
+bool screenInverted = false, screenFlipped = false;
+
+void applyScreen() {
+  if (!tft) return;
+  tft->invertDisplay(screenInverted);
+  tft->setRotation(screenFlipped ? 2 : 0);
+}
 float dcIn = 0, dcOut = 0;                   // the mic's DC blocker
 
 // Playback: a ring of PCM bytes filled by the socket, played by its own task.
@@ -154,11 +172,17 @@ void playTask(void *) {
     // 100 plays what Huddle sends; above it boosts quiet speech, and past the knee loud peaks are softened
     // instead of clipped (clipping crackles on a small speaker).
     const float gain = volume / 100.0f;
+    float energy = 0;
     for (size_t i = 0; i < samples; i++) {
       float y = frame[i] * gain, a = fabsf(y);
       if (a > 16000.0f) a = min(32767.0f, 16000.0f + (a - 16000.0f) * 0.25f);
       frame[i] = (int16_t)copysignf(a, y);
+      energy += a * a;
     }
+    // How loud this slice is, for Hud's mouth and the LED.
+    float rms = samples ? sqrtf(energy / samples) : 0;
+    speakLevel = min(1.0f, rms / 7000.0f);
+    if (rms > 300) lastSoundAt = millis();
     for (size_t i = samples; i < 320; i++) frame[i] = 0;  // silence between things to say: no pops
     amp.write(reinterpret_cast<uint8_t *>(frame), sizeof(frame));
   }
@@ -224,6 +248,49 @@ void drawHud(Mood face) {
   }
 }
 
+bool speakingNow() {
+  return millis() - lastSoundAt < 300;
+}
+
+/**
+ * Hud, moving: rings that light up with your voice, eyes that look around, a mouth that opens with its own
+ * voice, and the antenna light. Draws over the face drawHud left, so nothing flickers.
+ */
+void drawHudLive(float ring, int look, float mouth, uint16_t light) {
+  const int x = 64, y = 34;
+  const uint16_t RINGS[3] = {0x07FF, 0x05DF, 0x033F};
+  for (int r = 0; r < 3; r++) tft->drawCircle(x, y, 27 + r * 3, ring > 0.12f + r * 0.25f ? RINGS[r] : ST77XX_BLACK);
+  tft->drawLine(x, y - 24, x, y - 30, 0x5B1C);  // the antenna, over the rings
+  tft->fillCircle(x, y - 31, 2, light);
+  tft->fillRoundRect(x - 16, y - 10, 32, 18, 7, ST77XX_BLACK);  // visor
+  tft->fillCircle(x - 7 + look, y - 2, 2, ST77XX_WHITE);
+  tft->fillCircle(x + 7 + look, y - 2, 2, ST77XX_WHITE);
+  tft->fillRect(x - 9, y + 9, 19, 11, 0x5B1C);  // where the mouth goes, back to Hud's blue
+  int h = 2 + (int)(min(1.0f, mouth) * 8);
+  tft->fillRoundRect(x - 6, y + 14 - h / 2, 13, h, h / 2, ST77XX_WHITE);
+}
+
+/** Your voice as it comes in: 32 bars, newest on the right, from the middle out. */
+void drawWave() {
+  const int mid = 104, half = 15;
+  for (size_t k = 0; k < WAVE_BARS; k++) {
+    float level = micHistory[(micHead + k) % WAVE_BARS];
+    int h = 1 + (int)(level * half);
+    int x = (int)k * 4;
+    tft->fillRect(x, mid - half, 3, half * 2 + 1, ST77XX_BLACK);
+    tft->fillRect(x, mid - h, 3, h * 2 + 1, level > 0.7f ? ST77XX_WHITE : level > 0.35f ? 0x07FF : 0x0459);
+  }
+}
+
+/** Three dots taking turns to hop while Huddle works it out. */
+void drawDots(unsigned long now) {
+  tft->fillRect(44, 118, 42, 14, ST77XX_BLACK);
+  for (int i = 0; i < 3; i++) {
+    float hop = sinf(now / 160.0f - i * 0.9f);
+    tft->fillCircle(52 + i * 12, 127 - (hop > 0 ? (int)(hop * 4) : 0), 3, 0xB5FF);
+  }
+}
+
 void text(int y, const String &words, uint16_t color, size_t maxLines = 6) {
   tft->setTextColor(color);
   tft->setTextSize(1);
@@ -256,13 +323,25 @@ void draw() {
     return;
   }
   if (mode == Mode::Listening) {
-    text(76, "Listening...", ST77XX_WHITE);
-    footer("let go to send");
+    tft->setTextSize(2);
+    tft->setTextColor(0x07FF);
+    tft->setCursor(4, 68);
+    tft->print("Listening");
+    drawWave();
+    footer("   let go to send");
+    tft->fillCircle(6, 153, 3, ST77XX_RED);
+    lastTimer = 0;
+    return;
+  }
+  if (speakingNow() && replyText.length()) {
+    text(66, replyFlow, 0xAD55, 1);
+    text(78, replyText, ST77XX_WHITE, 6);
+    footer("speaking");
     return;
   }
   if (mode == Mode::Thinking) {
-    text(70, "You said:", 0x9CF3, 1);
-    text(82, heardText.length() ? heardText : "...", ST77XX_WHITE, 6);
+    text(68, "You said:", 0x9CF3, 1);
+    text(80, heardText.length() ? heardText : "...", ST77XX_WHITE, 3);
     footer("working on it");
     return;
   }
@@ -363,6 +442,16 @@ void onMessage(uint8_t *payload, size_t length) {
     prefs.putInt("vol", volume);
     logLine("volume %d", (int)volume);
     queueTone(880, 120, 0.2f);  // a short beep at the new volume
+    return;
+  }
+  if (type == "screen") {
+    screenInverted = doc["invert"] | screenInverted;
+    screenFlipped = doc["flip"] | screenFlipped;
+    prefs.putBool("inv", screenInverted);
+    prefs.putBool("flip", screenFlipped);
+    logLine("screen: colours %s, %s", screenInverted ? "inverted" : "normal", screenFlipped ? "upside down" : "upright");
+    applyScreen();
+    redraw = true;
     return;
   }
   if (type == "usb-open") return linkOpened();
@@ -502,6 +591,8 @@ void usbLoop() {
     hello["type"] = "usb";
     hello["token"] = DEVICE_TOKEN;
     hello["volume"] = (int)volume;
+    hello["invert"] = screenInverted;
+    hello["flip"] = screenFlipped;
     sendJson(hello);
   }
   // The canvas pings every 5 s; quiet for 15, the tab is gone.
@@ -531,6 +622,12 @@ void onSocket(WStype_t type, uint8_t *payload, size_t length) {
 // ---- Listening ------------------------------------------------------------------------------------------
 void startListening() {
   flushPlayback();
+  // A soft rising blip: it's listening. The mic sends silence while the blip plays, so it isn't heard.
+  queueTone(523, 45, 0.12f);
+  queueTone(784, 60, 0.12f);
+  muteMicUntil = millis() + 160;
+  listenStart = millis();
+  for (float &level : micHistory) level = 0;
   dcIn = dcOut = 0;
   logLine("listening (mic %s)", micChannel ? "right" : "left");
   JsonDocument listen;
@@ -547,6 +644,9 @@ void stopListening() {
   JsonDocument stop;
   stop["type"] = "stop";
   sendJson(stop);
+  // And falling: got it.
+  queueTone(784, 45, 0.12f);
+  queueTone(523, 60, 0.12f);
   mode = Mode::Thinking;
   setLed(0, 0, 8);
   redraw = true;
@@ -568,7 +668,58 @@ void streamMic() {
     dcOut = y;
     pcm[i] = y > 32767 ? 32767 : y < -32768 ? -32768 : (int16_t)y;
   }
+  if (millis() < muteMicUntil) memset(pcm, 0, samples * 2);  // the listening blip, not you
+  // Five 20 ms slices of how loud you are, for the waveform and Hud's rings (on a log scale, so a quiet
+  // voice still moves them).
+  for (size_t b = 0; b + 320 <= samples; b += 320) {
+    float energy = 0;
+    for (size_t i = b; i < b + 320; i++) energy += (float)pcm[i] * pcm[i];
+    float rms = sqrtf(energy / 320);
+    micHistory[micHead++ % WAVE_BARS] = constrain(log10f(1 + rms / 40.0f) / 2.3f, 0.0f, 1.0f);
+  }
   if (samples) sendAudio(reinterpret_cast<uint8_t *>(pcm), samples * 2);
+}
+
+/** The moving parts of the screen and the LED, about 20 times a second, for what's going on now. */
+void animate() {
+  if (!tft) return;
+  unsigned long now = millis();
+  bool speaking = speakingNow() && replyText.length() && (mode == Mode::Idle || mode == Mode::Thinking);
+  if (speaking != wasSpeaking) {
+    wasSpeaking = speaking;
+    redraw = true;
+    if (!speaking) setLed(0, 0, 4);
+    return;
+  }
+  if (now - lastAnim < 50) return;
+  lastAnim = now;
+  if (mode == Mode::Listening) {
+    float level = micHistory[(micHead + WAVE_BARS - 1) % WAVE_BARS];
+    drawHudLive(level, 0, 0.15f, (now / 300) % 2 ? ST77XX_RED : 0x7800);
+    drawWave();
+    if (now - lastTimer > 500) {
+      lastTimer = now;
+      unsigned long seconds = (now - listenStart) / 1000;
+      tft->fillRect(100, 148, 28, 12, 0x2104);  // how long you've talked, in the footer
+      tft->setTextSize(1);
+      tft->setTextColor(0xBDF7);
+      tft->setCursor(100, 150);
+      tft->printf("%lu:%02lu", seconds / 60, seconds % 60);
+      tft->fillCircle(6, 153, 3, (now / 500) % 2 ? ST77XX_RED : 0x2104);  // the recording dot, blinking
+    }
+    setLed(0, (uint8_t)(level * 40), (uint8_t)(10 + level * 110));
+  } else if (mode == Mode::Approval && speakingNow()) {
+    drawHudLive(0, 0, speakLevel, ST77XX_ORANGE);  // Hud reading the approval out
+  } else if (speaking) {
+    drawHudLive(0, 0, speakLevel, ST77XX_GREEN);
+    setLed(0, (uint8_t)(6 + speakLevel * 90), 0);
+  } else if (mode == Mode::Thinking) {
+    int look = (int)(4 * sinf(now / 380.0f));
+    drawHudLive(0, look, 0.1f, (now / 250) % 2 ? 0xC81F : 0x4008);
+    drawDots(now);
+    float breath = 0.5f + 0.5f * sinf(now / 450.0f);
+    setLed((uint8_t)(6 + breath * 30), 0, (uint8_t)(8 + breath * 40));
+  }
 }
 
 /** How loud each mic channel is right now (RMS around its own mean), over about half a second. */
@@ -678,7 +829,9 @@ void setupScreen() {
   spi->begin(p.sclk, -1, p.mosi, p.cs);
   tft = new Adafruit_ST7735(spi, p.cs, p.dc, p.rst);
   tft->initR(INITR_BLACKTAB);
-  tft->setRotation(0);
+  screenInverted = prefs.getBool("inv", false);
+  screenFlipped = prefs.getBool("flip", false);
+  applyScreen();
   tft->fillScreen(ST77XX_BLACK);
 }
 
@@ -814,5 +967,6 @@ void loop() {
     lastFace = millis();
     draw();
   }
+  animate();
   delay(mode == Mode::Listening ? 0 : 5);
 }
