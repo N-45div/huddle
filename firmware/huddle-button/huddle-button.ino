@@ -102,7 +102,7 @@ volatile unsigned long lastSoundAt = 0;      // when the speaker last played som
 unsigned long listenStart = 0, muteMicUntil = 0, lastAnim = 0, lastTimer = 0;
 bool wasSpeaking = false;
 // The photo a turn came with (a flow that sees): shown, small, while you talk and while Huddle looks.
-constexpr int THUMB_W = 80, THUMB_H = 60;  // a VGA photo at an eighth
+constexpr int THUMB_W = 108, THUMB_H = 81;  // as big as fits above the words, at 4:3
 bool photoNow = false;
 uint16_t *thumb = nullptr;
 // How the screen is shown, set from the canvas and kept: colours inverted (some panels need it), and
@@ -907,7 +907,7 @@ void startCamera() {
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
   config.frame_size = FRAMESIZE_VGA;
-  config.jpeg_quality = 14;
+  config.jpeg_quality = 12;  // lower is sharper; a VGA photo stays well under the 60 KB a frame carries
   // One frame, taken when asked for: nothing streams, and the photo is fresh.
   config.fb_count = 1;
   config.fb_location = CAMERA_FB_IN_PSRAM;
@@ -942,18 +942,45 @@ void snapPhoto() {
   if (frame->len <= 60000) writeFrame('P', frame->buf, frame->len);
 #endif
   logLine("photo: %ux%u, %u KB%s", frame->width, frame->height, frame->len / 1024, frame->len > 60000 ? " (too big to send)" : "");
+  // Decoded at a quarter (160x120), then shrunk smoothly to the screen's width.
+  static uint16_t *quarter = nullptr;
+  if (!quarter) quarter = static_cast<uint16_t *>(ps_malloc(160 * 120 * 2));
   if (!thumb) thumb = static_cast<uint16_t *>(ps_malloc(THUMB_W * THUMB_H * 2));
-  if (thumb && frame->width == THUMB_W * 8 && jpg2rgb565(frame->buf, frame->len, reinterpret_cast<uint8_t *>(thumb), JPG_SCALE_8X)) {
-    for (int i = 0; i < THUMB_W * THUMB_H; i++) thumb[i] = (thumb[i] >> 8) | (thumb[i] << 8);  // the decoder writes high byte first
+  if (quarter && thumb && frame->width == 640 && frame->height == 480 &&
+      jpg2rgb565(frame->buf, frame->len, reinterpret_cast<uint8_t *>(quarter), JPG_SCALE_4X)) {
+    shrink(quarter, 160, 120, thumb, THUMB_W, THUMB_H);
     photoNow = frame->len <= 60000;
   }
   esp_camera_fb_return(frame);
 }
 
-/** The photo this turn came with, framed, where the Huddler stands. */
+/** A smooth shrink of an RGB565 picture: each pixel blends the four it falls between. */
+void shrink(const uint16_t *from, int fw, int fh, uint16_t *to, int tw, int th) {
+  for (int y = 0; y < th; y++) {
+    float fy = (y + 0.5f) * fh / th - 0.5f;
+    int y0 = (int)fy, y1 = min(fh - 1, y0 + 1);
+    float wy = fy - y0;
+    for (int x = 0; x < tw; x++) {
+      float fx = (x + 0.5f) * fw / tw - 0.5f;
+      int x0 = (int)fx, x1 = min(fw - 1, x0 + 1);
+      float wx = fx - x0;
+      const uint16_t p[4] = {from[y0 * fw + x0], from[y0 * fw + x1], from[y1 * fw + x0], from[y1 * fw + x1]};
+      const float w[4] = {(1 - wx) * (1 - wy), wx * (1 - wy), (1 - wx) * wy, wx * wy};
+      float r = 0, g = 0, b = 0;
+      for (int i = 0; i < 4; i++) {
+        r += w[i] * (p[i] >> 11);
+        g += w[i] * ((p[i] >> 5) & 0x3F);
+        b += w[i] * (p[i] & 0x1F);
+      }
+      to[y * tw + x] = ((uint16_t)(r + 0.5f) << 11) | ((uint16_t)(g + 0.5f) << 5) | (uint16_t)(b + 0.5f);
+    }
+  }
+}
+
+/** The photo this turn came with, framed, where the Huddler stands: nearly the screen's width. */
 void drawPhoto() {
-  tft->fillRoundRect(20, 12, THUMB_W + 8, THUMB_H + 8, 6, FACE);
-  tft->drawRGBBitmap(24, 16, thumb, THUMB_W, THUMB_H);
+  tft->fillRoundRect(8, 12, THUMB_W + 4, THUMB_H + 4, 4, FACE);
+  tft->drawRGBBitmap(10, 14, thumb, THUMB_W, THUMB_H);
 }
 
 // ---- Listening ------------------------------------------------------------------------------------------
