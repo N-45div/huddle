@@ -95,6 +95,8 @@ export interface SerialPortLike {
 interface SerialLike {
   requestPort(options?: { readonly filters?: readonly { readonly usbVendorId?: number }[] }): Promise<SerialPortLike>;
   getPorts(): Promise<SerialPortLike[]>;
+  /** "connect" when a port this page was allowed is plugged in again. */
+  addEventListener(type: "connect" | "disconnect", listener: () => void): void;
 }
 
 /** Chrome and Edge on a desktop have Web Serial; other browsers don't. */

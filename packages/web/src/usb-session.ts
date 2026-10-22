@@ -37,10 +37,14 @@ const link = new UsbLink({
   },
 });
 
+/** Connected by you, and not disconnected by you since: plugging the button back in reconnects it. */
+let wanted = false;
+
 async function connect(port: SerialPortLike): Promise<void> {
   update({ error: null });
   try {
     await link.connect(port);
+    wanted = true;
   } catch (error) {
     const said = error instanceof Error ? error.message : String(error);
     update({
@@ -80,6 +84,16 @@ export const usbSession = {
     if (ours.length === 1 && ours[0]) await connect(ours[0]);
   },
 
-  disconnect: (): Promise<void> => link.disconnect(),
+  /** Lets go of the port (to flash the button, say); it stays let go until you connect again. */
+  disconnect: (): Promise<void> => {
+    wanted = false;
+    return link.disconnect();
+  },
   clearLog: (): void => update({ lines: [] }),
 };
+
+// The button unplugged and plugged back in (or restarted by a flash you didn't disconnect for): pick it up
+// again once its USB is ready.
+webSerial()?.addEventListener("connect", () => {
+  if (wanted) setTimeout(() => void usbSession.resume(), 800);
+});
