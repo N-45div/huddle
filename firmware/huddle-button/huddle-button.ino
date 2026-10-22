@@ -18,6 +18,7 @@
 
 #include <Adafruit_GFX.h>
 #include <Adafruit_NeoPixel.h>
+#include <Fonts/FreeSansBold9pt7b.h>
 #include <Adafruit_ST7735.h>
 #include <ArduinoJson.h>
 #include <ESP_I2S.h>
@@ -56,6 +57,9 @@ constexpr unsigned long HOLD_YES_MS = 1000;          // how long a hold takes to
 // ---- State --------------------------------------------------------------------------------------------
 enum class Mode { Connecting, Idle, Approval, Listening, Thinking };
 enum class Mood { Idle, Waiting, Happy, Oops, Thinking };
+// Declared early: the Arduino build puts function prototypes above the drawing section where these live.
+struct Sprite;
+enum class Face;
 
 struct Flow {
   String id, name;
@@ -234,90 +238,240 @@ std::vector<String> wrap(const String &text, size_t width = 21, size_t maxLines 
   return lines;
 }
 
-// ---- Drawing: Hud, and what's going on ----------------------------------------------------------------
-void drawHud(Mood face) {
-  const int x = 64, y = 34;
-  tft->fillCircle(x, y, 24, 0x5B1C);           // Hud's blue
-  tft->fillRoundRect(x - 16, y - 10, 32, 18, 7, ST77XX_BLACK);  // visor
-  tft->drawLine(x, y - 24, x, y - 30, 0x5B1C);  // antenna
-  tft->fillCircle(x, y - 31, 2, ST77XX_YELLOW);
+// ---- Drawing: Hud and the Huddlers -------------------------------------------------------------------------
+// The canvas sends the button each assistant's Huddler (the canvas's own art, with an empty visor, over a soft
+// glow), and the button draws the faces, so they blink, look around, listen and talk. Until the canvas has
+// sent them (or over Wi-Fi), a simple Hud stands in.
+constexpr uint16_t BG = 0x10A5, VISOR = 0x18E5, FACE = 0xEF7F, MUTED = 0xAD7A, DIM = 0x6B95, CYAN = 0x675F,
+                   AMBER = 0xFDE4, MINT = 0x6F35, TRACK = 0x296A, BUBBLE = 0xF7BF, INK = 0x18E7, RECORD = 0xFA6B,
+                   LILAC = 0xC5BF;
+constexpr int SX = 20, SY = 2;            // where a Huddler stands (88 x 88)
+constexpr float U = 88.0f / 64;           // one of the canvas's drawing units, in pixels
+constexpr unsigned long SLEEP_AFTER_MS = 120000;
+
+struct Sprite {
+  String key;
+  uint16_t w, h;
+  uint16_t *px;
+};
+std::vector<Sprite> sprites;
+String who = "hud";                       // whose Huddler is on screen: Hud, or the assistant at work
+String whoName;                           // and that assistant's name
+unsigned long lastActivity = 0;           // the last press or news; quiet for a while, Hud dozes off
+
+const Sprite *spriteFor(const String &key) {
+  for (const Sprite &sprite : sprites) {
+    if (sprite.key == key) return &sprite;
+  }
+  return nullptr;
+}
+
+/** An 'I' frame from the canvas: the key's length and the key, width and height (16-bit LE), RGB565 pixels. */
+void keepSprite(const uint8_t *data, size_t length) {
+  if (length < 5) return;
+  size_t k = data[0];
+  if (5 + k > length) return;
+  String key;
+  key.concat(reinterpret_cast<const char *>(data + 1), k);
+  uint16_t w = data[1 + k] | (data[2 + k] << 8), h = data[3 + k] | (data[4 + k] << 8);
+  size_t n = (size_t)w * h;
+  if (!w || !h || w > 128 || h > 160 || 5 + k + n * 2 != length) return;
+  uint16_t *px = static_cast<uint16_t *>(ps_malloc(n * 2));
+  if (!px) return;
+  memcpy(px, data + 5 + k, n * 2);
+  if (key == who) redraw = true;
+  for (Sprite &sprite : sprites) {
+    if (sprite.key != key) continue;
+    free(sprite.px);
+    sprite = {key, w, h, px};
+    return;
+  }
+  if (sprites.size() >= 24) {
+    free(sprites.back().px);
+    sprites.pop_back();
+  }
+  sprites.push_back({key, w, h, px});
+}
+
+/** What can be shown of a string with the screen's fonts (ASCII): the rupee, dashes, quotes and dots, spelled. */
+String ascii(const String &words) {
+  String out;
+  for (size_t i = 0; i < words.length(); i++) {
+    uint8_t c = words[i];
+    if (c < 0x80) {
+      out += (char)c;
+      continue;
+    }
+    if (words.substring(i, i + 3) == "\xE2\x82\xB9") out += "Rs ";         // ₹
+    else if (words.substring(i, i + 3) == "\xE2\x80\xA6") out += "...";    // …
+    else if (words.substring(i, i + 2) == "\xE2\x80") out += words[i + 2] == '\x93' || words[i + 2] == '\x94' ? "-" : "'";
+    while (i + 1 < words.length() && (words[i + 1] & 0xC0) == 0x80) i++;  // the rest of that character
+  }
+  return out;
+}
+
+int ux(float u) { return SX + (int)lroundf(u * U); }
+int uy(float u) { return SY + (int)lroundf(u * U); }
+
+/** A line about the canvas's 2-unit stroke, between two points in its drawing units. */
+void stroke(float x0, float y0, float x1, float y1) {
+  int a = ux(x0), b = uy(y0), c = ux(x1), d = uy(y1);
+  tft->drawLine(a, b, c, d, FACE);
+  tft->drawLine(a, b + 1, c, d + 1, FACE);
+  tft->drawLine(a + 1, b, c + 1, d, FACE);
+}
+
+/** The canvas's curves: a quadratic from one point to another, bent toward a control point, stroked. */
+void curve(float x0, float y0, float cx, float cy, float x1, float y1) {
+  float px = x0, py = y0;
+  for (int i = 1; i <= 10; i++) {
+    float t = i / 10.0f, s = 1 - t;
+    float x = s * s * x0 + 2 * s * t * cx + t * t * x1, y = s * s * y0 + 2 * s * t * cy + t * t * y1;
+    stroke(px, py, x, y);
+    px = x;
+    py = y;
+  }
+}
+
+/** A rounded bar (an eye, an open mouth), in drawing units. */
+void pill(float x, float y, float w, float h) {
+  int W = max(2, (int)lroundf(w * U)), H = max(2, (int)lroundf(h * U));
+  tft->fillRoundRect(ux(x), uy(y), W, H, min(W, H) / 2, FACE);
+}
+
+enum class Face { Idle, Blink, Listen, Think, Talk, Happy, Ask, Oops, Sleep };
+
+/** A Huddler's face, in its visor: the canvas's moods, and the in-betweens that make it look alive. */
+void drawFace(Face face, float look = 0, float open = 0) {
+  if (!tft) return;
+  tft->fillRoundRect(ux(16), uy(24.5f), (int)(32 * U), (int)(20.5f * U), (int)(10.25f * U), VISOR);
   switch (face) {
-    case Mood::Happy:
-      tft->drawLine(x - 10, y - 1, x - 7, y - 4, ST77XX_WHITE);
-      tft->drawLine(x - 7, y - 4, x - 4, y - 1, ST77XX_WHITE);
-      tft->drawLine(x + 4, y - 1, x + 7, y - 4, ST77XX_WHITE);
-      tft->drawLine(x + 7, y - 4, x + 10, y - 1, ST77XX_WHITE);
-      tft->fillCircle(x, y + 13, 4, ST77XX_WHITE);
+    case Face::Blink:
+      stroke(22.8f, 34.2f, 28, 34.2f);
+      stroke(36, 34.2f, 41.2f, 34.2f);
+      curve(28.5f, 40.2f, 32, 43, 35.5f, 40.2f);
       break;
-    case Mood::Oops:
-      tft->drawLine(x - 10, y - 5, x - 4, y + 1, ST77XX_WHITE);
-      tft->drawLine(x - 10, y + 1, x - 4, y - 5, ST77XX_WHITE);
-      tft->drawLine(x + 4, y - 5, x + 10, y + 1, ST77XX_WHITE);
-      tft->drawLine(x + 4, y + 1, x + 10, y - 5, ST77XX_WHITE);
-      tft->drawLine(x - 5, y + 16, x + 5, y + 13, ST77XX_WHITE);
+    case Face::Listen:
+      pill(22.8f, 29.4f, 5.2f, 9);
+      pill(36, 29.4f, 5.2f, 9);
+      tft->fillCircle(ux(32), uy(41.5f), 3, FACE);
+      tft->fillCircle(ux(32), uy(41.5f), 1, VISOR);
       break;
-    case Mood::Thinking:
-      tft->fillCircle(x - 4, y - 4, 2, ST77XX_WHITE);
-      tft->fillCircle(x + 10, y - 4, 2, ST77XX_WHITE);
-      tft->drawCircle(x + 1, y + 14, 2, ST77XX_WHITE);
+    case Face::Think:
+      pill(25 + look, 29.5f, 4.6f, 6);
+      pill(37.5f + look, 29.5f, 4.6f, 6);
+      stroke(29.5f, 40.5f, 34.5f, 40.5f);
       break;
-    case Mood::Waiting:
-      tft->fillCircle(x - 7, y - 5, 2, ST77XX_WHITE);
-      tft->fillCircle(x + 7, y - 5, 2, ST77XX_WHITE);
-      tft->drawFastHLine(x - 5, y + 14, 10, ST77XX_WHITE);
+    case Face::Talk: {
+      pill(22.8f, 30.5f, 5.2f, 7.4f);
+      pill(36, 30.5f, 5.2f, 7.4f);
+      float h = 1.5f + min(1.0f, open) * 4.2f;
+      pill(29, 41.3f - h / 2, 6, h);
+      break;
+    }
+    case Face::Happy:
+      curve(22.5f, 35.5f, 25.5f, 31, 28.5f, 35.5f);
+      curve(35.5f, 35.5f, 38.5f, 31, 41.5f, 35.5f);
+      curve(27.5f, 39.5f, 32, 44, 36.5f, 39.5f);
+      break;
+    case Face::Ask:
+      tft->fillCircle(ux(25.5f), uy(34), 4, FACE);
+      tft->fillCircle(ux(38.5f), uy(34), 4, FACE);
+      tft->drawCircle(ux(32), uy(41), 2, FACE);
+      tft->drawCircle(ux(32), uy(41), 3, FACE);
+      break;
+    case Face::Oops:
+      stroke(23, 31.5f, 28, 36.5f);
+      stroke(28, 31.5f, 23, 36.5f);
+      stroke(36, 31.5f, 41, 36.5f);
+      stroke(41, 31.5f, 36, 36.5f);
+      curve(27.5f, 41.5f, 29.75f, 39.5f, 32, 41.5f);
+      curve(32, 41.5f, 34.25f, 43.5f, 36.5f, 41.5f);
+      break;
+    case Face::Sleep:
+      stroke(22.5f, 34.5f, 28.5f, 34.5f);
+      stroke(35.5f, 34.5f, 41.5f, 34.5f);
+      curve(30, 40.5f, 32, 41.7f, 34, 40.5f);
       break;
     default:
-      tft->fillCircle(x - 7, y - 2, 2, ST77XX_WHITE);
-      tft->fillCircle(x + 7, y - 2, 2, ST77XX_WHITE);
-      tft->drawLine(x - 5, y + 12, x, y + 15, ST77XX_WHITE);
-      tft->drawLine(x, y + 15, x + 5, y + 12, ST77XX_WHITE);
+      pill(22.8f + look, 30.5f, 5.2f, 7.4f);
+      pill(36 + look, 30.5f, 5.2f, 7.4f);
+      curve(28.5f, 40.2f, 32, 43, 35.5f, 40.2f);
   }
+}
+
+// The stand-in Hud, until the canvas sends the real art (or over Wi-Fi): a simple robot in Hud's indigo.
+void drawHud(Mood face) {
+  const int x = 64, y = 46;
+  tft->fillCircle(x, y, 30, 0x5B1C);
+  tft->drawLine(x, y - 30, x, y - 38, 0x5B1C);
+  tft->fillCircle(x, y - 39, 3, 0xF5A6);
+  tft->fillRoundRect(x - 21, y - 12, 42, 24, 10, VISOR);
+  if (face == Mood::Happy) {
+    tft->drawLine(x - 12, y, x - 8, y - 4, FACE);
+    tft->drawLine(x - 8, y - 4, x - 4, y, FACE);
+    tft->drawLine(x + 4, y, x + 8, y - 4, FACE);
+    tft->drawLine(x + 8, y - 4, x + 12, y, FACE);
+  } else {
+    tft->fillRoundRect(x - 12, y - 6, 6, 9, 3, FACE);
+    tft->fillRoundRect(x + 6, y - 6, 6, 9, 3, FACE);
+  }
+  tft->drawFastHLine(x - 4, y + 7, 8, FACE);
+}
+
+/** The Huddler on screen now: the one at work if the canvas sent it, else Hud's, else the stand-in. */
+void drawWho() {
+  const Sprite *sprite = spriteFor(who);
+  if (!sprite) sprite = spriteFor("hud");
+  if (sprite) tft->drawRGBBitmap(SX, SY, sprite->px, sprite->w, sprite->h);
+  else drawHud(Mood::Idle);
 }
 
 bool speakingNow() {
   return millis() - lastSoundAt < 300;
 }
 
-/**
- * Hud, moving: rings that light up with your voice, eyes that look around, a mouth that opens with its own
- * voice, and the antenna light. Draws over the face drawHud left, so nothing flickers.
- */
-void drawHudLive(float ring, int look, float mouth, uint16_t light) {
-  const int x = 64, y = 34;
-  const uint16_t RINGS[3] = {0x07FF, 0x05DF, 0x033F};
-  for (int r = 0; r < 3; r++) tft->drawCircle(x, y, 27 + r * 3, ring > 0.12f + r * 0.25f ? RINGS[r] : ST77XX_BLACK);
-  tft->drawLine(x, y - 24, x, y - 30, 0x5B1C);  // the antenna, over the rings
-  tft->fillCircle(x, y - 31, 2, light);
-  tft->fillRoundRect(x - 16, y - 10, 32, 18, 7, ST77XX_BLACK);  // visor
-  tft->fillCircle(x - 7 + look, y - 2, 2, ST77XX_WHITE);
-  tft->fillCircle(x + 7 + look, y - 2, 2, ST77XX_WHITE);
-  tft->fillRect(x - 9, y + 9, 19, 11, 0x5B1C);  // where the mouth goes, back to Hud's blue
-  int h = 2 + (int)(min(1.0f, mouth) * 8);
-  tft->fillRoundRect(x - 6, y + 14 - h / 2, 13, h, h / 2, ST77XX_WHITE);
+/** The face for now when nothing's moving: a passing mood, asking, dozing, or plain. */
+Face restingFace() {
+  if (millis() < moodUntil) return mood == Mood::Happy ? Face::Happy : mood == Mood::Oops ? Face::Oops : Face::Idle;
+  if (mode == Mode::Approval) return Face::Ask;
+  if (mode == Mode::Connecting || (mode == Mode::Idle && millis() - lastActivity > SLEEP_AFTER_MS)) return Face::Sleep;
+  return Face::Idle;
 }
 
-/** Your voice as it comes in: 32 bars, newest on the right, from the middle out. */
-void drawWave() {
-  const int mid = 104, half = 15;
-  for (size_t k = 0; k < WAVE_BARS; k++) {
-    float level = micHistory[(micHead + k) % WAVE_BARS];
-    int h = 1 + (int)(level * half);
-    int x = (int)k * 4;
-    tft->fillRect(x, mid - half, 3, half * 2 + 1, ST77XX_BLACK);
-    tft->fillRect(x, mid - h, 3, h * 2 + 1, level > 0.7f ? ST77XX_WHITE : level > 0.35f ? 0x07FF : 0x0459);
+/** One line in the big type, centred, shortened to fit. */
+void caption(int baseline, const String &words, uint16_t color) {
+  tft->setFont(&FreeSansBold9pt7b);
+  tft->setTextSize(1);
+  String line = words;
+  int16_t x1, y1;
+  uint16_t w, h;
+  tft->getTextBounds(line, 0, baseline, &x1, &y1, &w, &h);
+  while (w > 124 && line.length() > 4) {
+    line = line.substring(0, line.length() - 4) + "...";
+    tft->getTextBounds(line, 0, baseline, &x1, &y1, &w, &h);
+  }
+  tft->setTextColor(color);
+  tft->setCursor((128 - (int)w) / 2 - x1, baseline);
+  tft->print(line);
+  tft->setFont(nullptr);
+}
+
+/** Small lines, centred, wrapped to the screen's 21 characters. */
+void small(int y, const String &words, uint16_t color, size_t maxLines = 1) {
+  tft->setFont(nullptr);
+  tft->setTextSize(1);
+  tft->setTextColor(color);
+  for (const String &line : wrap(words, 21, maxLines)) {
+    tft->setCursor((128 - (int)line.length() * 6) / 2, y);
+    tft->print(line);
+    y += 10;
   }
 }
 
-/** Three dots taking turns to hop while Huddle works it out. */
-void drawDots(unsigned long now) {
-  tft->fillRect(44, 118, 42, 14, ST77XX_BLACK);
-  for (int i = 0; i < 3; i++) {
-    float hop = sinf(now / 160.0f - i * 0.9f);
-    tft->fillCircle(52 + i * 12, 127 - (hop > 0 ? (int)(hop * 4) : 0), 3, 0xB5FF);
-  }
-}
-
+// Left-aligned lines and a footer, for the start-up check.
 void text(int y, const String &words, uint16_t color, size_t maxLines = 6) {
+  tft->setFont(nullptr);
   tft->setTextColor(color);
   tft->setTextSize(1);
   for (const String &line : wrap(words, 21, maxLines)) {
@@ -328,73 +482,95 @@ void text(int y, const String &words, uint16_t color, size_t maxLines = 6) {
 }
 
 void footer(const String &words) {
-  tft->fillRect(0, 148, 128, 12, 0x2104);
-  tft->setTextColor(0xBDF7);
-  tft->setCursor(2, 150);
-  tft->print(words);
+  tft->fillRect(0, 148, 128, 12, BG);
+  small(150, words, DIM);
+}
+
+/** Your voice as it comes in: 32 bars, newest on the right, from the middle out. */
+void drawWave() {
+  const int mid = 133, half = 10;
+  for (size_t k = 0; k < WAVE_BARS; k++) {
+    float level = micHistory[(micHead + k) % WAVE_BARS];
+    int h = 1 + (int)(level * half);
+    int x = (int)k * 4;
+    tft->fillRect(x, mid - half, 3, half * 2 + 1, BG);
+    tft->fillRect(x, mid - h, 3, h * 2 + 1, level > 0.7f ? FACE : CYAN);
+  }
+}
+
+/** Three dots taking turns to hop while the assistant works it out. */
+void drawDots(unsigned long now) {
+  tft->fillRect(44, 136, 42, 14, BG);
+  for (int i = 0; i < 3; i++) {
+    float hop = sinf(now / 160.0f - i * 0.9f);
+    tft->fillCircle(52 + i * 12, 145 - (hop > 0 ? (int)(hop * 4) : 0), 3, LILAC);
+  }
+}
+
+bool replying() {
+  return mode == Mode::Idle && millis() < replyUntil && replyText.length();
 }
 
 void draw() {
   if (!tft) return;
   redraw = false;
-  tft->fillScreen(ST77XX_BLACK);
-  Mood face = mood;
-  if (millis() > moodUntil) {
-    face = mode == Mode::Approval ? Mood::Waiting : mode == Mode::Listening || mode == Mode::Thinking ? Mood::Thinking : Mood::Idle;
-  }
-  drawHud(face);
+  tft->fillScreen(BG);
+  drawWho();
   if (mode == Mode::Connecting) {
-    text(70, note.length() ? note : "Connecting to Huddle...", ST77XX_WHITE);
-    footer("5 quick taps: screen");
+    drawFace(Face::Sleep);
+    caption(114, "Connecting", FACE);
+    small(124, ascii(note), MUTED, 3);
     return;
   }
   if (mode == Mode::Listening) {
-    tft->setTextSize(2);
-    tft->setTextColor(0x07FF);
-    tft->setCursor(4, 68);
-    tft->print("Listening");
-    drawWave();
-    footer("   let go to send");
-    tft->fillCircle(6, 153, 3, ST77XX_RED);
-    lastTimer = 0;
+    drawFace(Face::Listen);
+    caption(116, "Listening...", CYAN);
+    lastTimer = 0;  // the waveform, rings, timer and recording dot move in animate()
     return;
   }
-  if (speakingNow() && replyText.length()) {
-    text(66, replyFlow, 0xAD55, 1);
-    text(78, replyText, ST77XX_WHITE, 6);
-    footer("speaking");
+  bool speaking = speakingNow() && replyText.length() && (mode == Mode::Idle || mode == Mode::Thinking);
+  if (speaking || replying()) {
+    // The answer, in a bubble under whoever gave it.
+    drawFace(speaking ? Face::Talk : Face::Happy);
+    tft->fillTriangle(58, 95, 70, 95, 64, 89, BUBBLE);
+    tft->fillRoundRect(4, 94, 120, 63, 8, BUBBLE);
+    tft->setFont(nullptr);
+    tft->setTextColor(INK);
+    int y = 99;
+    for (const String &line : wrap(ascii(replyText), 19, 5)) {
+      tft->setCursor(8, y);
+      tft->print(line);
+      y += 11;
+    }
     return;
   }
   if (mode == Mode::Thinking) {
-    text(68, "You said:", 0x9CF3, 1);
-    text(80, heardText.length() ? heardText : "...", ST77XX_WHITE, 3);
-    footer("working on it");
-    return;
+    drawFace(Face::Think);
+    caption(112, whoName.length() ? ascii(whoName) + " is on it" : "On it", FACE);
+    if (heardText.length()) small(119, "\"" + ascii(heardText) + "\"", MUTED, 2);
+    return;  // the dots hop in animate()
   }
   if (mode == Mode::Approval) {
-    String flow = approvalFlow;
-    flow.toUpperCase();
-    text(64, flow, 0xAD55, 1);
-    text(76, approvalLine, ST77XX_WHITE, 5);
-    if (approvalWarning.length()) text(128, approvalWarning, 0xFD34, 2);
-    footer(approvalMore > 0 ? "hold:yes tap:no +" + String(approvalMore) : "hold: yes   tap: no");
+    drawFace(Face::Ask);
+    small(94, ascii(approvalFlow), MUTED);
+    tft->setTextColor(AMBER);
+    int y = 106;
+    for (const String &line : wrap(ascii(approvalLine), 21, 3)) {
+      tft->setCursor((128 - (int)line.length() * 6) / 2, y);
+      tft->print(line);
+      y += 10;
+    }
+    if (approvalWarning.length()) small(y + 1, "! " + ascii(approvalWarning), 0xFD34);
+    small(141, approvalMore > 0 ? "hold: yes  tap: no  +" + String(approvalMore) : "hold: yes   tap: no", FACE);
+    tft->fillRoundRect(8, 153, 112, 5, 2, TRACK);
     return;
   }
-  if (millis() < replyUntil && replyText.length()) {
-    text(64, replyFlow, 0xAD55, 1);
-    text(76, replyText, ST77XX_WHITE, 7);
-    footer("tap: next  hold: talk");
-    return;
-  }
-  text(66, "Nothing needs you.", ST77XX_WHITE, 1);
-  text(80, "Today: $" + String(spentToday, 4), 0xC618, 1);
-  if (nextFlow.length()) text(92, "Next: " + nextFlow + " " + nextAt, 0xC618, 2);
-  if (!flows.empty()) {
-    text(116, "> " + flows[picked % flows.size()].name, 0x07FF, 2);
-  } else {
-    text(116, "Hold to ask Huddle", 0x07FF, 1);
-  }
-  footer("tap: next  hold: talk");
+  Face face = restingFace();
+  drawFace(face);
+  caption(112, face == Face::Sleep ? "Zzz..." : "All clear", FACE);
+  small(119, "Today $" + String(spentToday, 4), MUTED);
+  if (nextAt.length()) small(129, "Next " + ascii(nextAt) + ": " + ascii(nextFlow), MUTED);
+  small(147, flows.empty() ? "hold to talk" : "> " + ascii(flows[picked % flows.size()].name), DIM);
 }
 
 // ---- The link: a WebSocket over Wi-Fi, or frames over the USB cable -------------------------------------
@@ -454,6 +630,7 @@ void linkClosed() {
 #endif
   linkUp = false;
   mode = Mode::Connecting;
+  who = "hud";
   redraw = true;
 }
 
@@ -490,8 +667,13 @@ void onMessage(uint8_t *payload, size_t length) {
     hello["audio"] = true;
     sendJson(hello);
   } else if (type == "approval") {
-    if (mode != Mode::Approval || approvalId != String(doc["id"] | "")) approvalAt = millis();
+    if (mode != Mode::Approval || approvalId != String(doc["id"] | "")) {
+      approvalAt = millis();
+      lastActivity = millis();
+    }
     mode = Mode::Approval;
+    who = "hud";  // Hud asks for your OK, whoever wants it
+    whoName = "";
     approvalId = doc["id"] | "";
     approvalFlow = doc["flow"] | "";
     approvalLine = doc["line"] | "";
@@ -511,6 +693,7 @@ void onMessage(uint8_t *payload, size_t length) {
     if (picked >= flows.size()) picked = 0;
     setLed(0, 0, 4);
   } else if (type == "heard") {
+    lastActivity = millis();
     heardText = doc["text"] | "";
     logLine("  heard: \"%s\"", heardText.c_str());
     if (!heardText.length()) mode = Mode::Idle;
@@ -518,17 +701,29 @@ void onMessage(uint8_t *payload, size_t length) {
     String state = doc["state"] | "";
     mood = state == "done" ? Mood::Happy : state == "failed" ? Mood::Oops : Mood::Idle;
     moodUntil = millis() + 4000;
+    lastActivity = millis();
     if (!doc["answer"].isNull()) {
       replyFlow = doc["flow"] | "";
       replyText = doc["answer"] | "";
       replyUntil = millis() + 20000;
     }
+    // Whoever answered says it, in their own Huddler.
+    if (!doc["assistant"].isNull()) {
+      who = String(doc["assistant"]["id"] | "hud");
+      whoName = String(doc["assistant"]["name"] | "");
+    }
     if (mode == Mode::Thinking) mode = Mode::Idle;
   } else if (type == "started") {
+    lastActivity = millis();
     replyFlow = doc["flow"] | "";
-    replyText = "Started.";
-    replyUntil = millis() + 8000;
+    replyText = "";
+    replyUntil = 0;
     mode = Mode::Thinking;
+    // The assistant that'll answer takes the screen while it works.
+    if (!doc["assistant"].isNull()) {
+      who = String(doc["assistant"]["id"] | "hud");
+      whoName = String(doc["assistant"]["name"] | "");
+    }
   } else if (type == "speaking") {
     setLed(0, 30, 0);
   } else if (type == "spoken") {
@@ -552,6 +747,8 @@ void onMessage(uint8_t *payload, size_t length) {
 uint8_t frameHead[6];
 size_t headGot = 0, frameLeft = 0;
 String frameText;
+uint8_t *frameImage = nullptr;  // an 'I' frame (a Huddler from the canvas), gathered in PSRAM
+size_t imageGot = 0;
 unsigned long lastAnnounce = 0, lastHeard = 0;
 // A frame's PCM comes off the cable in reads of any size: an odd byte waits for the next read, so the
 // samples reach the speaker whole.
@@ -576,6 +773,11 @@ void queueFromCable(const uint8_t *data, size_t length) {
 void onFrame() {
   lastHeard = millis();
   if (frameHead[1] == 'T') onMessage(reinterpret_cast<uint8_t *>(const_cast<char *>(frameText.c_str())), frameText.length());
+  if (frameHead[1] == 'I' && frameImage) {
+    keepSprite(frameImage, imageGot);
+    free(frameImage);
+    frameImage = nullptr;
+  }
   headGot = 0;
 }
 
@@ -593,18 +795,27 @@ void usbLoop() {
         frameHead[headGot++] = chunk[i++];
         if (headGot < sizeof(frameHead)) continue;
         frameLeft = frameHead[2] | (frameHead[3] << 8) | (frameHead[4] << 16) | ((size_t)frameHead[5] << 24);
-        if ((frameHead[1] != 'T' && frameHead[1] != 'B') || frameLeft > (1u << 16)) {
+        if ((frameHead[1] != 'T' && frameHead[1] != 'B' && frameHead[1] != 'I') || frameLeft > (1u << 16)) {
           headGot = 0;  // not a frame after all: look for the next STX
           continue;
         }
         frameText = "";
         holdingHalf = false;
+        free(frameImage);
+        frameImage = frameHead[1] == 'I' && frameLeft ? static_cast<uint8_t *>(ps_malloc(frameLeft)) : nullptr;
+        imageGot = 0;
         if (frameLeft == 0) onFrame();
         continue;
       }
       size_t n = min(frameLeft, got - i);
-      if (frameHead[1] == 'B') queueFromCable(chunk + i, n);
-      else frameText.concat(reinterpret_cast<const char *>(chunk + i), n);
+      if (frameHead[1] == 'B') {
+        queueFromCable(chunk + i, n);
+      } else if (frameHead[1] == 'I') {
+        if (frameImage) memcpy(frameImage + imageGot, chunk + i, n);
+        imageGot += n;
+      } else {
+        frameText.concat(reinterpret_cast<const char *>(chunk + i), n);
+      }
       i += n;
       frameLeft -= n;
       if (frameLeft == 0) onFrame();
@@ -662,6 +873,11 @@ void startListening() {
   sendJson(listen);
   mode = Mode::Listening;
   heardText = "";
+  replyText = "";
+  replyUntil = 0;
+  who = "hud";  // Hud listens; whoever takes it on shows up once Huddle says
+  whoName = "";
+  lastActivity = millis();
   setLed(0, 0, 40);
   redraw = true;
 }
@@ -719,33 +935,58 @@ void animate() {
   }
   if (now - lastAnim < 50) return;
   lastAnim = now;
+  static int shown = -1;  // the resting face last drawn, so a still face isn't redrawn 20 times a second
   if (mode == Mode::Listening) {
+    shown = -1;
     float level = micHistory[(micHead + WAVE_BARS - 1) % WAVE_BARS];
-    drawHudLive(level, 0, 0.15f, (now / 300) % 2 ? ST77XX_RED : 0x7800);
+    // Rings around whoever's listening, lit by your voice.
+    for (int r = 0; r < 2; r++) tft->drawCircle(64, SY + 49, 46 + r * 5, level > 0.15f + r * 0.3f ? (r ? 0x3D9B : CYAN) : BG);
     drawWave();
     if (now - lastTimer > 500) {
       lastTimer = now;
       unsigned long seconds = (now - listenStart) / 1000;
-      tft->fillRect(100, 148, 28, 12, 0x2104);  // how long you've talked, in the footer
-      tft->setTextSize(1);
-      tft->setTextColor(0xBDF7);
-      tft->setCursor(100, 150);
+      tft->fillRect(2, 2, 26, 9, BG);
+      tft->setFont(nullptr);
+      tft->setTextColor(MUTED);
+      tft->setCursor(2, 3);
       tft->printf("%lu:%02lu", seconds / 60, seconds % 60);
-      tft->fillCircle(6, 153, 3, (now / 500) % 2 ? ST77XX_RED : 0x2104);  // the recording dot, blinking
+      tft->fillCircle(121, 7, 3, (now / 500) % 2 ? RECORD : BG);  // the recording dot, blinking
     }
     setLed(0, (uint8_t)(level * 40), (uint8_t)(10 + level * 110));
-  } else if (mode == Mode::Approval && speakingNow()) {
-    drawHudLive(0, 0, speakLevel, ST77XX_ORANGE);  // Hud reading the approval out
-  } else if (speaking) {
-    drawHudLive(0, 0, speakLevel, ST77XX_GREEN);
-    setLed(0, (uint8_t)(6 + speakLevel * 90), 0);
-  } else if (mode == Mode::Thinking) {
-    int look = (int)(4 * sinf(now / 380.0f));
-    drawHudLive(0, look, 0.1f, (now / 250) % 2 ? 0xC81F : 0x4008);
+    return;
+  }
+  if (speaking || (mode == Mode::Approval && speakingNow())) {
+    shown = -1;
+    drawFace(Face::Talk, 0, speakLevel);
+    if (speaking) setLed(0, (uint8_t)(6 + speakLevel * 90), 0);
+    return;
+  }
+  if (mode == Mode::Thinking) {
+    shown = -1;
+    drawFace(Face::Think, 2.2f * sinf(now / 380.0f));
     drawDots(now);
     float breath = 0.5f + 0.5f * sinf(now / 450.0f);
     setLed((uint8_t)(6 + breath * 30), 0, (uint8_t)(8 + breath * 40));
+    return;
   }
+  if (mode == Mode::Listening || replying()) return;
+  // Resting: blink every few seconds, glance aside now and then, doze off when it's been quiet a while.
+  Face face = restingFace();
+  float look = 0;
+  if (face == Face::Idle || face == Face::Ask) {
+    unsigned long phase = now % 4300;
+    if (phase < 130) face = Face::Blink;
+    else if (face == Face::Idle && (now / 4300) % 4 == 3) look = phase < 2000 ? -2.2f : 2.2f;
+  }
+  int key = (int)face * 10 + (int)(look * 2) + 5;
+  if (key == shown) return;
+  if ((face == Face::Sleep) != (shown / 10 == (int)Face::Sleep) && shown >= 0) {
+    shown = key;
+    redraw = true;  // falling asleep or waking changes the words too
+    return;
+  }
+  shown = key;
+  drawFace(face, look);
 }
 
 /** How loud each mic channel is right now (RMS around its own mean), over about half a second. */
@@ -802,21 +1043,27 @@ void onTap() {
 void drawHoldBar(unsigned long held) {
   if (!tft) return;
   static int drawn = -1;
-  int width = held >= HOLD_YES_MS ? 128 : (int)(128 * held / HOLD_YES_MS);
+  int width = held >= HOLD_YES_MS ? 112 : (int)(112 * held / HOLD_YES_MS);
   if (held == 0) {
     drawn = -1;
     return;
   }
   if (width == drawn) return;
-  tft->fillRect(0, 144, width, 4, 0x07E0);
-  if (held >= HOLD_YES_MS && drawn < 128) footer("let go to say yes");
+  if (width >= 5) tft->fillRoundRect(8, 153, width, 5, 2, MINT);
+  if (held >= HOLD_YES_MS && drawn < 112) {
+    tft->fillRect(0, 140, 128, 10, BG);
+    small(141, "let go to say yes", MINT);
+  }
   drawn = width;
 }
 
 void readButton() {
   bool down = digitalRead(BUTTON_PIN) == LOW;
   unsigned long now = millis();
-  if (down && !wasDown) downAt = now;
+  if (down && !wasDown) {
+    downAt = now;
+    lastActivity = now;  // a press wakes Hud
+  }
   unsigned long held = now - downAt;
   if (mode == Mode::Idle && down && held > 350 && linkUp) startListening();
   // A press that began before this approval arrived isn't an answer to it.
@@ -867,11 +1114,10 @@ void bootCheck() {
   logLine("Huddle button: screen wiring %d, PSRAM %u KB, free memory %u KB, volume %d", tftMap + 1, ESP.getPsramSize() / 1024, ESP.getFreeHeap() / 1024, (int)volume);
   if (!ring) logLine("no PSRAM, so no speech: compile with PSRAM=opi for the ESP32-S3 N16R8");
   if (tft) {
-    tft->fillScreen(ST77XX_BLACK);
+    tft->fillScreen(BG);
     drawHud(Mood::Happy);
-    text(66, "Checking myself", ST77XX_WHITE, 1);
-    text(80, "Screen wiring " + String(tftMap + 1), 0xC618, 1);
-    text(92, "Memory " + String(ESP.getPsramSize() / 1048576) + " MB", 0xC618, 1);
+    caption(98, "Checking myself", FACE);
+    small(104, "Screen wiring " + String(tftMap + 1) + ", " + String(ESP.getPsramSize() / 1048576) + " MB", MUTED);
   }
   // The speaker: a two-note chime. The mic listens while it plays, so the channel that hears it shows.
   queueTone(660, 140, 0.3f);
@@ -898,14 +1144,15 @@ void bootCheck() {
   if (tft) {
     // Level bars on a log scale, so a quiet room still shows something; the one in use is green.
     auto bar = [](float level) { return (int)min(90.0f, max(1.0f, 20.0f * log10f(1 + level))); };
-    tft->setTextColor(0xC618);
-    tft->setCursor(1, 108);
+    tft->setFont(nullptr);
+    tft->setTextColor(MUTED);
+    tft->setCursor(4, 118);
     tft->print("Mic L");
-    tft->fillRect(34, 108, bar(left), 7, micChannel == 0 ? 0x07E0 : 0x7BEF);
-    tft->setCursor(1, 120);
+    tft->fillRoundRect(36, 118, bar(left), 7, 3, micChannel == 0 ? MINT : DIM);
+    tft->setCursor(4, 130);
     tft->print("Mic R");
-    tft->fillRect(34, 120, bar(right), 7, micChannel == 1 ? 0x07E0 : 0x7BEF);
-    text(134, String("Using the ") + (micChannel ? "right" : "left") + " mic", 0x07FF, 1);
+    tft->fillRoundRect(36, 130, bar(right), 7, 3, micChannel == 1 ? MINT : DIM);
+    small(146, String("Using the ") + (micChannel ? "right" : "left") + " mic", CYAN);
   }
   delay(1200);
 }
@@ -989,7 +1236,11 @@ void loop() {
   // Redraw on news, and when a passing mood or reply runs out.
   if (redraw || (moodUntil && millis() > moodUntil && millis() - lastFace > 1000) || (replyUntil && millis() > replyUntil && millis() - lastFace > 1000)) {
     if (moodUntil && millis() > moodUntil) moodUntil = 0;
-    if (replyUntil && millis() > replyUntil) replyUntil = 0;
+    if (replyUntil && millis() > replyUntil) {
+      replyUntil = 0;
+      who = "hud";  // the answer's done: Hud's back
+      whoName = "";
+    }
     lastFace = millis();
     draw();
   }
