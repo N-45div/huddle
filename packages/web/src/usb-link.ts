@@ -9,10 +9,14 @@
 
 const STX = 0x02;
 const HEAD = 6;
-/** Bigger than anything the button sends; a header claiming more is noise, not a frame. */
-const MAX_FRAME = 1 << 20;
+/** Bigger than anything either side sends (64 KB); a header claiming more is noise, not a frame. */
+const MAX_FRAME = 1 << 16;
 /** Espressif's USB vendor id: the ESP32-S3's own USB port. */
 export const ESPRESSIF_VENDOR_ID = 0x303a;
+/** Speech to the button: 0.1 s frames, at 16 kHz 16-bit pace, at most half a second ahead of playing. */
+const AUDIO_FRAME = 3_200;
+const AUDIO_BYTES_PER_MS = 32;
+const AUDIO_LEAD = 16_000;
 
 export type UsbEvent =
   | { readonly kind: "line"; readonly text: string }
@@ -129,6 +133,11 @@ export class UsbLink {
   private ping: ReturnType<typeof setInterval> | undefined;
   /** No new socket until this time: after a refusal, not every announcement. */
   private quietUntil = 0;
+  /** Huddle's voice for the button, fed at speaking pace (see feedAudio). */
+  private audio: Uint8Array[] = [];
+  private audioSince = 0;
+  private audioSent = 0;
+  private audioTimer: ReturnType<typeof setTimeout> | undefined;
   private state: UsbState = "closed";
 
   constructor(events: UsbLinkEvents) {
@@ -163,6 +172,8 @@ export class UsbLink {
   async disconnect(): Promise<void> {
     clearInterval(this.ping);
     this.ping = undefined;
+    clearTimeout(this.audioTimer);
+    this.audio = [];
     const socket = this.socket;
     this.socket = null;
     socket?.close();
@@ -237,7 +248,7 @@ export class UsbLink {
       this.sendToButton("T", JSON.stringify({ type: "usb-open" }));
     };
     socket.onmessage = (message) => {
-      if (message.data instanceof ArrayBuffer) this.sendToButton("B", new Uint8Array(message.data));
+      if (message.data instanceof ArrayBuffer) this.queueAudio(new Uint8Array(message.data));
       else this.sendToButton("T", String(message.data));
     };
     socket.onclose = () => {
@@ -250,6 +261,35 @@ export class UsbLink {
       this.sendToButton("T", JSON.stringify({ type: "usb-closed" }));
       this.setState("waiting");
     };
+  }
+
+  /**
+   * Huddle sends speech as fast as it makes it; the button takes about a second of it in before its USB
+   * buffer drops bytes, and a dropped byte scrambles everything after. So the voice goes in 0.1 s frames, at
+   * speaking pace (16 kHz, 16-bit: 32 bytes a millisecond), at most half a second ahead.
+   */
+  private queueAudio(bytes: Uint8Array): void {
+    for (let at = 0; at < bytes.length; at += AUDIO_FRAME) this.audio.push(bytes.slice(at, at + AUDIO_FRAME));
+    this.feedAudio();
+  }
+
+  private feedAudio(): void {
+    clearTimeout(this.audioTimer);
+    this.audioTimer = undefined;
+    const now = Date.now();
+    // Once everything sent has had time to play, the next speech starts a fresh clock.
+    if (this.audioSent <= (now - this.audioSince) * AUDIO_BYTES_PER_MS) {
+      this.audioSince = now;
+      this.audioSent = 0;
+    }
+    let room = (now - this.audioSince) * AUDIO_BYTES_PER_MS + AUDIO_LEAD - this.audioSent;
+    while (this.audio.length && (this.audio[0]?.length ?? 0) <= room) {
+      const frame = this.audio.shift() as Uint8Array;
+      this.sendToButton("B", frame);
+      this.audioSent += frame.length;
+      room -= frame.length;
+    }
+    if (this.audio.length && this.writer) this.audioTimer = setTimeout(() => this.feedAudio(), 25);
   }
 
   private sendToButton(kind: "T" | "B", payload: Uint8Array | string): void {

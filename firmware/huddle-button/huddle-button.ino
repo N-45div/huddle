@@ -467,7 +467,7 @@ void usbLoop() {
         frameHead[headGot++] = chunk[i++];
         if (headGot < sizeof(frameHead)) continue;
         frameLeft = frameHead[2] | (frameHead[3] << 8) | (frameHead[4] << 16) | ((size_t)frameHead[5] << 24);
-        if ((frameHead[1] != 'T' && frameHead[1] != 'B') || frameLeft > (1u << 20)) {
+        if ((frameHead[1] != 'T' && frameHead[1] != 'B') || frameLeft > (1u << 16)) {
           headGot = 0;  // not a frame after all: look for the next STX
           continue;
         }
