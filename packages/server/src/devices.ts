@@ -1,4 +1,4 @@
-import { AUTO, type Change, type Engine, nextRun, type Router, SAMPLE_RATE, sentences, type Speech, spokenForm, type Store } from "@huddle/core";
+import { AUTO, type Change, type Engine, type Flow, nextRun, type Router, SAMPLE_RATE, sentences, type Speech, spokenForm, type Store } from "@huddle/core";
 import type { Hono } from "hono";
 import type { UpgradeWebSocket, WSContext } from "hono/ws";
 import { bearerOf, same } from "./auth.ts";
@@ -72,8 +72,11 @@ export function oneLine(message: string, max = LINE): string {
   return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), max / 2)).trimEnd()}…`;
 }
 
-/** An answer as plain words that fit a small screen and a few seconds of speech. */
-export function shortAnswer(text: string, max = 240): string {
+/**
+ * An answer as plain words that fit a small screen and a few seconds of speech: whole sentences when they
+ * fit, so it never stops mid-sentence, else cut at a word.
+ */
+export function shortAnswer(text: string, max = 300): string {
   const plain = text
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/^\s*(?:[-*+]|\d+\.)\s+/gm, "")
@@ -82,7 +85,43 @@ export function shortAnswer(text: string, max = 240): string {
     .trim();
   // The last line of an answer is often its JSON for the flow; the person doesn't need to hear it.
   const words = plain.replace(/\{[^{}]*\}\s*$/, "").trim() || plain;
-  return words.length <= max ? words : `${words.slice(0, words.lastIndexOf(" ", max - 1)).trimEnd()}…`;
+  if (words.length <= max) return words;
+  const head = words.slice(0, max);
+  const sentenceEnd = Math.max(head.lastIndexOf(". "), head.lastIndexOf("! "), head.lastIndexOf("? "));
+  if (sentenceEnd >= max / 3) return head.slice(0, sentenceEnd + 1);
+  return `${words.slice(0, words.lastIndexOf(" ", max - 1)).trimEnd()}…`;
+}
+
+/**
+ * What a run started by voice tells its answering assistant: it speaks as Hud, Huddle's own, in a few spoken
+ * sentences. It goes into that step's ask (so the run's log shows it), never into the saved flow.
+ */
+export const VOICE_NOTE =
+  "You were asked this out loud, through Hud, the Huddle button on the person's desk, and your answer is spoken back. " +
+  "Speak as Hud: Huddle's own assistant, a small, friendly robot. Huddle runs the person's AI assistants as one team on their own computer: " +
+  "it passes work between them, remembers what the person tells it, and asks them before anything that spends, sends or books (on this button, they hold it to say yes). " +
+  "If they ask who or what you are, say you're Hud, from Huddle, and what Huddle does, and never claim to do anything it doesn't. " +
+  "Answer in one to three short sentences, the way you'd say it: no lists, no markdown, nothing that only reads well on a screen.";
+
+/** A saved flow as a voice run asks it: its last assistant step (the one whose answer is said) gets VOICE_NOTE. */
+export function asSpoken(flow: Flow): Flow {
+  const last = flow.steps.findLast((step) => step.type === "agent");
+  if (!last || last.type !== "agent") return flow;
+  return { ...flow, steps: flow.steps.map((step) => (step === last ? { ...last, ask: `${VOICE_NOTE}\n\n${last.ask}` } : step)) };
+}
+
+/**
+ * Text cut into what is said in one go: whole sentences, joined until they're long enough that the next part
+ * is ready before this one has been said (a short "Hello!" alone leaves a gap while the next is made).
+ */
+export function spokenParts(text: string, least = 90): string[] {
+  const parts: string[] = [];
+  for (const sentence of sentences(spokenForm(text))) {
+    const previous = parts.at(-1);
+    if (previous !== undefined && previous.length < least && previous.length + sentence.length < 220) parts[parts.length - 1] = `${previous} ${sentence}`;
+    else parts.push(sentence);
+  }
+  return parts;
 }
 
 interface FromDevice {
@@ -169,7 +208,9 @@ export class DeviceHub {
     const saved = this.store.flow(flowId);
     if (!saved || saved.flow.trigger.type !== "button") throw new Error("That flow isn't on the button. Give it the button trigger in the canvas.");
     const input = said?.trim() || saved.flow.trigger.input;
-    const runId = this.engine.launch(saved.flow, input, saved.id, { name: device, tier: "owner", via: "device" });
+    // Said out loud, it's answered out loud: as Hud, briefly.
+    const flow = said?.trim() ? asSpoken(saved.flow) : saved.flow;
+    const runId = this.engine.launch(flow, input, saved.id, { name: device, tier: "owner", via: "device" });
     // Words the person said themselves may teach memory (when learning is on); a preset input never does.
     if (said?.trim()) this.engine.learnFrom(runId, said);
     return { runId, flow: saved.flow.name };
@@ -197,7 +238,7 @@ export class DeviceHub {
       const speech = this.speech;
       if (!speech || !playsAudio || !sendAudio || !text.trim()) return;
       const mine = ++generation;
-      for (const part of sentences(spokenForm(text))) {
+      for (const part of spokenParts(text)) {
         let pcm: Uint8Array<ArrayBuffer>;
         try {
           pcm = await speech.speak(part);
@@ -265,7 +306,7 @@ export class DeviceHub {
           return;
         }
         if (!this.router) return send({ type: "error", message: "Pick a flow on the button to start with your words." });
-        const routed = await this.router.answer({ model: AUTO, ask: text });
+        const routed = await this.router.answer({ model: AUTO, ask: `${VOICE_NOTE}\n\n${text}` });
         this.heard(routed.runId, text, pcm.byteLength);
         this.engine.learnFrom(routed.runId, text);
         const answer = shortAnswer(routed.text);

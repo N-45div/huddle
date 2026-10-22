@@ -5,7 +5,7 @@ import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { Engine, mock, parseFlow, type Speech, Store } from "@huddle/core";
 import { createApp } from "../src/app.ts";
-import { DeviceHub, deviceRoutes, guardUpgrades, oneLine, type ToDevice } from "../src/devices.ts";
+import { asSpoken, DeviceHub, deviceRoutes, guardUpgrades, oneLine, shortAnswer, spokenParts, type ToDevice, VOICE_NOTE } from "../src/devices.ts";
 
 const ASKS = parseFlow({
   name: "Train booking",
@@ -26,6 +26,54 @@ describe("the Huddle button", () => {
     assert.equal(oneLine("\n\n  Send   this?  "), "Send this?");
     const long = oneLine("Send this weekend plan to your partner: Saturday the palace and Chamundi Hill, Sunday the railway museum and back by the evening train", 60);
     assert.ok(long.length <= 60 && long.endsWith("…"), long);
+  });
+
+  it("says a long answer in whole sentences, not cut mid-sentence", () => {
+    const answer = `${"Bengaluru is cloudy at 24 degrees this afternoon with a light breeze from the west. ".repeat(3)}It may rain after six, so take an umbrella if you head out for dinner tonight.`;
+    const said = shortAnswer(answer, 300);
+    assert.ok(said.endsWith(".") && said.length <= 300, said);
+    assert.equal(shortAnswer("Short and sweet."), "Short and sweet.");
+    const noStop = shortAnswer("word ".repeat(100), 60);
+    assert.ok(noStop.endsWith("…") && noStop.length <= 61, noStop);
+  });
+
+  it("joins short sentences so speech has no gap after a quick hello", () => {
+    assert.deepEqual(spokenParts("Hello! I'm Hud, from Huddle. What can I do for you?"), ["Hello! I'm Hud, from Huddle. What can I do for you?"]);
+    const long = "This sentence is long enough to be said on its own, without waiting for another one to join it here. ";
+    assert.ok(long.trim().length >= 90);
+    assert.equal(spokenParts(long.repeat(3)).length, 3);
+  });
+
+  it("answers a spoken ask as Hud, in the step whose answer is said, never in the saved flow", () => {
+    const two = parseFlow({
+      name: "Two steps",
+      trigger: { type: "button", input: "Today" },
+      assistants: [{ id: "agent", connector: "mock", replies: { "*": "Done." } }],
+      steps: [
+        { id: "look", type: "agent", agent: "agent", ask: "Look up {{input}}" },
+        { id: "tell", type: "agent", agent: "agent", ask: "Tell me {{look}}" },
+      ],
+    });
+    const spoken = asSpoken(two);
+    const ask = (flow: typeof two, id: string) => flow.steps.find((step) => step.id === id && step.type === "agent")?.type === "agent" ? (flow.steps.find((step) => step.id === id) as { ask: string }).ask : "";
+    assert.equal(ask(spoken, "look"), "Look up {{input}}");
+    assert.ok(ask(spoken, "tell").startsWith(VOICE_NOTE) && ask(spoken, "tell").endsWith("Tell me {{look}}"));
+    assert.equal(ask(two, "tell"), "Tell me {{look}}");
+    assert.match(VOICE_NOTE, /Hud, from Huddle/);
+  });
+
+  it("starts a spoken button run with Hud's note, and a preset one without", async () => {
+    const store = new Store();
+    const engine = new Engine(store, { mock });
+    const saved = store.saveFlow(BUTTON);
+    const hub = new DeviceHub(store, engine);
+    const spoken = hub.start(saved.id, "who are you?", "Desk button");
+    const preset = hub.start(saved.id, null, "Desk button");
+    await settle();
+    const askOf = (runId: string) => (store.logOf(runId).find((line) => line.kind === "asked")?.detail as { ask?: string } | null)?.ask ?? "";
+    assert.ok(askOf(spoken.runId).startsWith(VOICE_NOTE) && askOf(spoken.runId).endsWith("who are you?"));
+    assert.equal(askOf(preset.runId), "Today");
+    assert.equal(store.flow(saved.id)?.flow.steps[0]?.type === "agent" && (store.flow(saved.id)?.flow.steps[0] as { ask: string }).ask, "{{input}}");
   });
 
   it("shows today at a glance when nothing waits, with the flows it can start", () => {
@@ -127,9 +175,9 @@ describe("the Huddle button", () => {
     session.receive(JSON.stringify({ type: "hello", audio: true }));
     await engine.start(ASKS, "", asks.id);
     await settle();
-    assert.deepEqual(spoken, ["Train booking.", "Hermes wants to book the six forty train for one thousand two hundred forty rupees."], "in spoken form, a sentence at a time");
-    assert.deepEqual(sent.filter((message) => message.type === "speaking" || message.type === "spoken").map((message) => message.type), ["speaking", "spoken", "speaking", "spoken"]);
-    assert.equal(audio.reduce((sum, chunk) => sum + chunk.byteLength, 0), 20_000, "the audio, in frames");
+    assert.deepEqual(spoken, ["Train booking. Hermes wants to book the six forty train for one thousand two hundred forty rupees."], "in spoken form, the short flow name joined to the next sentence");
+    assert.deepEqual(sent.filter((message) => message.type === "speaking" || message.type === "spoken").map((message) => message.type), ["speaking", "spoken"]);
+    assert.equal(audio.reduce((sum, chunk) => sum + chunk.byteLength, 0), 10_000, "the audio, in frames");
 
     // Hold and talk: a second of audio, then let go.
     session.receive(JSON.stringify({ type: "listen", flow: button.id }));
