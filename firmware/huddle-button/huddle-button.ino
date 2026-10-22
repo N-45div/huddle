@@ -834,6 +834,17 @@ void usbLoop() {
   }
   // The canvas pings every 5 s; quiet for 15, the tab is gone.
   if (linkUp && now - lastHeard > 15000) linkClosed();
+  // While Huddle is speaking, say how much speech is left to play, so the canvas tops it up in time (its
+  // timers slow down in a background tab; these reports don't).
+  static unsigned long lastReport = 0;
+  size_t queued = (ringHead + PLAY_BUFFER - ringTail) % PLAY_BUFFER;
+  if (linkUp && (queued || now - lastSoundAt < 1000) && now - lastReport > 150) {
+    lastReport = now;
+    JsonDocument report;
+    report["type"] = "usb-buf";
+    report["ms"] = (int)(queued / 32);
+    sendJson(report);
+  }
 }
 #else
 void onSocket(WStype_t type, uint8_t *payload, size_t length) {

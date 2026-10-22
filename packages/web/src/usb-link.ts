@@ -17,6 +17,9 @@ export const ESPRESSIF_VENDOR_ID = 0x303a;
 const AUDIO_FRAME = 3_200;
 const AUDIO_BYTES_PER_MS = 32;
 const AUDIO_LEAD = 16_000;
+/** With the button's reports: keep 1.5 s queued there, sending at most 0.75 s at a time (its buffer holds ~1 s). */
+const AUDIO_TARGET = 48_000;
+const AUDIO_BURST = 24_000;
 
 export type UsbEvent =
   | { readonly kind: "line"; readonly text: string }
@@ -180,6 +183,10 @@ export class UsbLink {
   private audioSince = 0;
   private audioSent = 0;
   private audioTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The button's last report of speech left to play (bytes), and what's been sent since it. */
+  private buffered = 0;
+  private sentSinceReport = 0;
+  private reportAt = 0;
   private state: UsbState = "closed";
 
   constructor(events: UsbLinkEvents) {
@@ -279,6 +286,17 @@ export class UsbLink {
     } catch {
       return this.note("The button sent something that isn't JSON; skipped.");
     }
+    if (message.type === "usb-buf") {
+      // How much speech the button has left to play: top it up from that, not from a timer.
+      const ms = (message as { ms?: unknown }).ms;
+      if (typeof ms === "number") {
+        this.buffered = ms * AUDIO_BYTES_PER_MS;
+        this.sentSinceReport = 0;
+        this.reportAt = Date.now();
+        this.feedAudio();
+      }
+      return;
+    }
     if (message.type === "usb") {
       if (typeof message.volume === "number") this.events.onVolume?.(message.volume);
       if (typeof message.invert === "boolean" && typeof message.flip === "boolean") this.events.onScreen?.({ invert: message.invert, flip: message.flip });
@@ -329,8 +347,10 @@ export class UsbLink {
 
   /**
    * Huddle sends speech as fast as it makes it; the button takes about a second of it in before its USB
-   * buffer drops bytes, and a dropped byte scrambles everything after. So the voice goes in 0.1 s frames, at
-   * speaking pace (16 kHz, 16-bit: 32 bytes a millisecond), at most half a second ahead.
+   * buffer drops bytes, and a dropped byte scrambles everything after. So the voice goes in 0.1 s frames:
+   * topped up to 1.5 s ahead (at most 0.75 s at a time) from the button's own reports of what it has left,
+   * which keep coming when Chrome slows a background tab's timers; until the first report, at speaking pace
+   * (16 kHz, 16-bit: 32 bytes a millisecond), half a second ahead.
    */
   private queueAudio(bytes: Uint8Array): void {
     for (let at = 0; at < bytes.length; at += AUDIO_FRAME) this.audio.push(bytes.slice(at, at + AUDIO_FRAME));
@@ -346,11 +366,15 @@ export class UsbLink {
       this.audioSince = now;
       this.audioSent = 0;
     }
-    let room = (now - this.audioSince) * AUDIO_BYTES_PER_MS + AUDIO_LEAD - this.audioSent;
+    const reported = now - this.reportAt < 600;
+    let room = reported
+      ? Math.min(AUDIO_BURST, AUDIO_TARGET - this.buffered - this.sentSinceReport)
+      : (now - this.audioSince) * AUDIO_BYTES_PER_MS + AUDIO_LEAD - this.audioSent;
     while (this.audio.length && (this.audio[0]?.length ?? 0) <= room) {
       const frame = this.audio.shift() as Uint8Array;
       this.sendToButton("B", frame);
       this.audioSent += frame.length;
+      this.sentSinceReport += frame.length;
       room -= frame.length;
     }
     if (this.audio.length && this.writer) this.audioTimer = setTimeout(() => this.feedAudio(), 25);
