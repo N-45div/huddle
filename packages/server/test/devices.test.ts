@@ -3,9 +3,10 @@ import { type AddressInfo, connect } from "node:net";
 import { describe, it } from "node:test";
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
-import { Engine, mock, parseFlow, type Speech, Store } from "@huddle/core";
+import { Engine, mock, parseFlow, Router, type Speech, Store } from "@huddle/core";
 import { createApp } from "../src/app.ts";
 import { asSpoken, DeviceHub, deviceRoutes, guardUpgrades, oneLine, shortAnswer, spokenParts, type ToDevice, VOICE_NOTE } from "../src/devices.ts";
+import { JUST_ASK, type Planner, teamFlow } from "../src/just-ask.ts";
 
 const ASKS = parseFlow({
   name: "Train booking",
@@ -16,6 +17,14 @@ const ASKS = parseFlow({
   ],
 });
 const BUTTON = parseFlow({ name: "Morning brief", trigger: { type: "button", input: "Today" }, assistants: [{ id: "agent", connector: "mock", replies: { "*": "Three things." } }], steps: [{ id: "brief", type: "agent", agent: "agent", ask: "{{input}}" }] });
+const TEAM = parseFlow({
+  name: "Mine",
+  assistants: [
+    { id: "claw", name: "OpenClaw", connector: "mock", memory: ["work"], replies: { "*": "Three deadlines." } },
+    { id: "hermes", name: "Hermes", connector: "mock", memory: ["home"], replies: { "*": "Groceries on Saturday." } },
+  ],
+  steps: [{ id: "a", type: "agent", agent: "claw", ask: "x" }],
+});
 const SCHEDULED = parseFlow({ name: "Weekly review", trigger: { type: "schedule", at: "18:00", on: ["fri"], input: "Week" }, steps: [{ id: "ok", type: "approval", message: "Review?" }] });
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
@@ -244,6 +253,95 @@ describe("the Huddle button", () => {
     assert.equal(sent.filter((message) => message.type === "started").length, before);
     assert.equal(spoken.at(-1), "Sorry, I didn't catch that.");
     session.close();
+  });
+
+  it("Just ask: says the plan, starts the team, shows who has the work as it passes on, and says the answer", async () => {
+    const spoken: string[] = [];
+    const speech: Speech = {
+      name: "test speech",
+      url: "http://127.0.0.1:8090",
+      async transcribe() {
+        return "Plan my week and tell the team";
+      },
+      async speak(text) {
+        spoken.push(text);
+        return new Uint8Array(100);
+      },
+    };
+    const store = new Store();
+    const engine = new Engine(store, { mock });
+    store.saveAssistants(TEAM.assistants);
+    const planner: Planner = async (said, choices) => ({
+      use: "team",
+      say: "OpenClaw takes your work, then Hermes fits in home.",
+      flow: teamFlow(said, [{ assistant: "claw", ask: "Work." }, { assistant: "hermes", ask: "Home." }], choices.assistants),
+    });
+    const hub = new DeviceHub(store, engine, { speech, router: new Router(store, engine, null), planner });
+    const screen = hub.screen();
+    assert.deepEqual(screen.type === "idle" ? screen.flows[0] : null, { id: JUST_ASK, name: "Just ask", sees: false }, "the button's first choice");
+    const without = new DeviceHub(store, engine, { speech }).screen();
+    assert.equal(without.type === "idle" ? without.flows.length : -1, 0, "not without a planner");
+
+    const sent: ToDevice[] = [];
+    const session = hub.connect((message) => sent.push(message), { name: "Desk button", version: "test" }, () => undefined);
+    session.receive(JSON.stringify({ type: "hello", audio: true }));
+    session.receive(JSON.stringify({ type: "listen", flow: JUST_ASK }));
+    session.receiveAudio(new Uint8Array(32_000));
+    session.receive(JSON.stringify({ type: "stop" }));
+    await settle();
+    const plan = sent.find((message) => message.type === "plan");
+    assert.deepEqual(plan?.type === "plan" ? [plan.text, plan.team.map((who) => who.name)] : null, ["OpenClaw takes your work, then Hermes fits in home.", ["OpenClaw", "Hermes"]]);
+    const started = sent.find((message) => message.type === "started");
+    assert.ok(started?.type === "started");
+    assert.equal(started.assistant?.id, "claw", "whoever starts the work");
+    assert.deepEqual(sent.filter((message) => message.type === "working").map((message) => (message.type === "working" ? message.assistant.id : "")), ["hermes"], "then who it passes to");
+    const run = store.run(started.runId);
+    assert.equal(run?.flowId, null, "a team for this once: not saved as a flow");
+    assert.equal(run?.state, "done");
+    assert.ok(sent.some((message) => message.type === "run" && message.answer === "Groceries on Saturday." && message.assistant?.id === "hermes"));
+    assert.deepEqual(spoken, ["OpenClaw takes your work, then Hermes fits in home.", "Groceries on Saturday."]);
+    session.close();
+  });
+
+  it("Just ask: one assistant just answers, and with no plan the router's judge picks who", async () => {
+    const speech: Speech = {
+      name: "test speech",
+      url: "http://127.0.0.1:8090",
+      async transcribe() {
+        return "What's on Saturday?";
+      },
+      async speak() {
+        return new Uint8Array(0);
+      },
+    };
+    const store = new Store();
+    const engine = new Engine(store, { mock });
+    store.saveAssistants(TEAM.assistants);
+    const answers = async (planner: Planner) => {
+      const sent: ToDevice[] = [];
+      const hub = new DeviceHub(store, engine, { speech, router: new Router(store, engine, null), planner });
+      const session = hub.connect((message) => sent.push(message), { name: "Desk button", version: "test" });
+      session.receive(JSON.stringify({ type: "listen", flow: JUST_ASK }));
+      session.receiveAudio(new Uint8Array(32_000));
+      session.receive(JSON.stringify({ type: "stop" }));
+      await settle();
+      session.close();
+      return sent.filter((message) => message.type === "run" || message.type === "plan").map((message) => (message.type === "run" ? `${message.flow}: ${message.answer}` : "plan"));
+    };
+    assert.deepEqual(await answers(async () => ({ use: "one", assistant: "hermes", say: "" })), ["Asked Hermes: Groceries on Saturday."]);
+    const warn = console.warn;
+    console.warn = () => undefined;
+    try {
+      assert.deepEqual(
+        await answers(async () => {
+          throw new Error("model down");
+        }),
+        ["Asked OpenClaw: Three deadlines."],
+        "no judge: the first in your list",
+      );
+    } finally {
+      console.warn = warn;
+    }
   });
 
   it("keeps running when a device drops off in the middle of connecting", async () => {
