@@ -76,6 +76,8 @@ export function teamFlow(said: string, steps: readonly TeamStep[], saved: readon
   const out: unknown[] = [];
   const done: { readonly id: string; readonly name: string }[] = [];
   const lastTurn = steps.findLastIndex((step) => "assistant" in step);
+  // On a team, each sees the whole request, but keeps to its own lane.
+  const lane = steps.filter((step) => "assistant" in step).length > 1 ? " Do only this part: the rest of the team does the rest." : "";
   steps.forEach((step, index) => {
     if ("approve" in step) {
       if (index > lastTurn) return;
@@ -88,11 +90,19 @@ export function teamFlow(said: string, steps: readonly TeamStep[], saved: readon
     if (!used.includes(assistant)) used.push(assistant);
     const id = `step${out.length + 1}`;
     const earlier = done.map((turn) => `\n\nWhat ${turn.name} came back with:\n{{${turn.id}.text}}`).join("");
-    out.push({ id, type: "agent", agent: assistant.id, ask: `${step.ask}\n\nWhat the person asked: {{input}}${earlier}` });
+    out.push({ id, type: "agent", agent: assistant.id, ask: `${step.ask}${lane}\n\nWhat the person asked: {{input}}${earlier}` });
     done.push({ id, name: assistant.name ?? assistant.id });
   });
   if (!done.length) throw new Error("The plan gives no assistant anything to do.");
   if (done.length > MOST_TURNS) throw new Error(`The plan has ${done.length} turns; at most ${MOST_TURNS} run from the button.`);
+  // The last one's answer is the one said to the person: it speaks for the whole team, not just its own part.
+  if (done.length > 1) {
+    const last = out.findLast((step) => (step as { type?: string }).type === "agent") as { ask: string };
+    last.ask += `\n\nYou're the last of the team, and your answer is the one the person hears: first say in a few words what ${done
+      .slice(0, -1)
+      .map((turn) => turn.name)
+      .join(" and ")} came back with (if they need something from the person, say what), then your part.`;
+  }
   const checked = checkFlow({ name: "Just ask", description: said, trigger: { type: "manual" }, assistants: used, steps: out });
   if ("problems" in checked) throw new Error(`The plan didn't make a flow: ${checked.problems.join("; ")}`);
   return checked.flow;

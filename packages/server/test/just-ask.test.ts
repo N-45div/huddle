@@ -27,9 +27,10 @@ describe("Just ask", () => {
       "a question with nothing after it is dropped",
     );
     const [first, ok, second] = flow.steps as unknown as [{ ask: string }, { message: string }, { ask: string }];
-    assert.equal(first.ask, "List my work for next week.\n\nWhat the person asked: {{input}}");
+    assert.equal(first.ask, "List my work for next week. Do only this part: the rest of the team does the rest.\n\nWhat the person asked: {{input}}");
     assert.equal(ok.message, "Send this to your team?\n\n{{step1.text}}", "you see what you're saying yes to");
-    assert.match(second.ask, /What OpenClaw came back with:\n\{\{step1\.text\}\}$/);
+    assert.match(second.ask, /What OpenClaw came back with:\n\{\{step1\.text\}\}\n\n/);
+    assert.match(second.ask, /You're the last of the team.*what OpenClaw came back with \(if they need something from the person, say what\), then your part\.$/, "the last speaks for the team");
     assert.equal(flow.trigger.type, "manual");
     assert.deepEqual(flow.assistants, assistants, "your assistants exactly as saved");
   });
