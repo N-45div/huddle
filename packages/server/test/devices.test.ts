@@ -281,6 +281,13 @@ describe("the Huddle button", () => {
     assert.deepEqual(screen.type === "idle" ? screen.flows[0] : null, { id: JUST_ASK, name: "Just ask", sees: false }, "the button's first choice");
     const without = new DeviceHub(store, engine, { speech }).screen();
     assert.equal(without.type === "idle" ? without.flows.length : -1, 0, "not without a planner");
+    // Just ask takes no photo: a flow or an assistant that looks at one isn't on offer.
+    store.saveFlow(parseFlow({ name: "Look at this", trigger: { type: "button" }, assistants: [{ id: "eye", connector: "mock", images: true }], steps: [{ id: "say", type: "agent", agent: "eye", ask: "{{input}}" }] }));
+    store.saveFlow(BUTTON);
+    store.saveAssistants([...TEAM.assistants, ...parseFlow({ name: "x", assistants: [{ id: "eye", connector: "mock", images: true }], steps: [{ id: "a", type: "agent", agent: "eye", ask: "x" }] }).assistants]);
+    const offered = hub.choices();
+    assert.deepEqual(offered.flows.map((flow) => flow.name), ["Morning brief"]);
+    assert.deepEqual(offered.assistants.map((assistant) => assistant.id), ["claw", "hermes"]);
 
     const sent: ToDevice[] = [];
     const session = hub.connect((message) => sent.push(message), { name: "Desk button", version: "test" }, () => undefined);

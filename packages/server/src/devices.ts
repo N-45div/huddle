@@ -252,11 +252,18 @@ export class DeviceHub {
     };
   }
 
-  /** What Huddle could do with something said: your saved flows, and your assistants. */
-  private choices() {
+  /**
+   * What Huddle could do with something said: your saved flows, and your assistants. Just ask takes no photo,
+   * so nothing that looks at one is offered (asked a muddled question, it once picked "Look at this").
+   */
+  choices() {
+    const sees = (assistant: { readonly images?: boolean | undefined }) => assistant.images === true;
     return {
-      flows: this.store.flows().map((saved) => ({ id: saved.id, name: saved.flow.name, description: saved.flow.description })),
-      assistants: this.store.assistants(),
+      flows: this.store
+        .flows()
+        .filter((saved) => !saved.flow.assistants.some(sees))
+        .map((saved) => ({ id: saved.id, name: saved.flow.name, description: saved.flow.description })),
+      assistants: this.store.assistants().filter((assistant) => !sees(assistant)),
     };
   }
 
