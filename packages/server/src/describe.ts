@@ -41,7 +41,7 @@ Steps (each has a unique "id": lowercase letters, numbers, - and _):
 Answer with the JSON only.`;
 
 /** The first JSON object in a reply, with or without a code fence. */
-function jsonIn(reply: string): unknown {
+export function jsonIn(reply: string): unknown {
   const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(reply)?.[1] ?? reply;
   const start = fenced.indexOf("{");
   const end = fenced.lastIndexOf("}");

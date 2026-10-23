@@ -9,7 +9,7 @@ import { isTokenFactory, tokenFactoryPrice } from "./tokenfactory.ts";
  * stops them once HUDDLE_BUDGET is spent, and holds them to so many a minute. A Huddle other people can
  * reach, like a demo, then can't run up a bill.
  */
-export type OwnJob = "describe it" | "auto judge" | "views" | "fact check" | "learning" | "tidy up";
+export type OwnJob = "describe it" | "auto judge" | "views" | "fact check" | "learning" | "tidy up" | "just ask";
 
 /** An own call the meter turned down: the budget is spent, or too many came at once. */
 export class OwnLimit extends Error {
