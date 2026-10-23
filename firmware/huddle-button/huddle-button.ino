@@ -260,18 +260,64 @@ struct Sprite {
   String key;
   uint16_t w, h;
   uint16_t *px;
+  uint16_t accent;  // its strongest colour, for what's drawn round it
 };
 std::vector<Sprite> sprites;
 String who = "hud";                       // whose Huddler is on screen: Hud, or the assistant at work
 String whoName;                           // and that assistant's name
 std::vector<String> teamIds, teamNames;   // "Just ask": who the work goes to, in order
 unsigned long lastActivity = 0;           // the last press or news; quiet for a while, Hud dozes off
+unsigned long workStart = 0;              // when whoever has the work now took it
+
+// An assistant with a logo of its own (OpenClaw, Hermes) is sent as that logo on a round plate, 64 square
+// (a Huddler is 88): no face on it, and while it works a ring of dots spins round it in the logo's colour.
+constexpr int LOGO_SIZE = 64, LX = 32, LY = 16;
+constexpr int RING_X = LX + LOGO_SIZE / 2, RING_Y = LY + LOGO_SIZE / 2, RING_R = 40, RING_DOTS = 18;
 
 const Sprite *spriteFor(const String &key) {
   for (const Sprite &sprite : sprites) {
     if (sprite.key == key) return &sprite;
   }
   return nullptr;
+}
+
+/** The logo on screen now, if whoever's there has one. */
+const Sprite *logoOnScreen() {
+  const Sprite *sprite = who == "hud" ? nullptr : spriteFor(who);
+  return sprite && sprite->w == LOGO_SIZE ? sprite : nullptr;
+}
+
+/** Between two colours, t of the way from a to b. */
+uint16_t mix565(uint16_t a, uint16_t b, float t) {
+  t = constrain(t, 0.0f, 1.0f);
+  int r = ((a >> 11) & 31) + (int)lroundf((((b >> 11) & 31) - ((a >> 11) & 31)) * t);
+  int g = ((a >> 5) & 63) + (int)lroundf((((b >> 5) & 63) - ((a >> 5) & 63)) * t);
+  int bl = (a & 31) + (int)lroundf(((b & 31) - (a & 31)) * t);
+  return (r << 11) | (g << 5) | bl;
+}
+
+/**
+ * A picture's strongest colour: the average of its commonest bright, saturated hue (OpenClaw's red, not its
+ * small cyan eyes); near-white for a picture with none (Hermes' black and white).
+ */
+uint16_t accentOf(const uint16_t *px, size_t n) {
+  uint32_t count[6] = {0}, sum[6][3] = {{0}};
+  for (size_t i = 0; i < n; i++) {
+    int r = (px[i] >> 11) << 3, g = ((px[i] >> 5) & 63) << 2, b = (px[i] & 31) << 3;
+    int hi = max(r, max(g, b)), lo = min(r, min(g, b));
+    if (hi < 110 || hi - lo < 80) continue;
+    int hue = hi == r ? (g >= b ? 0 : 5) : hi == g ? (b >= r ? 2 : 1) : (r >= g ? 4 : 3);
+    count[hue]++;
+    sum[hue][0] += r;
+    sum[hue][1] += g;
+    sum[hue][2] += b;
+  }
+  int best = 0;
+  for (int h = 1; h < 6; h++)
+    if (count[h] > count[best]) best = h;
+  if (count[best] < n / 50) return FACE;
+  uint32_t r = sum[best][0] / count[best], g = sum[best][1] / count[best], b = sum[best][2] / count[best];
+  return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
 }
 
 /** An 'I' frame from the canvas: the key's length and the key, width and height (16-bit LE), RGB565 pixels. */
@@ -288,17 +334,18 @@ void keepSprite(const uint8_t *data, size_t length) {
   if (!px) return;
   memcpy(px, data + 5 + k, n * 2);
   if (key == who) redraw = true;
+  uint16_t accent = accentOf(px, n);
   for (Sprite &sprite : sprites) {
     if (sprite.key != key) continue;
     free(sprite.px);
-    sprite = {key, w, h, px};
+    sprite = {key, w, h, px, accent};
     return;
   }
   if (sprites.size() >= 24) {
     free(sprites.back().px);
     sprites.pop_back();
   }
-  sprites.push_back({key, w, h, px});
+  sprites.push_back({key, w, h, px, accent});
 }
 
 /** What can be shown of a string with the screen's fonts (ASCII): the rupee, dashes, quotes and dots, spelled. */
@@ -351,7 +398,7 @@ enum class Face { Idle, Blink, Listen, Think, Talk, Happy, Ask, Oops, Sleep };
 
 /** A Huddler's face, in its visor: the canvas's moods, and the in-betweens that make it look alive. */
 void drawFace(Face face, float look = 0, float open = 0) {
-  if (!tft) return;
+  if (!tft || logoOnScreen()) return;  // a logo has no face
   tft->fillRoundRect(ux(16), uy(24.5f), (int)(32 * U), (int)(20.5f * U), (int)(10.25f * U), VISOR);
   switch (face) {
     case Face::Blink:
@@ -431,8 +478,41 @@ void drawHud(Mood face) {
 void drawWho() {
   const Sprite *sprite = spriteFor(who);
   if (!sprite) sprite = spriteFor("hud");
-  if (sprite) tft->drawRGBBitmap(SX, SY, sprite->px, sprite->w, sprite->h);
+  if (sprite && sprite->w == LOGO_SIZE) tft->drawRGBBitmap(LX, LY, sprite->px, sprite->w, sprite->h);
+  else if (sprite) tft->drawRGBBitmap(SX, SY, sprite->px, sprite->w, sprite->h);
   else drawHud(Mood::Idle);
+}
+
+/**
+ * The ring round a logo: while it cooks, a bright head chasing round with a fading tail in the logo's colour;
+ * while it talks, the whole ring lit with its voice.
+ */
+void drawRing(const Sprite *logo, unsigned long now, bool cooking, float level) {
+  int head = (int)((now / 55) % RING_DOTS);
+  for (int i = 0; i < RING_DOTS; i++) {
+    float angle = i * 2 * PI / RING_DOTS - PI / 2;
+    int x = RING_X + (int)lroundf(cosf(angle) * RING_R), y = RING_Y + (int)lroundf(sinf(angle) * RING_R);
+    int behind = (head - i + RING_DOTS) % RING_DOTS;
+    uint16_t color = cooking ? (behind < 6 ? mix565(logo->accent, TRACK, behind / 6.0f) : TRACK) : mix565(TRACK, logo->accent, level);
+    tft->fillCircle(x, y, 2, color);
+  }
+}
+
+/** How long whoever has the work has had it, top left, and which turn of the team's it is, top right. */
+void drawWorkClock(unsigned long now) {
+  unsigned long seconds = (now - workStart) / 1000;
+  tft->setFont(nullptr);
+  tft->setTextSize(1);
+  tft->fillRect(2, 2, 30, 9, BG);
+  tft->setTextColor(MUTED);
+  tft->setCursor(2, 3);
+  tft->printf("%lu:%02lu", seconds / 60, seconds % 60);
+  for (size_t i = 0; i < teamIds.size(); i++) {
+    if (teamIds[i] != who) continue;
+    String step = String(i + 1) + "/" + String(teamIds.size());
+    tft->setCursor(126 - (int)step.length() * 6, 3);
+    tft->print(step);
+  }
 }
 
 bool speakingNow() {
@@ -562,9 +642,10 @@ void draw() {
     return;
   }
   if (speaking || replying()) {
-    // The answer, in a bubble under whoever gave it.
+    // The answer, in a bubble under whoever gave it (a logo has its ring round it, not a pointer).
     drawFace(speaking ? Face::Talk : Face::Happy);
-    tft->fillTriangle(58, 95, 70, 95, 64, 89, BUBBLE);
+    if (const Sprite *logo = logoOnScreen()) drawRing(logo, millis(), false, 0.15f);
+    else tft->fillTriangle(58, 95, 70, 95, 64, 89, BUBBLE);
     tft->fillRoundRect(4, 94, 120, 63, 8, BUBBLE);
     tft->setFont(nullptr);
     tft->setTextColor(INK);
@@ -574,6 +655,14 @@ void draw() {
       tft->print(line);
       y += 11;
     }
+    return;
+  }
+  if (mode == Mode::Thinking && !showPhoto && logoOnScreen()) {
+    // OpenClaw or Hermes cooking: its logo, ringed, its name, and the team's turns under it.
+    caption(110, ascii(whoName.length() ? whoName : who), FACE);
+    small(116, "is cooking...", LILAC);
+    if (!teamNames.empty()) drawTeam(130);
+    lastTimer = 0;  // the ring and the clock move in animate()
     return;
   }
   if (mode == Mode::Thinking) {
@@ -752,11 +841,12 @@ void onMessage(uint8_t *payload, size_t length) {
     replyText = "";
     replyUntil = 0;
     mode = Mode::Thinking;
-    // The assistant that'll answer takes the screen while it works.
+    // Whoever starts the work takes the screen while they're at it.
     if (!doc["assistant"].isNull()) {
       who = String(doc["assistant"]["id"] | "hud");
       whoName = String(doc["assistant"]["name"] | "");
     }
+    workStart = millis();
   } else if (type == "plan") {
     // "Just ask" worked out who does it: the team, in order (the plan itself is said out loud).
     teamIds.clear();
@@ -769,10 +859,11 @@ void onMessage(uint8_t *payload, size_t length) {
     lastActivity = millis();
     logLine("  plan: %s", (const char *)(doc["text"] | ""));
   } else if (type == "working") {
-    // The work passed to another assistant: their Huddler takes the screen.
+    // The work passed to another assistant: their logo or Huddler takes the screen, and their clock starts.
     if (mode != Mode::Approval) {
       who = String(doc["assistant"]["id"] | "hud");
       whoName = String(doc["assistant"]["name"] | "");
+      workStart = millis();
       if (mode == Mode::Idle) mode = Mode::Thinking;  // after a yes, the team carries on
     }
     lastActivity = millis();
@@ -1136,7 +1227,20 @@ void animate() {
   if (speaking || (mode == Mode::Approval && speakingNow())) {
     shown = -1;
     drawFace(Face::Talk, 0, speakLevel);
+    if (const Sprite *logo = logoOnScreen(); logo && speaking) drawRing(logo, now, false, 0.15f + speakLevel);
     if (speaking) setLed(0, (uint8_t)(6 + speakLevel * 90), 0);
+    return;
+  }
+  if (const Sprite *logo = logoOnScreen(); logo && mode == Mode::Thinking && !photoNow) {
+    shown = -1;
+    drawRing(logo, now, true, 0);
+    if (now - lastTimer > 500) {
+      lastTimer = now;
+      drawWorkClock(now);
+    }
+    float breath = 0.5f + 0.5f * sinf(now / 450.0f);
+    uint16_t a = logo->accent;
+    setLed((uint8_t)(((a >> 11) & 31) * breath * 1.5f), (uint8_t)(((a >> 5) & 63) * breath * 0.6f), (uint8_t)((a & 31) * breath * 1.5f));
     return;
   }
   if (mode == Mode::Thinking) {
