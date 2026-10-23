@@ -264,6 +264,7 @@ struct Sprite {
 std::vector<Sprite> sprites;
 String who = "hud";                       // whose Huddler is on screen: Hud, or the assistant at work
 String whoName;                           // and that assistant's name
+std::vector<String> teamIds, teamNames;   // "Just ask": who the work goes to, in order
 unsigned long lastActivity = 0;           // the last press or news; quiet for a while, Hud dozes off
 
 const Sprite *spriteFor(const String &key) {
@@ -476,6 +477,27 @@ void small(int y, const String &words, uint16_t color, size_t maxLines = 1) {
   }
 }
 
+/** "Just ask"'s team on one line, in order, whoever has the work now picked out: "OpenClaw > Hermes". */
+void drawTeam(int y) {
+  String line;
+  for (size_t i = 0; i < teamNames.size(); i++) {
+    if (i) line += " > ";
+    line += ascii(teamNames[i]);
+  }
+  if (line.length() > 21) return small(y, line, MUTED, 2);
+  tft->setFont(nullptr);
+  tft->setTextSize(1);
+  tft->setCursor((128 - (int)line.length() * 6) / 2, y);
+  for (size_t i = 0; i < teamNames.size(); i++) {
+    if (i) {
+      tft->setTextColor(MUTED);
+      tft->print(" > ");
+    }
+    tft->setTextColor(teamIds[i] == who ? CYAN : MUTED);
+    tft->print(ascii(teamNames[i]));
+  }
+}
+
 // Left-aligned lines and a footer, for the start-up check.
 void text(int y, const String &words, uint16_t color, size_t maxLines = 6) {
   tft->setFont(nullptr);
@@ -557,7 +579,8 @@ void draw() {
   if (mode == Mode::Thinking) {
     if (!showPhoto) drawFace(Face::Think);
     caption(112, showPhoto ? "Looking..." : whoName.length() ? ascii(whoName) + " is on it" : "On it", FACE);
-    if (heardText.length()) small(119, "\"" + ascii(heardText) + "\"", MUTED, 2);
+    if (!teamNames.empty()) drawTeam(122);
+    else if (heardText.length()) small(119, "\"" + ascii(heardText) + "\"", MUTED, 2);
     return;  // the dots hop in animate()
   }
   if (mode == Mode::Approval) {
@@ -734,6 +757,25 @@ void onMessage(uint8_t *payload, size_t length) {
       who = String(doc["assistant"]["id"] | "hud");
       whoName = String(doc["assistant"]["name"] | "");
     }
+  } else if (type == "plan") {
+    // "Just ask" worked out who does it: the team, in order (the plan itself is said out loud).
+    teamIds.clear();
+    teamNames.clear();
+    for (JsonObject member : doc["team"].as<JsonArray>()) {
+      if (teamIds.size() >= 4) break;
+      teamIds.push_back(String(member["id"] | ""));
+      teamNames.push_back(String(member["name"] | ""));
+    }
+    lastActivity = millis();
+    logLine("  plan: %s", (const char *)(doc["text"] | ""));
+  } else if (type == "working") {
+    // The work passed to another assistant: their Huddler takes the screen.
+    if (mode != Mode::Approval) {
+      who = String(doc["assistant"]["id"] | "hud");
+      whoName = String(doc["assistant"]["name"] | "");
+      if (mode == Mode::Idle) mode = Mode::Thinking;  // after a yes, the team carries on
+    }
+    lastActivity = millis();
   } else if (type == "speaking") {
     setLed(0, 30, 0);
   } else if (type == "spoken") {
@@ -1007,6 +1049,8 @@ void startListening() {
   dcIn = dcOut = 0;
   mode = Mode::Listening;
   heardText = "";
+  teamIds.clear();
+  teamNames.clear();
   replyText = "";
   replyUntil = 0;
   who = "hud";  // Hud listens; whoever takes it on shows up once Huddle says
