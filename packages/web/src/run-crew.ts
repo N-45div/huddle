@@ -222,7 +222,9 @@ function assistantNode(flow: Flow, run: Pick<RunDetail["run"], "state" | "at" | 
   const nodes = attempts.map((attempt, index): CrewNode => {
     const last = index === attempts.length - 1;
     const answered = attempt.lines.find((line) => line.kind === "answered");
-    const failed = attempt.lines.find((line) => line.kind === "failed");
+    // Skipped (an optional step whose assistant couldn't answer): shown as it failed, though the run went on.
+    const skipped = attempt.lines.find((line) => line.kind === "skipped");
+    const failed = attempt.lines.find((line) => line.kind === "failed") ?? skipped;
     const declined = attempt.lines.find((line) => line.kind === "declined" || line.kind === "refused");
     const waiting = attempt.lines.findLast((line) => line.kind === "waiting");
     const held = waiting && !attempt.lines.some((line) => line.at >= waiting.at && (line.kind === "approved" || line.kind === "released" || line.kind === "declined" || line.kind === "refused")) && !attempt.asked;
@@ -250,7 +252,7 @@ function assistantNode(flow: Flow, run: Pick<RunDetail["run"], "state" | "at" | 
       costUsd: cost,
       startedAt: attempt.asked?.at ?? attempt.lines[0]?.at ?? "",
       endedAt: ended?.at ?? null,
-      error: failed ? text(failed.detail, "error") : null,
+      error: failed ? `${failed === skipped ? "Couldn't help, so the team went on without it: " : ""}${text(failed.detail, "error")}` : null,
       approvalId: status === "needs-you" ? (run.waiting?.id ?? null) : null,
       children: [],
     };

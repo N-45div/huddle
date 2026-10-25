@@ -1,4 +1,5 @@
-import { api } from "../api.ts";
+import { useState } from "react";
+import { api, describeError } from "../api.ts";
 import { useApp } from "../app-context.ts";
 import { RunCrew } from "../components/RunCrew.tsx";
 import { ErrorNote, Icon, Link, Loading, StateBadge } from "../components/bits.tsx";
@@ -11,7 +12,7 @@ import { href } from "../router.ts";
 import { STEP_STATE_LABEL, stepStates } from "../run-state.ts";
 
 export function RunScreen({ runId }: { readonly runId: string }) {
-  const { authVersion } = useApp();
+  const { authVersion, navigate } = useApp();
   const detail = useResource(() => api.run(runId), [runId, authVersion]);
   const refetch = useDebounced(() => void detail.reload(), 150);
 
@@ -22,6 +23,26 @@ export function RunScreen({ runId }: { readonly runId: string }) {
   const data = detail.data;
   const run = data?.run;
   const states = run ? stepStates(run) : {};
+  // Just ask's plan for this run, and the flow it was kept as, if it was.
+  const planned = data?.log.find((line) => line.kind === "planned")?.detail as { use?: string; say?: string } | undefined;
+  const keptId = (data?.log.find((line) => line.kind === "kept")?.detail as { flowId?: string } | undefined)?.flowId ?? null;
+  const [keptNow, setKeptNow] = useState<string | null>(null);
+  const kept = keptNow ?? keptId;
+  const [keeping, setKeeping] = useState(false);
+  const [keepError, setKeepError] = useState<string | null>(null);
+  const keep = async () => {
+    setKeeping(true);
+    setKeepError(null);
+    try {
+      const view = await api.keepRun(runId);
+      setKeptNow(view.id);
+      navigate(href.flow(view.id));
+    } catch (caught) {
+      setKeepError(describeError(caught));
+    } finally {
+      setKeeping(false);
+    }
+  };
   const started = data?.log[0]?.at;
   const last = data?.log.at(-1)?.at;
 
@@ -54,7 +75,22 @@ export function RunScreen({ runId }: { readonly runId: string }) {
                 </Link>
               </div>
             )}
+            {!run.flowId && planned?.use === "team" && (
+              <div className="page-actions">
+                {kept ? (
+                  <Link to={href.flow(kept)} className="btn">
+                    Open the flow
+                  </Link>
+                ) : (
+                  <button type="button" className="btn btn-primary" disabled={keeping} onClick={() => void keep()}>
+                    {keeping ? "Keeping…" : "Keep this team"}
+                  </button>
+                )}
+              </div>
+            )}
           </header>
+          {planned?.say && <p className="lede">The plan: {planned.say}</p>}
+          {keepError && <ErrorNote message={keepError} />}
 
           {/* Who's on it, live: a row waiting for you takes your answer, a failed run can be tried again. */}
           <section className="section">

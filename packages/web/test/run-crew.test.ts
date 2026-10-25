@@ -89,6 +89,33 @@ describe("who is on a run", () => {
     assert.deepEqual(tester.children.map((node) => [node.status, node.error]), [["stopped", "2 of 14 checkout tests fail: coupon codes aren't applied"]]);
   });
 
+  it("shows a team member the run went on without, with why, while the run itself is done", async () => {
+    const down: Connector = {
+      async send(request) {
+        if (request.assistant.id === "claw") throw new Error("connect ECONNREFUSED 127.0.0.1:18789");
+        return mock.send(request);
+      },
+    };
+    const flow = parseFlow({
+      name: "Just ask",
+      assistants: [
+        { id: "claw", name: "OpenClaw", connector: "mock" },
+        { id: "hud", name: "Hud", connector: "mock", replies: { "*": "OpenClaw couldn't be reached." } },
+      ],
+      steps: [
+        { id: "step1", type: "agent", agent: "claw", ask: "Work.", optional: true },
+        { id: "wrap", type: "agent", agent: "hud", ask: "Say what came back: {{step1.text}}" },
+      ],
+    });
+    const store = new Store();
+    const engine = new Engine(store, { mock: down });
+    const run = await engine.start(flow, "");
+    const crew = crewOf(detailOf(store, engine, run.id));
+    assert.equal(crew.status, "done");
+    assert.deepEqual(crew.children.map((node) => [node.name, node.status]), [["OpenClaw", "failed"], ["Hud", "done"]]);
+    assert.equal(crew.children[0]!.error, "Couldn't help, so the team went on without it: connect ECONNREFUSED 127.0.0.1:18789");
+  });
+
   it("names models the way people say them, and times the way a card shows them", () => {
     assert.equal(modelName("nvidia/nemotron-3-super-120b-a12b"), "Nemotron 3 Super");
     assert.equal(modelName("nvidia/Nemotron-3_5-Lightning"), "Nemotron 3.5 Lightning");

@@ -146,6 +146,32 @@ function describe(line: LogLine): Described {
       };
     case "failed":
       return { title: "Failed", body: text(detail, "error"), tone: "danger" };
+    case "planned": {
+      // Just ask's plan: a saved flow, or a team it put together, in order.
+      const team = field(detail, "team");
+      const who = Array.isArray(team) ? team.filter((id): id is string => typeof id === "string") : [];
+      return {
+        title: (
+          <>
+            Just ask planned {text(detail, "use") === "flow" ? "a saved flow" : "a team"}
+            {who.length > 0 && <span className="muted">: {who.join(", then ")}</span>}
+          </>
+        ),
+        body: text(detail, "say"),
+      };
+    }
+    case "skipped":
+      return {
+        title: (
+          <>
+            Went on without <strong>{text(detail, "assistant") || "an assistant"}</strong>
+          </>
+        ),
+        body: text(detail, "error"),
+        tone: "warn",
+      };
+    case "kept":
+      return { title: "Kept the team as a flow", tone: "ok" };
     default:
       return { title: line.kind, data: detail };
   }
