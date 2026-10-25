@@ -69,6 +69,8 @@ export type ToDevice =
   | { readonly type: "pong" };
 
 const LINE = 90;
+/** How much of a team's answer the button is given: Hud says what each came back with, so a sentence or two each. */
+const TEAM_ANSWER = 450;
 /** The most a device may say in one go: 30 seconds of 16 kHz 16-bit audio. */
 const MAX_LISTEN_BYTES = 30 * SAMPLE_RATE * 2;
 const AUDIO_FRAME = 4_096;
@@ -230,12 +232,16 @@ export class DeviceHub {
     return this.asker?.choices() ?? { flows: [], assistants: [] };
   }
 
-  /** A button-started run's last answer, short; null for runs a button didn't start. */
+  /**
+   * A button-started run's last answer, short; null for runs a button didn't start. A team's (Hud's, saying what
+   * each came back with) may run longer, so the last of them isn't cut off.
+   */
   answerFor(runId: string): string | null {
     const log = this.store.logOf(runId);
     if (!log.some((line) => line.kind === "started" && (line.detail as { via?: unknown } | null)?.via === "device")) return null;
     const text = (log.findLast((line) => line.kind === "answered")?.detail as { text?: unknown } | null)?.text;
-    return typeof text === "string" && text.trim() ? shortAnswer(text) : null;
+    const team = log.some((line) => line.kind === "planned" && (line.detail as { use?: unknown } | null)?.use === "team");
+    return typeof text === "string" && text.trim() ? shortAnswer(text, team ? TEAM_ANSWER : undefined) : null;
   }
 
   /** Starts a button flow for this device: what the person said, else the flow's own input. */
