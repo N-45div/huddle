@@ -51,23 +51,29 @@ export function a2a(fetcher: typeof fetch = globalThis.fetch, options: A2AOption
   const timeoutMs = options.timeoutMs ?? 600_000;
   const endpoints = new Map<string, string>();
 
-  /** The JSON-RPC endpoint from the agent's card, or its url itself when it has no card. */
+  /**
+   * The JSON-RPC endpoint from the agent's card, or its url itself when it has no card. Kept once the agent has
+   * said which (a card, or a 404 for none); an agent that couldn't be reached (down, or still starting) gets
+   * its url this time and is asked again next time, or a restart would leave it on the wrong address for good.
+   */
   async function endpointOf(base: string, headers: Record<string, string>): Promise<string> {
     const known = endpoints.get(base);
     if (known) return known;
     const cardUrl = base.endsWith(".json") ? base : `${base.replace(/\/$/, "")}/.well-known/agent-card.json`;
-    let endpoint = base;
     try {
       const response = await fetcher(cardUrl, { headers, signal: AbortSignal.timeout(15_000) });
       if (response.ok) {
         const card = (await response.json()) as { supportedInterfaces?: { url?: string; protocolBinding?: string }[]; url?: string };
-        endpoint = card.supportedInterfaces?.find((item) => item.protocolBinding?.toUpperCase() === "JSONRPC")?.url ?? card.url ?? base;
+        const endpoint = card.supportedInterfaces?.find((item) => item.protocolBinding?.toUpperCase() === "JSONRPC")?.url ?? card.url ?? base;
+        endpoints.set(base, endpoint);
+        return endpoint;
       }
-    } catch {
       // No card: the url is the endpoint (Hermes answers JSON-RPC at its root).
+      if (response.status === 404) endpoints.set(base, base);
+    } catch {
+      // Not reachable now: its url this time, and the card looked for again next time.
     }
-    endpoints.set(base, endpoint);
-    return endpoint;
+    return base;
   }
 
   return {

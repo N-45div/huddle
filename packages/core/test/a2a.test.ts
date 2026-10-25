@@ -101,6 +101,20 @@ describe("A2A agents (OpenClaw, Hermes and any other)", () => {
     assert.equal(fake.calls.at(-1)?.auth, undefined, "no token unless one is set");
   });
 
+  it("looks for an agent's card again after it couldn't be reached, instead of keeping its bare address", async () => {
+    // OpenClaw down (or still starting) for the first call: on Oct 25 its next calls went to its root, and 404'd.
+    let down = true;
+    const flaky: typeof fetch = (input, init) => (down ? Promise.reject(new TypeError("fetch failed")) : fetch(input, init));
+    const connector = a2a(flaky, { pollMs: 5 });
+    const assistant = Assistant.parse({ id: "claw", connector: "openclaw", url: `${fake.base}/claw` });
+    await assert.rejects(connector.send({ assistant, ask: "Move standup", memory: [] }), /fetch failed/);
+    down = false;
+    const before = fake.calls.length;
+    const answer = await connector.send({ assistant, ask: "Move standup", memory: [] });
+    assert.equal(answer.text, "Moved standup to 11.");
+    assert.equal(fake.calls.slice(before).find((call) => call.body.method === "SendMessage")?.path, "/claw/a2a/v1", "the card's endpoint, not its root");
+  });
+
   it("makes a rejected task an error, and never repeats the token in one", async () => {
     const assistant = Assistant.parse({ id: "hermes", connector: "hermes", url: `${fake.base}/hermes/`, keyEnv: "HERMES_TOKEN" });
     process.env.HERMES_TOKEN = "tok-hermes";
