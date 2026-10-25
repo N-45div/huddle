@@ -75,7 +75,7 @@ function wrapAsk(turns: readonly { readonly id: string; readonly name: string }[
     "{{input}}",
     ...turns.map((turn) => `\n${turn.name} came back with:\n{{${turn.id}.text}}`),
     "",
-    "Tell the person what came back, by name, in a sentence or two for each: its answer in short, and anything it needs from the person. Say only what they said; if one couldn't help, say so plainly.",
+    "Tell the person what came back, by name, in a sentence or two for each: its answer in short, and anything it needs from the person. Say only what they said; if one couldn't help, say so plainly. Don't introduce yourself or open with a greeting.",
   ].join("\n");
 }
 
