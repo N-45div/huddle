@@ -2,7 +2,8 @@ import { AUTO, type Change, type Engine, type Flow, nextRun, type Router, SAMPLE
 import type { Hono } from "hono";
 import type { UpgradeWebSocket, WSContext } from "hono/ws";
 import { bearerOf, same } from "./auth.ts";
-import { JUST_ASK, type Plan, type Planner } from "./just-ask.ts";
+import { Asker, JUST_ASK, type Planner } from "./just-ask.ts";
+import { answering, type Who, whoOf, withNote, workingAt } from "./who.ts";
 
 /**
  * Your gadgets (the Huddle button, or the canvas's virtual one): what each should show, and what it sends
@@ -37,33 +38,7 @@ export type Screen =
       readonly flows: readonly { readonly id: string; readonly name: string; readonly sees: boolean }[];
     };
 
-/** An assistant as the button shows it: its Huddler comes from the id (colour) and connector (what it wears). */
-export interface Who {
-  readonly id: string;
-  readonly name: string;
-  readonly connector: string;
-}
-
-const whoOf = (assistant: { readonly id: string; readonly name?: string | undefined; readonly connector: string } | undefined): Who | null =>
-  assistant ? { id: assistant.id, name: assistant.name ?? assistant.id, connector: assistant.connector } : null;
-
-/** The assistant whose answer a flow says: its last assistant step's. */
-function answering(flow: Flow): Who | null {
-  const last = flow.steps.findLast((step) => step.type === "agent");
-  return last?.type === "agent" ? whoOf(flow.assistants.find((assistant) => assistant.id === last.agent)) : null;
-}
-
-/** Everyone a flow asks, in the order it asks them. */
-function teamOf(flow: Flow): Who[] {
-  const ids = [...new Set(flow.steps.flatMap((step) => (step.type === "agent" ? [step.agent] : [])))];
-  return ids.flatMap((id) => whoOf(flow.assistants.find((assistant) => assistant.id === id)) ?? []);
-}
-
-/** The assistant at a step of a flow, if that step asks one. */
-function workingAt(flow: Flow, stepId: string | null): Who | null {
-  const step = stepId ? flow.steps.find((candidate) => candidate.id === stepId) : flow.steps[0];
-  return step?.type === "agent" ? whoOf(flow.assistants.find((assistant) => assistant.id === step.agent)) : null;
-}
+export type { Who } from "./who.ts";
 
 /** Everything a device is sent (as JSON), besides the audio (binary frames between "speaking" and "spoken"). */
 export type ToDevice =
@@ -154,9 +129,7 @@ export const VOICE_NOTE =
 
 /** A saved flow as a voice run asks it: its last assistant step (the one whose answer is said) gets VOICE_NOTE. */
 export function asSpoken(flow: Flow): Flow {
-  const last = flow.steps.findLast((step) => step.type === "agent");
-  if (!last || last.type !== "agent") return flow;
-  return { ...flow, steps: flow.steps.map((step) => (step === last ? { ...last, ask: `${VOICE_NOTE}\n\n${last.ask}` } : step)) };
+  return withNote(flow, VOICE_NOTE);
 }
 
 /**
@@ -190,7 +163,7 @@ export interface DeviceHubOptions {
   readonly speech?: Speech;
   /** Where a spoken ask goes when no flow is picked. */
   readonly router?: Router;
-  /** "Just ask" on the button: works out which saved flow, assistant or team does what was said. */
+  /** "Just ask" on the button: works out which saved flow, assistant or team does what was said (with a router). */
   readonly planner?: Planner;
 }
 
@@ -202,7 +175,7 @@ export class DeviceHub {
   private readonly now: () => number;
   readonly speech: Speech | null;
   private readonly router: Router | null;
-  private readonly planner: Planner | null;
+  private readonly asker: Asker | null;
 
   constructor(store: Store, engine: Engine, options: DeviceHubOptions = {}) {
     this.store = store;
@@ -210,7 +183,7 @@ export class DeviceHub {
     this.now = options.now ?? Date.now;
     this.speech = options.speech ?? null;
     this.router = options.router ?? null;
-    this.planner = options.planner ?? null;
+    this.asker = options.planner && options.router ? new Asker(store, engine, options.router, options.planner) : null;
   }
 
   /** The screen: the oldest approval waiting, else today at a glance. */
@@ -242,8 +215,8 @@ export class DeviceHub {
       if (!next || at < next.at) next = { flow: saved.flow.name, at };
     }
     flows.sort((a, b) => a.name.localeCompare(b.name));
-    // With speech and a planner, the first choice is to say anything: Huddle works out who does it.
-    if (this.planner && this.speech && this.router) flows.unshift({ id: JUST_ASK, name: "Just ask", sees: false });
+    // With a planner, the first choice is to say (or type, on the virtual button) anything: Huddle works out who does it.
+    if (this.asker) flows.unshift({ id: JUST_ASK, name: "Just ask", sees: false });
     return {
       type: "idle",
       spentTodayUsd: Math.round(spentTodayUsd * 1_000_000) / 1_000_000,
@@ -252,36 +225,9 @@ export class DeviceHub {
     };
   }
 
-  /**
-   * What Huddle could do with something said: your saved flows, and your assistants. Just ask takes no photo,
-   * so nothing that looks at one is offered (asked a muddled question, it once picked "Look at this").
-   */
+  /** What Just ask could do with something said (lib: Asker.choices): nothing that looks at a photo. */
   choices() {
-    const sees = (assistant: { readonly images?: boolean | undefined }) => assistant.images === true;
-    return {
-      flows: this.store
-        .flows()
-        .filter((saved) => !saved.flow.assistants.some(sees))
-        .map((saved) => ({ id: saved.id, name: saved.flow.name, description: saved.flow.description })),
-      assistants: this.store.assistants().filter((assistant) => !sees(assistant)),
-    };
-  }
-
-  /** Runs a plan a device was given ("Just ask"): a saved flow or a team's, spoken to; null for one assistant. */
-  launchPlan(plan: Plan, said: string, device: string): { readonly runId: string; readonly flow: string; readonly assistant: Who | null } | null {
-    if (plan.use === "one") return null;
-    let flow = plan.use === "team" ? plan.flow : null;
-    let flowId: string | null = null;
-    if (plan.use === "flow") {
-      const saved = this.store.flow(plan.flowId);
-      if (!saved) throw new Error("That flow is gone.");
-      flow = saved.flow;
-      flowId = saved.id;
-    }
-    if (!flow) return null;
-    const runId = this.engine.launch(asSpoken(flow), said, flowId, { name: device, tier: "owner", via: "device" });
-    this.engine.learnFrom(runId, said);
-    return { runId, flow: flow.name, assistant: workingAt(flow, null) ?? answering(flow) };
+    return this.asker?.choices() ?? { flows: [], assistants: [] };
   }
 
   /** A button-started run's last answer, short; null for runs a button didn't start. */
@@ -406,7 +352,7 @@ export class DeviceHub {
       send({ type: "heard", text });
       if (!text) return void say("Sorry, I didn't catch that.");
       try {
-        if (turn.flow === JUST_ASK && this.planner) return await justAsk(text, pcm.byteLength);
+        if (turn.flow === JUST_ASK && this.asker) return await justAsk(text, pcm.byteLength);
         if (turn.flow) {
           const started = this.start(turn.flow, text, hello.name, turn.photo ? [turn.photo] : []);
           ours.set(started.runId, started.assistant?.id ?? null);
@@ -431,25 +377,24 @@ export class DeviceHub {
       void say(answer);
     };
 
-    /** "Just ask": Huddle works out who does it, says the plan out loud and starts it; one assistant just answers. */
+    /**
+     * "Just ask" (said, or typed on the virtual button): Huddle works out who does it, says the plan out loud and
+     * starts it; one assistant just answers. `bytes`: how much was said, for the run's receipt (0 when typed).
+     */
     const justAsk = async (text: string, bytes: number) => {
-      let plan: Plan;
-      try {
-        plan = await (this.planner as Planner)(text, this.choices());
-      } catch (error) {
-        // No plan (the model's out, or its answer didn't fit what you have): the router's judge picks who answers.
-        console.warn(`[huddle] Just ask couldn't plan, so the router answers: ${failure(error)}`);
-        plan = { use: "one", assistant: AUTO, say: "" };
+      const asked = await (this.asker as Asker).ask(text, { name: hello.name, tier: "owner", via: "device" }, { note: VOICE_NOTE });
+      const runId = asked.run?.runId ?? asked.answer?.runId;
+      if (runId && bytes) this.heard(runId, text, bytes);
+      if (asked.answer) {
+        const answer = shortAnswer(asked.answer.text);
+        send({ type: "run", flow: `Asked ${asked.answer.assistant.name}`, state: "done", answer, assistant: asked.answer.assistant });
+        return void say(answer);
       }
-      if (plan.use === "one") return askOne(text, bytes, plan.assistant);
-      const saved = plan.use === "flow" ? this.store.flow(plan.flowId)?.flow : plan.flow;
-      send({ type: "plan", text: plan.say, team: saved ? teamOf(saved) : [] });
-      if (plan.say) void say(plan.say);
-      const started = this.launchPlan(plan, text, hello.name);
-      if (!started) return;
-      ours.set(started.runId, started.assistant?.id ?? null);
-      this.heard(started.runId, text, bytes);
-      send({ type: "started", ...started });
+      if (!asked.run) return;
+      send({ type: "plan", text: asked.plan.say, team: asked.plan.team });
+      if (asked.plan.say) void say(asked.plan.say);
+      ours.set(asked.run.runId, asked.run.assistant?.id ?? null);
+      send({ type: "started", ...asked.run });
     };
 
     send({ type: "hello", ...hello, speech: this.speech !== null });
@@ -487,15 +432,25 @@ export class DeviceHub {
             }
             show();
             return;
-          case "start":
+          case "start": {
             if (typeof message.flow !== "string") break;
+            const said = typeof message.input === "string" ? message.input.slice(0, 4_000) : null;
+            // Typed to Just ask (the virtual button): planned and started as if it were said.
+            if (message.flow === JUST_ASK) {
+              if (!this.asker) return send({ type: "error", message: "Just ask needs a model to plan with: set NEBIUS_API_KEY, or HUDDLE_LLM_URL and HUDDLE_LLM_MODEL." });
+              if (!said?.trim()) return send({ type: "error", message: "Type what you need for Just ask." });
+              void justAsk(said, 0).catch((error: unknown) => send({ type: "error", message: failure(error) }));
+              return;
+            }
             try {
-              const said = typeof message.input === "string" ? message.input.slice(0, 4_000) : null;
-              send({ type: "started", ...this.start(message.flow, said, hello.name) });
+              const started = this.start(message.flow, said, hello.name);
+              ours.set(started.runId, started.assistant?.id ?? null);
+              send({ type: "started", ...started });
             } catch (error) {
               send({ type: "error", message: failure(error) });
             }
             return;
+          }
           case "listen":
             generation++; // you're talking: stop speaking
             listening = { flow: typeof message.flow === "string" ? message.flow : null, chunks: [], bytes: 0, photo: null };

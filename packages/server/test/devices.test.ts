@@ -310,6 +310,28 @@ describe("the Huddle button", () => {
     session.close();
   });
 
+  it("Just ask, typed on the virtual button: no voice needed, the team starts and the answer comes back", async () => {
+    const store = new Store();
+    const engine = new Engine(store, { mock });
+    store.saveAssistants(TEAM.assistants);
+    const planner: Planner = async (said, choices) => ({ use: "team", say: "OpenClaw, then Hermes.", flow: teamFlow(said, [{ assistant: "claw", ask: "Work." }, { assistant: "hermes", ask: "Home." }], choices.assistants) });
+    const hub = new DeviceHub(store, engine, { router: new Router(store, engine, null), planner });
+    const screen = hub.screen();
+    assert.equal(screen.type === "idle" ? screen.flows[0]?.id : null, JUST_ASK, "on offer without speech: it can be typed");
+    const sent: ToDevice[] = [];
+    const session = hub.connect((message) => sent.push(message), { name: "Virtual button", version: "test" });
+    session.receive(JSON.stringify({ type: "start", flow: JUST_ASK }));
+    assert.match(JSON.stringify(sent.at(-1)), /Type what you need/);
+    session.receive(JSON.stringify({ type: "start", flow: JUST_ASK, input: "Plan my week" }));
+    await settle();
+    assert.deepEqual(sent.find((message) => message.type === "plan"), { type: "plan", text: "OpenClaw, then Hermes.", team: [{ id: "claw", name: "OpenClaw", connector: "mock" }, { id: "hermes", name: "Hermes", connector: "mock" }] });
+    const started = sent.find((message) => message.type === "started");
+    assert.equal(started?.type === "started" ? store.run(started.runId)?.context.input : null, "Plan my week");
+    assert.ok(sent.some((message) => message.type === "run" && message.answer === "Groceries on Saturday."));
+    assert.equal(store.logOf(started?.type === "started" ? started.runId : "").some((line) => line.kind === "heard"), false, "typed, so nothing was heard");
+    session.close();
+  });
+
   it("Just ask: one assistant just answers, and with no plan the router's judge picks who", async () => {
     const speech: Speech = {
       name: "test speech",
