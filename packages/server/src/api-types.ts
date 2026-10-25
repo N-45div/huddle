@@ -37,7 +37,12 @@ export interface Info {
   readonly guard: string | null;
   /** Showing answers as views: who chooses the view ("jev", "model", "rules"), and the model that fills charts and the like in, if any. */
   readonly present: { readonly chooser: string; readonly writer: string | null };
+  /** Whether Just ask is on (a model to plan with): POST /api/ask, and the button's and quick bar's first choice. */
+  readonly justAsk: boolean;
 }
+
+/** POST /api/ask (Just ask): the plan, and the run it started, or the one assistant's answer. */
+export type { Asked as AskReply } from "./just-ask.ts";
 
 /** POST /api/present: how to show an answer, and the view. */
 export interface PresentedView {

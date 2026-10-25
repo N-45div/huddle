@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Assistant, type Connector, Engine, mock, parseFlow, Router, type SavedFlow, Store } from "@huddle/core";
 import { createApp } from "../src/app.ts";
+import { Asker, type Planner, teamFlow } from "../src/just-ask.ts";
 import { toolNames } from "../src/mcp.ts";
 
 const OWNER = "a2a-token-0123456789";
@@ -239,6 +240,30 @@ describe("Huddle as an MCP server", () => {
     assert.deepEqual(names(await legacy(app, "tools/list", {}, friend.token)), ["get_run"], "assistants act for you, so contacts don't see them");
     const notYours = await call(app, "ask_assistant", { assistant: "local", message: "hi" }, friend.token);
     assert.deepEqual([notYours.body?.error?.code, notYours.body?.error?.message], [-32602, 'There\'s no tool "ask_assistant".']);
+  });
+
+  it("just_ask: one sentence, and Huddle plans it over your assistants and runs it, only for you", async () => {
+    const store = new Store();
+    const engine = new Engine(store, { mock });
+    const router = new Router(store, engine);
+    store.saveAssistants([
+      Assistant.parse({ id: "claw", name: "OpenClaw", connector: "mock", replies: { "*": "Three deadlines." } }),
+      Assistant.parse({ id: "hermes", name: "Hermes", connector: "mock", replies: { "*": "Groceries on Saturday." } }),
+    ]);
+    const planner: Planner = async (said, choices) =>
+      said.includes("team") ? { use: "team", say: "OpenClaw, then Hermes.", flow: teamFlow(said, [{ assistant: "claw", ask: "Work." }, { assistant: "hermes", ask: "Home." }], choices.assistants) } : { use: "one", assistant: "hermes", say: "" };
+    const app = createApp({ store, engine, version: "test", publicUrl: "http://huddle.test", a2aToken: OWNER, router, asker: new Asker(store, engine, router, planner) });
+    const friend = store.addContact({ name: "Asha", tier: "friend" });
+
+    assert.ok(names(await legacy(app, "tools/list")).includes("just_ask"));
+    assert.equal(said(await call(app, "just_ask", { text: "What's on Saturday?" })), "Groceries on Saturday.\n\n(Answered by Hermes.)");
+    const team = said(await call(app, "just_ask", { text: "Plan my week with the team" }));
+    assert.match(team, /^OpenClaw, then Hermes\. \(OpenClaw, then Hermes\)\n\n/);
+    assert.match(team, /Groceries on Saturday\./);
+    const run = store.runs(5).find((candidate) => candidate.flow.name === "Just ask");
+    assert.deepEqual(store.logOf(run?.id ?? "")[0]?.detail, { name: "You", tier: "owner", via: "mcp" });
+    assert.equal(said(await call(app, "just_ask", { text: "  " })), "Say what's needed in text.");
+    assert.ok(!names(await legacy(app, "tools/list", {}, friend.token)).includes("just_ask"), "it acts for you, so contacts don't see it");
   });
 
   it("lets each contact read only the runs they started, and you all the ones started over MCP", async () => {

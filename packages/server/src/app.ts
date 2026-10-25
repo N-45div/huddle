@@ -7,7 +7,8 @@ import { type EmailOptions, emailRoutes } from "./email.ts";
 import { mcpRoutes, toolNames } from "./mcp.ts";
 import { routerRoutes } from "./router.ts";
 import { bearerOf, same } from "./auth.ts";
-import type { ApiError, FlowView, Info, LearningView, PresentedView, RouterUsage, RouterView, RunDetail, RunSummary, SpendView, WaitingApproval } from "./api-types.ts";
+import type { ApiError, AskReply, FlowView, Info, LearningView, PresentedView, RouterUsage, RouterView, RunDetail, RunSummary, SpendView, WaitingApproval } from "./api-types.ts";
+import type { Asker } from "./just-ask.ts";
 import { CONNECTORS } from "./connectors-info.ts";
 import type { MonidCatalog } from "./monid.ts";
 import { noSandboxes, type SandboxInbox, Stale } from "./sandbox-requests.ts";
@@ -57,6 +58,8 @@ export interface AppOptions {
   readonly monid?: MonidCatalog;
   /** Tidying memory up: exact copies by default; give it a model to find notes that say the same thing in other words, or disagree. */
   readonly tidy?: (notes: readonly Note[]) => Promise<Tidy>;
+  /** Just ask: plans what was said over your flows and assistants, and starts it (POST /api/ask, MCP just_ask). */
+  readonly asker?: Asker;
 }
 
 /** A flow from a request body, or the problems with it, one line each. */
@@ -131,8 +134,35 @@ export function createApp(options: AppOptions): Hono {
       email: { hook: `${options.publicUrl}/hooks/email`, receiving: Boolean(options.email?.webhookSecret && options.email.apiKey) },
       guard: options.engine.guard?.name ?? null,
       present: { chooser: presenting.presenter.name, writer: presenting.writer?.model ?? null },
+      justAsk: Boolean(options.asker),
     }),
   );
+
+  // Just ask --------------------------------------------------------------------------------------------
+  const noAsker = "Just ask needs a model to plan with: set NEBIUS_API_KEY, or HUDDLE_LLM_URL and HUDDLE_LLM_MODEL.";
+  /** Say what you need: Huddle picks a saved flow, one assistant, or a team of them, and starts it. */
+  app.post("/api/ask", async (c) => {
+    if (!options.asker) return bad(c, noAsker, 501);
+    const { text } = await body(c);
+    if (typeof text !== "string" || !text.trim()) return bad(c, "Say what you need, as text.");
+    try {
+      return c.json<AskReply>(await options.asker.ask(text, { name: "Canvas", tier: "owner", via: "canvas" }));
+    } catch (error) {
+      return bad(c, error instanceof Error ? error.message : String(error), error instanceof OwnLimit ? 429 : 502);
+    }
+  });
+  /** A team Just ask put together, kept as one of your flows (on the button). */
+  app.post("/api/runs/:id/keep", async (c) => {
+    if (!options.asker) return bad(c, noAsker, 501);
+    const { name } = await body(c);
+    try {
+      const kept = options.asker.keepTeam(c.req.param("id"), typeof name === "string" ? name : undefined);
+      const saved = store.flow(kept.id);
+      return saved ? c.json<FlowView>(view(saved), 201) : bad(c, "The flow wasn't kept.", 404);
+    } catch (error) {
+      return bad(c, error instanceof Error ? error.message : String(error));
+    }
+  });
 
   // What OpenShell sandboxes are asking for -----------------------------------------------------------
   app.get("/api/sandbox-requests", (c) => c.json(sandboxes.view()));

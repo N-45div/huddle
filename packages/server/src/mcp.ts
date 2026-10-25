@@ -137,7 +137,7 @@ export function mcpRoutes(options: AppOptions): Hono {
   const waitMs = options.mcpWaitMs ?? 50_000;
   const serverInfo = { name: "huddle", title: "Huddle", version: options.version };
   const capabilities = { tools: { listChanged: false } };
-  const instructions = `Huddle runs its owner's flows: assistants handing work to each other, with approvals and shared memory. Each flow_ tool starts one flow with your input and waits up to ${Math.round(waitMs / 1000)} seconds for its answer. A run that stops for the owner's approval, or takes longer, comes back with its run id: check it later with get_run. The owner answers approvals in Huddle, not here. With the owner's token, ask_assistant asks one of the owner's assistants directly.`;
+  const instructions = `Huddle runs its owner's flows: assistants handing work to each other, with approvals and shared memory. Each flow_ tool starts one flow with your input and waits up to ${Math.round(waitMs / 1000)} seconds for its answer. A run that stops for the owner's approval, or takes longer, comes back with its run id: check it later with get_run. The owner answers approvals in Huddle, not here. With the owner's token, ask_assistant asks one of the owner's assistants directly${options.asker ? ", and just_ask takes what's needed in a sentence and has Huddle work out which flow, assistant or team of them does it" : ""}.`;
   const publicOrigin = URL.canParse(options.publicUrl) ? new URL(options.publicUrl).origin : null;
   // Which runs were started over MCP, and by whom: only these are runs a caller may read with get_run.
   store.db.exec("CREATE TABLE IF NOT EXISTS mcp_runs (run_id TEXT PRIMARY KEY, caller TEXT NOT NULL, created_at TEXT NOT NULL)");
@@ -205,7 +205,17 @@ export function mcpRoutes(options: AppOptions): Hono {
       inputSchema: { type: "object", additionalProperties: false },
       annotations: { readOnlyHint: true, openWorldHint: false },
     };
-    return [...flows, getRun, ask, list, ...monid];
+    const justAsk = options.asker
+      ? [
+          {
+            name: "just_ask",
+            title: "Just ask",
+            description: `Say what the owner needs in a sentence: Huddle picks one of their saved flows that does it, the one assistant who can, or a team of their assistants (each doing its part, in order, with the owner's OK before anything that sends, spends or books), and runs it. Waits up to ${Math.round(waitMs / 1000)} seconds for the answer; a longer run comes back with its id for get_run.`,
+            inputSchema: { type: "object", properties: { text: { type: "string", description: "What's needed, in plain words." } }, required: ["text"], additionalProperties: false },
+          },
+        ]
+      : [];
+    return [...flows, getRun, ...justAsk, ask, list, ...monid];
   };
 
   /** A run as a tool's answer: what it answered once done; else where it stands, with its id for get_run. */
@@ -261,6 +271,24 @@ export function mcpRoutes(options: AppOptions): Hono {
       try {
         const routed = await router.answer({ model: assistant, ask: message.slice(0, 100_000) });
         return text(`${routed.text}\n\n(Answered by ${routed.assistant.name ?? routed.assistant.id}.)`);
+      } catch (error) {
+        if (error instanceof NoAnswer) return text(error.message, true);
+        throw error;
+      }
+    }
+    if (caller.tier === "owner" && options.asker && name === "just_ask") {
+      const said = typeof args.text === "string" ? args.text.trim() : "";
+      if (!said) return text("Say what's needed in text.", true);
+      try {
+        const asked = await options.asker.ask(said, { name: caller.name, tier: caller.tier, via: "mcp" });
+        if (asked.answer) return text(`${asked.answer.text}\n\n(Answered by ${asked.answer.assistant.name}.)`);
+        if (!asked.run) return text("Nothing was started.", true);
+        store.db.prepare("INSERT INTO mcp_runs (run_id, caller, created_at) VALUES (?, ?, ?)").run(asked.run.runId, callerKey(caller), new Date().toISOString());
+        await settled(store, asked.run.runId, waitMs);
+        const result = runResult(store.run(asked.run.runId)!, caller);
+        const who = asked.plan.team.map((member) => member.name).join(", then ");
+        const plan = asked.plan.use === "flow" ? `Ran the "${asked.run.flow}" flow.` : `${asked.plan.say || "Put a team together."} (${who})`;
+        return { ...result, content: [{ type: "text", text: `${plan}\n\n${result.content[0]?.text ?? ""}` }] };
       } catch (error) {
         if (error instanceof NoAnswer) return text(error.message, true);
         throw error;

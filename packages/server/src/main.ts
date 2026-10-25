@@ -3,10 +3,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
-import { type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, factChecker, jevJudge, jevPresenter, type Judge, Memory, Meter, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, OWN_CALLS_PER_MINUTE, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, nemoSpeech, noteTaker, SignIns, Store, storedGrants, tidyMemory, viewWriter } from "@huddle/core";
+import { Assistants, type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, factChecker, jevJudge, jevPresenter, type Judge, Memory, Meter, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, OWN_CALLS_PER_MINUTE, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, nemoSpeech, noteTaker, SignIns, Store, storedGrants, tidyMemory, viewWriter } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
-import { planner } from "./just-ask.ts";
+import { Asker, planner } from "./just-ask.ts";
 import { deviceRoutes, guardUpgrades } from "./devices.ts";
 import { monidCatalog } from "./monid.ts";
 import { SandboxWatcher } from "./sandbox-requests.ts";
@@ -177,6 +177,17 @@ const monidCap = Number(env("HUDDLE_MONID_MAX_USD") ?? DEFAULT_MAX_USD);
 const monidMaxUsd = Number.isFinite(monidCap) && monidCap >= 0 && monidCap <= 100 ? monidCap : DEFAULT_MAX_USD;
 
 const router = new Router(store, engine, judge);
+// "Just ask" (the button, the canvas, the API and MCP): the fill-in model reads what was said and picks a saved
+// flow, one assistant, or a team; a team ends with Hud, on the quick model, saying what each came back with.
+const hud = llmUrl && quickModel
+  ? Assistants.parse([
+      onNemotron
+        ? { id: "hud", name: "Hud", connector: "nebius", model: quickModel, memory: [] }
+        : { id: "hud", name: "Hud", connector: "openai", url: llmUrl, model: quickModel, ...(env("HUDDLE_LLM_KEY") ? { keyEnv: "HUDDLE_LLM_KEY" } : {}), memory: [] },
+    ])[0]
+  : undefined;
+const justAsk = llmUrl && fillModel ? planner({ url: llmUrl, model: fillModel, key: llmKey, fetcher: meter.fetchFor("just ask"), ...(hud ? { wrapUp: hud } : {}) }) : undefined;
+const asker = justAsk ? new Asker(store, engine, router, justAsk) : undefined;
 const app = createApp({
   store,
   engine,
@@ -190,6 +201,7 @@ const app = createApp({
   pact: identity,
   router,
   routerKey: env("HUDDLE_ROUTER_KEY"),
+  asker,
   present: { presenter, writer },
   email: { webhookSecret: env("RESEND_WEBHOOK_SECRET"), apiKey: env("RESEND_API_KEY"), ownerEmails: (env("HUDDLE_OWNER_EMAILS") ?? "").split(",").filter((address) => address.trim()) },
   monid: monidKey ? monidCatalog({ key: monidKey, maxUsd: monidMaxUsd }) : undefined,
@@ -200,8 +212,6 @@ const app = createApp({
 const websockets = createNodeWebSocket({ app });
 const speechUrl = env("HUDDLE_SPEECH_URL");
 const speech = speechUrl ? nemoSpeech({ url: speechUrl, language: env("HUDDLE_SPEECH_LANGUAGE") ?? "auto" }) : undefined;
-// "Just ask" on the button: the fill-in model reads what was said and picks a saved flow, one assistant, or a team.
-const justAsk = llmUrl && fillModel ? planner({ url: llmUrl, model: fillModel, key: llmKey, fetcher: meter.fetchFor("just ask") }) : undefined;
 deviceRoutes(app, { store, engine, token, version, upgradeWebSocket: websockets.upgradeWebSocket, speech, router, ...(justAsk ? { planner: justAsk } : {}) });
 const web = env("HUDDLE_WEB") ?? fileURLToPath(new URL("../../web/dist", import.meta.url));
 const built = existsSync(join(web, "index.html"));
@@ -211,7 +221,7 @@ if (!built) app.get("/", (c) => c.text("Huddle is running, but the canvas isn't 
 const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   console.log(`  Devices (the Huddle button): ${publicUrl.replace(/^http/, "ws")}/devices/ws, with a device token from the canvas's Devices page`);
   console.log(`  Voice: ${speech ? `${speech.name} at ${speech.url}` : "off (run NVIDIA NeMo-Speech and set HUDDLE_SPEECH_URL to talk to the button)"}`);
-  if (speech && justAsk) console.log(`  Just ask (the button's first choice): ${fillModel} picks a saved flow, one assistant, or a team of them for what you say`);
+  if (asker) console.log(`  Just ask (the button's first choice, the canvas's quick bar, POST /api/ask, MCP just_ask): ${fillModel} picks a saved flow, one assistant, or a team${hud ? `, and Hud (${quickModel}) sums a team up` : ""}`);
   scheduler.start();
   sandboxes?.start();
   console.log(`Huddle ${version} is on ${publicUrl}${token ? " (token required)" : ""}`);
