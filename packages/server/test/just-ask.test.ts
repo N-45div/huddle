@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parseFlow } from "@huddle/core";
-import { type Choices, planFrom, planner, teamFlow } from "../src/just-ask.ts";
+import { Engine, mock, parseFlow, Router, Store } from "@huddle/core";
+import { Asker, type Choices, type Planner, planFrom, planner, teamFlow } from "../src/just-ask.ts";
 
 const { assistants } = parseFlow({
   name: "Mine",
@@ -72,5 +72,95 @@ describe("Just ask", () => {
     assert.match(system, /- claw: OpenClaw \(mock\): Work: tasks, deadlines, messages to the team\./);
     assert.equal(body.messages?.[1]?.content, SAID);
     await assert.rejects(planner({ url: "https://api.tokenfactory.nebius.com/v1", model: "m", key: "sk-secret", fetcher })(SAID, CHOICES), (error: Error) => error.message === "The model said: bad key [key]");
+  });
+
+  it("ends a team with Hud saying what each came back with, and lets a member who can't be reached be skipped", () => {
+    const parts = [{ assistant: "claw", ask: "Work." }, { assistant: "hermes", ask: "Home." }] as const;
+    const flow = teamFlow(SAID, parts, assistants, HUD);
+    assert.deepEqual(flow.steps.map((step) => [step.id, step.type === "agent" ? step.agent : step.type, step.type === "agent" ? (step.optional ?? false) : null]), [
+      ["step1", "claw", true],
+      ["step2", "hermes", true],
+      ["wrap", "hud", false],
+    ]);
+    const wrap = flow.steps.at(-1) as { ask: string };
+    assert.match(wrap.ask, /^You're Hud/);
+    assert.match(wrap.ask, /OpenClaw came back with:\n\{\{step1\.text\}\}/);
+    assert.match(wrap.ask, /Hermes came back with:\n\{\{step2\.text\}\}/);
+    assert.doesNotMatch((flow.steps[1] as { ask: string }).ask, /last of the team/, "Hud speaks for the team, not the last member");
+    assert.deepEqual(flow.assistants.map((assistant) => assistant.id), ["claw", "hermes", "hud"]);
+    // One of yours already called "hud" keeps its id; Hud takes another.
+    const yoursHud = parseFlow({ name: "x", assistants: [{ id: "hud", connector: "mock" }], steps: [{ id: "a", type: "agent", agent: "hud", ask: "x" }] }).assistants;
+    const both = teamFlow(SAID, [{ assistant: "claw", ask: "Work." }, { assistant: "hud", ask: "Yours." }], [...assistants, ...yoursHud], HUD);
+    assert.deepEqual(both.assistants.map((assistant) => assistant.id), ["claw", "hud", "huddle-hud"]);
+    assert.equal((both.steps.at(-1) as { agent: string }).agent, "huddle-hud");
+    // A single assistant's turn isn't a team: no Hud, nothing optional.
+    const alone = teamFlow(SAID, [{ assistant: "claw", ask: "Work." }, { approve: "OK?" }], assistants, HUD);
+    assert.deepEqual(alone.steps.map((step) => step.id), ["step1"]);
+  });
+});
+
+const HUD = parseFlow({ name: "h", assistants: [{ id: "hud", name: "Hud", connector: "mock", replies: { "*": "OpenClaw has three deadlines; Hermes says groceries on Saturday." } }], steps: [{ id: "a", type: "agent", agent: "hud", ask: "x" }] }).assistants[0]!;
+
+describe("Just ask, wherever it's asked from", () => {
+  const settle = async (store: Store, runId: string) => {
+    for (let tries = 0; store.run(runId)?.state === "running" && tries < 200; tries += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+  };
+  const setup = (plan: Planner) => {
+    const store = new Store();
+    const engine = new Engine(store, { mock });
+    store.saveAssistants(assistants);
+    return { store, engine, asker: new Asker(store, engine, new Router(store, engine, null), plan) };
+  };
+  const BY = { name: "Canvas", tier: "owner", via: "canvas" } as const;
+
+  it("starts a team, logs the plan on the run, and keeps the team as a flow on the button, once", async () => {
+    const { store, asker } = setup(async (said, choices) => ({ use: "team", say: "OpenClaw, then Hermes.", flow: teamFlow(said, [{ assistant: "claw", ask: "Work." }, { assistant: "hermes", ask: "Home." }], choices.assistants, HUD) }));
+    const asked = await asker.ask(`  ${SAID}  `, BY, { note: "SAY IT ALOUD" });
+    assert.deepEqual(asked.plan.team.map((who) => who.name), ["OpenClaw", "Hermes", "Hud"]);
+    assert.equal(asked.answer, null);
+    assert.equal(asked.run?.assistant?.id, "claw");
+    const runId = asked.run!.runId;
+    await settle(store, runId);
+    const run = store.run(runId)!;
+    assert.equal(run.state, "done");
+    assert.equal(run.context.input, SAID);
+    assert.equal(run.context.steps.wrap?.text, "OpenClaw has three deadlines; Hermes says groceries on Saturday.");
+    assert.ok((run.flow.steps.at(-1) as { ask: string }).ask.startsWith("SAY IT ALOUD\n\n"), "the note goes to the step whose answer is said");
+    const planned = store.logOf(runId).find((line) => line.kind === "planned")?.detail as { use: string; say: string; team: string[]; flow: { steps: { ask: string }[] } };
+    assert.deepEqual([planned.use, planned.say, planned.team], ["team", "OpenClaw, then Hermes.", ["claw", "hermes", "hud"]]);
+    assert.ok(!planned.flow.steps.some((step) => step.ask.includes("SAY IT ALOUD")), "the plan as planned, without the note");
+
+    const kept = asker.keepTeam(runId);
+    assert.equal(kept.flow.name, "Plan my week and tell the team what's due");
+    assert.deepEqual(kept.flow.trigger, { type: "button", input: SAID });
+    assert.ok(!kept.flow.steps.some((step) => step.type === "agent" && step.ask.includes("SAY IT ALOUD")));
+    assert.equal(asker.keepTeam(runId).id, kept.id, "kept once");
+    assert.equal(store.flows().length, 1);
+    assert.throws(() => asker.keepTeam("run_nothere"), /There's no run/);
+  });
+
+  it("runs a saved flow it picked, answers through one assistant, and with no plan lets the router pick", async () => {
+    const week = parseFlow({ name: "Plan my week", trigger: { type: "manual" }, assistants, steps: [{ id: "w", type: "agent", agent: "claw", ask: "{{input}}" }] });
+    const flowPicked = setup(async () => ({ use: "flow", flowId: "", say: "Planning your week." }));
+    const saved = flowPicked.store.saveFlow(week);
+    const viaFlow = await new Asker(flowPicked.store, flowPicked.engine, new Router(flowPicked.store, flowPicked.engine, null), async () => ({ use: "flow", flowId: saved.id, say: "Planning your week." })).ask(SAID, BY);
+    assert.equal(viaFlow.run?.flow, "Plan my week");
+    assert.equal(flowPicked.store.run(viaFlow.run!.runId)?.flowId, saved.id);
+    assert.throws(() => flowPicked.asker.keepTeam(viaFlow.run!.runId), /Only a team/, "a saved flow isn't a team to keep");
+
+    const one = await setup(async () => ({ use: "one", assistant: "hermes", say: "" })).asker.ask("What's on Saturday?", BY);
+    assert.deepEqual([one.run, one.answer?.text, one.answer?.assistant.name, one.plan.use], [null, "Groceries on Saturday.", "Hermes", "one"]);
+
+    const warn = console.warn;
+    console.warn = () => undefined;
+    try {
+      const unplanned = await setup(async () => {
+        throw new Error("model down");
+      }).asker.ask("Anything", BY);
+      assert.equal(unplanned.answer?.assistant.name, "OpenClaw", "no judge: the first in your list");
+    } finally {
+      console.warn = warn;
+    }
+    await assert.rejects(setup(async () => ({ use: "one", assistant: "hermes", say: "" })).asker.ask("   ", BY), /Say what you need/);
   });
 });

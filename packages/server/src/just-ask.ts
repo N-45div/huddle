@@ -1,6 +1,7 @@
-import { type Assistant, type Flow, thinkingFor } from "@huddle/core";
+import { type Assistant, AUTO, type Engine, type Flow, type Router, type StartedBy, type Store, thinkingFor } from "@huddle/core";
 import { checkFlow } from "./app.ts";
 import { jsonIn } from "./describe.ts";
+import { answering, teamOf, type Who, whoOf, withNote, workingAt } from "./who.ts";
 
 /**
  * "Just ask": say anything to the button and Huddle works out who should do it. One call to a model reads what
@@ -33,6 +34,8 @@ export interface PlannerOptions {
   readonly model: string;
   readonly key?: string;
   readonly fetcher?: typeof fetch;
+  /** Huddle's own quick model, as Hud: ends a team's run by saying what each came back with. */
+  readonly wrapUp?: Assistant;
 }
 
 export type Planner = (said: string, choices: Choices) => Promise<Plan>;
@@ -65,19 +68,34 @@ function choicesText(choices: Choices): string {
   return `\n\nTheir saved flows:\n${flows.join("\n") || "(none)"}\n\nTheir assistants:\n${assistants.join("\n") || "(none)"}`;
 }
 
+/** What Hud is asked at the end of a team's run: to say what each one came back with. */
+function wrapAsk(turns: readonly { readonly id: string; readonly name: string }[]): string {
+  return [
+    "You're Hud, Huddle's own assistant. The person asked their assistants for this, and each did a part of it:",
+    "{{input}}",
+    ...turns.map((turn) => `\n${turn.name} came back with:\n{{${turn.id}.text}}`),
+    "",
+    "Tell the person what came back, by name: each one's answer in short, and anything one of them needs from the person. Say only what they said; if one couldn't help, say so plainly.",
+  ].join("\n");
+}
+
 /**
  * A team's plan as a flow that runs once: each assistant's part, with what was asked and what the ones before
  * it said, and each question for you where the plan put it (one with nothing after it is dropped: a yes there
- * would start nothing). The assistants are your saved ones, exactly as saved.
+ * would start nothing). The assistants are your saved ones, exactly as saved. With `wrapUp` (Huddle's own quick
+ * model, as Hud), a team ends with Hud saying what each came back with, and a member who can't be reached
+ * doesn't stop the rest: Hud says so.
  */
-export function teamFlow(said: string, steps: readonly TeamStep[], saved: readonly Assistant[]): Flow {
+export function teamFlow(said: string, steps: readonly TeamStep[], saved: readonly Assistant[], wrapUp?: Assistant): Flow {
   const byId = new Map(saved.map((assistant) => [assistant.id, assistant]));
   const used: Assistant[] = [];
   const out: unknown[] = [];
   const done: { readonly id: string; readonly name: string }[] = [];
   const lastTurn = steps.findLastIndex((step) => "assistant" in step);
+  const team = steps.filter((step) => "assistant" in step).length > 1;
   // On a team, each sees the whole request, but keeps to its own lane.
-  const lane = steps.filter((step) => "assistant" in step).length > 1 ? " Do only this part: the rest of the team does the rest." : "";
+  const lane = team ? " Do only this part: the rest of the team does the rest." : "";
+  const wrapping = team && wrapUp !== undefined;
   steps.forEach((step, index) => {
     if ("approve" in step) {
       if (index > lastTurn) return;
@@ -90,13 +108,18 @@ export function teamFlow(said: string, steps: readonly TeamStep[], saved: readon
     if (!used.includes(assistant)) used.push(assistant);
     const id = `step${out.length + 1}`;
     const earlier = done.map((turn) => `\n\nWhat ${turn.name} came back with:\n{{${turn.id}.text}}`).join("");
-    out.push({ id, type: "agent", agent: assistant.id, ask: `${step.ask}${lane}\n\nWhat the person asked: {{input}}${earlier}` });
+    out.push({ id, type: "agent", agent: assistant.id, ask: `${step.ask}${lane}\n\nWhat the person asked: {{input}}${earlier}`, ...(wrapping ? { optional: true } : {}) });
     done.push({ id, name: assistant.name ?? assistant.id });
   });
   if (!done.length) throw new Error("The plan gives no assistant anything to do.");
   if (done.length > MOST_TURNS) throw new Error(`The plan has ${done.length} turns; at most ${MOST_TURNS} run from the button.`);
-  // The last one's answer is the one said to the person: it speaks for the whole team, not just its own part.
-  if (done.length > 1) {
+  if (wrapping) {
+    // Hud's own id unless one of yours has it: the button shows Hud's Huddler for "hud".
+    const hud = byId.has(wrapUp.id) ? { ...wrapUp, id: "huddle-hud" } : wrapUp;
+    used.push(hud);
+    out.push({ id: "wrap", type: "agent", agent: hud.id, ask: wrapAsk(done) });
+  } else if (done.length > 1) {
+    // No Hud to wrap up: the last one's answer is the one said, so it speaks for the whole team.
     const last = out.findLast((step) => (step as { type?: string }).type === "agent") as { ask: string };
     last.ask += `\n\nYou're the last of the team, and your answer is the one the person hears: first say in a few words what ${done
       .slice(0, -1)
@@ -109,7 +132,7 @@ export function teamFlow(said: string, steps: readonly TeamStep[], saved: readon
 }
 
 /** The model's answer as a plan, if it is one, and only over what was listed. */
-export function planFrom(answer: unknown, said: string, choices: Choices): Plan {
+export function planFrom(answer: unknown, said: string, choices: Choices, wrapUp?: Assistant): Plan {
   if (!answer || typeof answer !== "object") throw new Error("The model didn't answer with a plan.");
   const { use, id, say, steps } = answer as { use?: unknown; id?: unknown; say?: unknown; steps?: unknown };
   const spoken = typeof say === "string" ? say.trim() : "";
@@ -125,7 +148,7 @@ export function planFrom(answer: unknown, said: string, choices: Choices): Plan 
     const turns = parts.filter((part) => "assistant" in part);
     // A "team" of one, with nothing to approve, is one assistant: the router answers it, quicker.
     if (turns.length === 1 && parts.length === 1 && "assistant" in turns[0]!) return { use: "one", assistant: turns[0]!.assistant, say: "" };
-    return { use: "team", say: spoken, flow: teamFlow(said, parts, choices.assistants) };
+    return { use: "team", say: spoken, flow: teamFlow(said, parts, choices.assistants, wrapUp) };
   }
   throw new Error(`The model's plan doesn't fit what you have: ${JSON.stringify(answer).slice(0, 200)}`);
 }
@@ -157,6 +180,108 @@ export function planner(options: PlannerOptions): Planner {
     }
     const content = body?.choices?.[0]?.message?.content;
     if (typeof content !== "string" || !content.trim()) throw new Error("The model sent an empty answer.");
-    return planFrom(jsonIn(content), said, choices);
+    return planFrom(jsonIn(content), said, choices, options.wrapUp);
   };
+}
+
+/** What Just ask did with something said. */
+export interface Asked {
+  /** The plan: a saved flow, one assistant or a team; said in a sentence ("" for one assistant), with who does it, in order. */
+  readonly plan: { readonly use: Plan["use"]; readonly say: string; readonly team: readonly Who[] };
+  /** The run it started (a saved flow or a team), carrying on in the background; null when one assistant answered. */
+  readonly run: { readonly runId: string; readonly flow: string; readonly assistant: Who | null } | null;
+  /** One assistant's answer, when that was all it took. */
+  readonly answer: { readonly runId: string; readonly text: string; readonly assistant: Who } | null;
+}
+
+/** A name for a team kept as a flow: the start of what was asked, cut at a word. */
+function nameFor(said: string): string {
+  const flat = said.replace(/\s+/g, " ").trim();
+  if (flat.length <= 48) return flat || "Team";
+  return `${flat.slice(0, flat.lastIndexOf(" ", 47) > 20 ? flat.lastIndexOf(" ", 47) : 47).trimEnd()}…`;
+}
+
+/**
+ * Just ask, wherever it's asked from (the button, the canvas, the API, an MCP client): what was said is planned
+ * over your saved flows and assistants, and started. `note` (Hud's voice note, for the button) goes to the step
+ * whose answer is said, never into a saved flow. One that sees photos isn't offered: Just ask takes none.
+ */
+export class Asker {
+  private readonly store: Store;
+  private readonly engine: Engine;
+  private readonly router: Router;
+  private readonly planner: Planner;
+
+  constructor(store: Store, engine: Engine, router: Router, planner: Planner) {
+    this.store = store;
+    this.engine = engine;
+    this.router = router;
+    this.planner = planner;
+  }
+
+  /** What Huddle could do with something said: your saved flows and assistants, none that look at a photo. */
+  choices(): Choices {
+    const sees = (assistant: { readonly images?: boolean | undefined }) => assistant.images === true;
+    return {
+      flows: this.store
+        .flows()
+        .filter((saved) => !saved.flow.assistants.some(sees))
+        .map((saved) => ({ id: saved.id, name: saved.flow.name, description: saved.flow.description })),
+      assistants: this.store.assistants().filter((assistant) => !sees(assistant)),
+    };
+  }
+
+  async ask(said: string, by: StartedBy, options: { readonly note?: string } = {}): Promise<Asked> {
+    const text = said.trim().slice(0, 4_000);
+    if (!text) throw new Error("Say what you need.");
+    let plan: Plan;
+    try {
+      plan = await this.planner(text, this.choices());
+    } catch (error) {
+      // No plan (the model's out, or its answer didn't fit what you have): the router's judge picks who answers.
+      console.warn(`[huddle] Just ask couldn't plan, so the router answers: ${error instanceof Error ? error.message : String(error)}`);
+      plan = { use: "one", assistant: AUTO, say: "" };
+    }
+    if (plan.use === "one") {
+      const routed = await this.router.answer({ model: plan.assistant, ask: options.note ? `${options.note}\n\n${text}` : text });
+      this.engine.learnFrom(routed.runId, text);
+      const who = whoOf(routed.assistant) as Who;
+      return { plan: { use: "one", say: "", team: [who] }, run: null, answer: { runId: routed.runId, text: routed.text, assistant: who } };
+    }
+    let flow = plan.use === "team" ? plan.flow : null;
+    let flowId: string | null = null;
+    if (plan.use === "flow") {
+      const saved = this.store.flow(plan.flowId);
+      if (!saved) throw new Error("That flow is gone.");
+      flow = saved.flow;
+      flowId = saved.id;
+    }
+    if (!flow) throw new Error("The plan has nothing to run.");
+    const runId = this.engine.launch(options.note ? withNote(flow, options.note) : flow, text, flowId, by);
+    const team = teamOf(flow);
+    // The plan on the run, for the canvas to show; a team's flow as planned, for keeping it as one of yours.
+    this.store.log(runId, "plan", "planned", { use: plan.use, say: plan.say, team: team.map((who) => who.id), ...(plan.use === "team" ? { flow } : {}) });
+    this.engine.learnFrom(runId, text);
+    return { plan: { use: plan.use, say: plan.say, team }, run: { runId, flow: flow.name, assistant: workingAt(flow, null) ?? answering(flow) }, answer: null };
+  }
+
+  /**
+   * A team Just ask made, kept as a flow of yours: on the button, and starting from what you say there. Kept once:
+   * asked again, it's the same flow.
+   */
+  keepTeam(runId: string, name?: string): { readonly id: string; readonly flow: Flow } {
+    const run = this.store.run(runId);
+    if (!run) throw new Error(`There's no run ${runId}.`);
+    const log = this.store.logOf(runId);
+    const kept = (log.find((line) => line.kind === "kept")?.detail as { flowId?: unknown } | null)?.flowId;
+    const already = typeof kept === "string" ? this.store.flow(kept) : null;
+    if (already) return { id: already.id, flow: already.flow };
+    const planned = log.find((line) => line.kind === "planned")?.detail as { use?: unknown; flow?: unknown } | null;
+    if (planned?.use !== "team" || !planned.flow || typeof planned.flow !== "object") throw new Error("Only a team that Just ask put together can be kept as a flow.");
+    const checked = checkFlow({ ...(planned.flow as object), name: name?.trim().slice(0, 80) || nameFor(run.context.input), trigger: { type: "button", input: run.context.input } });
+    if ("problems" in checked) throw new Error(`That team didn't make a flow: ${checked.problems.join("; ")}`);
+    const saved = this.store.saveFlow(checked.flow);
+    this.store.log(runId, "plan", "kept", { flowId: saved.id });
+    return { id: saved.id, flow: saved.flow };
+  }
 }
