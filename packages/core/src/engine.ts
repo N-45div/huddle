@@ -242,8 +242,12 @@ export class Engine {
         try {
           reply = await connector.send({ assistant, ask, memory, runId: run.id, ...(images.length ? { images } : {}) });
         } catch (error) {
-          void this.guard?.report(handOff, { ok: false, chars: 0, error: error instanceof Error ? error.message : String(error), ms: Math.round(performance.now() - started) });
-          throw error;
+          const why = error instanceof Error ? error.message : String(error);
+          void this.guard?.report(handOff, { ok: false, chars: 0, error: why, ms: Math.round(performance.now() - started) });
+          if (!step.optional) throw error;
+          // An assistant the run can do without: noted, and the steps after it hear that it couldn't help.
+          this.store.log(run.id, step.id, "skipped", { assistant: assistant.id, error: why });
+          return { wait: false, context: keep(`${assistant.name ?? assistant.id} couldn't help this time (${why}).`, { skipped: true }), next: step.next ?? following(run.flow, step) };
         }
         const { usage, ...answer } = reply;
         const cost = spendOf(assistant, usage, memory.length ? `${memoryText(memory)}\n${ask}` : ask, answer.text);

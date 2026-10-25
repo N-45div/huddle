@@ -100,6 +100,34 @@ describe("a run", () => {
     assert.equal(failed.at, "read");
     assert.equal(failed.error, "assistant offline");
 
+    // An optional step's assistant failing doesn't stop the run: the next step hears it couldn't help.
+    const offline: Connector = {
+      send: async (request) => {
+        if (request.assistant.id === "finance") throw new Error("assistant offline");
+        return mock.send(request);
+      },
+    };
+    const team = parseFlow({
+      name: "Team",
+      assistants: [
+        { id: "finance", name: "Finance", connector: "mock" },
+        { id: "calendar", connector: "mock", replies: { "*": "Reminder added." } },
+      ],
+      steps: [
+        { id: "read", type: "agent", agent: "finance", ask: "Read: {{input}}", optional: true },
+        { id: "remind", type: "agent", agent: "calendar", ask: "After: {{read.text}}" },
+      ],
+    });
+    const store = new Store();
+    const carried = await new Engine(store, { mock: offline }).start(team, "x");
+    assert.equal(carried.state, "done");
+    assert.equal(carried.context.steps.read?.text, "Finance couldn't help this time (assistant offline).");
+    assert.deepEqual(carried.context.steps.read?.data, { skipped: true });
+    assert.equal(carried.context.steps.remind?.text, "Reminder added.");
+    const asked = store.logOf(carried.id).filter((line) => line.kind === "asked").map((line) => (line.detail as { ask: string }).ask);
+    assert.deepEqual(asked, ["Read: x", "After: Finance couldn't help this time (assistant offline)."]);
+    assert.deepEqual(store.logOf(carried.id).find((line) => line.kind === "skipped")?.detail, { assistant: "finance", error: "assistant offline" });
+
     const loop = parseFlow({
       name: "loop",
       steps: [

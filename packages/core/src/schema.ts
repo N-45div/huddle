@@ -142,6 +142,11 @@ const AgentStep = z.object({
   agent: id,
   ask: z.string().min(1),
   next: target.optional(),
+  /**
+   * The run carries on if this assistant can't answer (it's down, or errors): the step's text then says it
+   * couldn't help, for the steps after it. A guard's block or the budget still stops the run.
+   */
+  optional: z.boolean().optional(),
 });
 
 const ConditionStep = z.object({
