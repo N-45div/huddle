@@ -6,7 +6,8 @@ memory, and draw how they hand work to each other, with you approving anything t
 ![Huddle's opening screen: Hud and the Huddlers gathering](docs/images/opening-screen.png)
 
 > Status: early, and self-hosted. The canvas, the flow engine, shared memory, approvals, schedules,
-> webhooks, email in and out, "describe it", and connectors for OpenClaw, Hermes Agent, any A2A agent,
+> webhooks, email in and out, "describe it", [Just ask](#just-ask), the [Huddle button](#the-huddle-button),
+> and connectors for OpenClaw, Hermes Agent, any A2A agent,
 > OpenAI-style APIs, Ollama, vLLM, the agent CLIs on your computer (Claude Code, Codex, OpenCode), agents
 > in NVIDIA OpenShell sandboxes, Home Assistant, Agent Zero and Sochen all work today, from one command,
 > one container, or the [Linux app](#the-linux-app). Approvals
@@ -55,6 +56,12 @@ teammate: you put them on a canvas, say who does what, and decide where you want
   blocks something the agent reaches for, the request lands in your Huddle approvals with OpenShell's
   own risk check, and the agent carries on once you allow it.
 - **Describe it.** Write the flow in a sentence; Huddle drafts it on the canvas for you to check.
+- **Just ask.** Say or type what you need in one sentence. Huddle works out who should do it (one of your
+  saved flows, the one assistant who can, or a team of them in order), says the plan, runs it, and ends a
+  team's run with Hud saying what each came back with ([below](#just-ask)).
+- **A button on your desk.** Hold it and talk, tap to pick a flow, hold to say yes. Its screen shows which
+  of your assistants has the work, and its camera can show Huddle what you mean
+  ([below](#the-huddle-button)).
 - **Yours to host.** One command runs it on your own machine or server, with your data in one SQLite
   file. A hosted version is coming for people who'd rather not run anything.
 
@@ -79,6 +86,65 @@ teammate: you put them on a canvas, say who does what, and decide where you want
   ]
 }
 ```
+
+## Just ask
+
+One sentence in, and your assistants work on it as a team. You don't pick a flow or an assistant first: you
+say what you need, and Huddle works out who does it.
+
+> Plan my work for next week, and find me a relaxed weekend trip near Bengaluru.
+
+One quick call to a model (NVIDIA Nemotron 3 Super on Token Factory, with thinking off) reads that beside your
+saved flows and assistants, by their descriptions, and picks one of three:
+
+- **A saved flow** that already does it, run with your words as its input.
+- **The one assistant who can do it alone**, through the [router](#the-router-one-api-to-every-assistant-you-run).
+  Most questions are this.
+- **A team:** each assistant's part, in order, with an approval before anything that sends, spends or books.
+  Each one sees what you asked and what the ones before it came back with, and keeps to its own part. One
+  that can't be reached is skipped rather than stopping the rest, and Hud (Huddle's own quick model,
+  Nemotron Lightning) ends the run by saying what each came back with.
+
+Huddle says the plan before the work starts ("OpenClaw will plan your work for next week, then Hermes finds a
+relaxed weekend trip near Bengaluru"), and the run's page shows it, with each assistant's row as the work
+passes along. A team that worked out is one click from being yours: **Keep this team** on its run page saves
+it as a flow on your button. Flows and assistants that look at photos aren't offered, since Just ask takes
+none.
+
+On the sentence above, with OpenClaw and Hermes running in Docker on Nemotron 3 Super, the plan was ready 1.6
+seconds after the words were heard, and the team's answer about 11 seconds after that.
+
+It's the first choice on the [button](#the-huddle-button) and in the canvas's quick bar, and it's in the API
+and on the MCP server:
+
+```bash
+curl -X POST http://localhost:7700/api/ask -H "Authorization: Bearer $HUDDLE_TOKEN" \
+  -H "content-type: application/json" -d '{"text": "Plan my week, then find a quiet weekend trip"}'
+```
+
+From Claude Code, Cursor or any MCP client, the `just_ask` tool takes the same sentence and waits for the
+answer (see [Use Huddle from Claude, Cursor or any MCP client](#use-huddle-from-claude-cursor-or-any-mcp-client)).
+Just ask needs a model to plan with: `NEBIUS_API_KEY`, or `HUDDLE_LLM_URL` and `HUDDLE_LLM_MODEL`.
+
+## The Huddle button
+
+A button on your desk for your assistants, built on an ESP32-S3 camera board with a 1.8" screen, a mic and a
+speaker ([the firmware, the parts and how to set it up](firmware/huddle-button/README.md)):
+
+- **Hold and talk.** It starts the flow you picked, or [Just ask](#just-ask), with what you said. Your voice is
+  heard and answers are spoken on your own machine, by NVIDIA Nemotron 3.5 ASR and Magpie TTS through
+  NeMo-Speech; only the words go on to your assistants, and the run's receipt says so.
+- **Hold to say yes.** An approval shows as one line and is said aloud. A deliberate one-second hold is yes, a
+  tap is no, so a knock never approves anything.
+- **See who has the work.** Hud and your assistants appear as Huddlers; OpenClaw and Hermes appear as their own
+  logos, ringed by dots that spin in the logo's colour while they work. A team's line ("OpenClaw > Hermes")
+  picks out whoever has it now, and the answer comes up in a bubble as it's said.
+- **Show it something.** On a flow whose assistant sees photos, the button takes one as you start to talk:
+  "What is this?" pointed at a parcel or a bill goes to Nemotron 3.5 Super VL with the photo. In testing, the
+  photo, the question and the spoken answer took about 9 seconds.
+- **No Wi-Fi or administrator needed.** It reaches Huddle over its USB cable, through the canvas's **Devices**
+  page in Chrome or Edge. Wi-Fi works too. The Devices page also has a virtual button, to try it all without
+  the hardware.
 
 ## Shared memory
 
@@ -271,8 +337,10 @@ for the assistants whose problems need it. `examples/weekend-plan.json` uses all
 Lightning checks the plan against your budget, Super writes the message once you approve.
 
 With `NEBIUS_API_KEY` set and no `HUDDLE_LLM_URL`, Huddle's own model calls run on Nemotron too, each on the
-size its job needs: Lightning judges `"auto"` and picks how answers are shown, Super fills charts and
-tables in, and Ultra drafts flows from a sentence, using the assistants you've saved.
+size its job needs: Lightning judges `"auto"`, picks how answers are shown and, as Hud, sums up a
+[Just ask](#just-ask) team; Super plans Just ask and fills charts and tables in; and Ultra drafts flows
+from a sentence, using the assistants you've saved. On the button, Nemotron 3.5 ASR hears you and
+Nemotron 3.5 Super VL looks at its photos.
 
 Does letting Nemotron pick the size pay? On 24 everyday asks it sent every one to the right size, and quick
 asks and messages cost 89% less than sending everything to Ultra, with writing graded better 5 times in 8
@@ -485,6 +553,8 @@ filled in, under **Use it from any app**. Then these tools appear:
 - **`ask_assistant`** asks one of your assistants through the [router](#the-router-one-api-to-every-assistant-you-run),
   by its id or `"auto"`, with only its memory slices, and **`list_assistants`** lists them. They're for
   your token only, since your assistants act for you.
+- **`just_ask`** takes what's needed in a sentence and has Huddle work out which flow, assistant or team of
+  them does it ([Just ask](#just-ask)), waiting for the answer like a flow tool. It's for your token only too.
 
 Approvals still come to you. A run that reaches an approval comes back *waiting*, saying what for, with
 its run id; answer it in **Approvals**, and `get_run` then has the answer. A run that takes longer than
