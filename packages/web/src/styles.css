@@ -3637,6 +3637,33 @@ h1 .badge {
   gap: 8px;
 }
 
+/* Just ask: the team, in order, the one with the work picked out. */
+.just-ask-team {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.just-ask-member {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 2px 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.just-ask-member.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
 /* ---------- The Huddlers ---------- */
 
 .huddler-wrap {

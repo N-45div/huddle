@@ -1,5 +1,6 @@
 import type {
   ApiError,
+  AskReply,
   Assistant,
   Contact,
   Device,
@@ -197,6 +198,10 @@ export const api = {
   removeContact: (contactId: string) => call<null>("DELETE", `/contacts/${id(contactId)}`),
   /** One chat through the router's OpenAI-compatible /v1, the way any app would call it. */
   chat: (model: string, text: string, prefer?: Prefer) => routerChat(model, text, prefer),
+  /** Just ask: Huddle plans what you said over your flows and assistants, and starts it. */
+  ask: (text: string) => call<AskReply>("POST", "/ask", { text }),
+  /** A team Just ask put together, kept as one of your flows (on the button). */
+  keepRun: (runId: string, name?: string) => call<FlowView>("POST", `/runs/${id(runId)}/keep`, name ? { name } : {}),
   models: (connector: string, url: string, keyEnv = "") => {
     const query = new URLSearchParams({ ...(url ? { url } : {}), ...(keyEnv ? { keyEnv } : {}) }).toString();
     return call<{ models: string[] }>("GET", `/connectors/${id(connector)}/models${query ? `?${query}` : ""}`);

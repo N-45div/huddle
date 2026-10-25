@@ -6,6 +6,7 @@ import type { Flow } from "../../server/src/api-types.ts";
 
 export type {
   ApiError,
+  AskReply,
   ChangeEvent,
   Choice,
   ConnectorField,
