@@ -55,6 +55,7 @@ describe("a together step", () => {
     await until(() => asked.length === 2, "both to be asked");
     assert.deepEqual(asked.toSorted(), ["claw", "hermes"], "the second was asked before the first answered");
     assert.equal(store.run(runId)?.state, "running");
+    assert.equal(store.run(runId)?.at, "both", "the run says which step it's on from the start");
     release();
     await until(() => store.run(runId)?.state === "done", "the run to finish");
     const { steps } = store.run(runId)!.context;

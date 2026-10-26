@@ -179,8 +179,9 @@ export class Engine {
   private async advance(run: Run, from: string, cleared: string | null = null): Promise<RunView> {
     let context = run.context;
     let target = from;
-    // Carrying on after an approval: say so now, not after the next step (an assistant can take minutes).
-    if (run.state !== "running" && target !== "end") this.store.saveRun({ id: run.id, state: "running", at: target, context, error: null });
+    // Carrying on after an approval, or starting: say which step is under way now, not after it (an assistant can
+    // take minutes).
+    if ((run.state !== "running" || run.at === null) && target !== "end") this.store.saveRun({ id: run.id, state: "running", at: target, context, error: null });
     const done = Object.keys(context.steps).length;
     for (let count = done; ; count += 1) {
       if (target === "end") return this.end(run.id, "done", null, context, null);
