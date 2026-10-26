@@ -1,9 +1,12 @@
-import { AUTO, type Change, type Engine, type Flow, nextRun, type Router, SAMPLE_RATE, sentences, type Speech, spokenForm, type Store } from "@huddle/core";
+import { AUTO, type Change, type Engine, type Flow, type LogLine, nextRun, type Router, SAMPLE_RATE, sentences, type Speech, spokenForm, type Store, turnAt } from "@huddle/core";
 import type { Hono } from "hono";
 import type { UpgradeWebSocket, WSContext } from "hono/ws";
 import { bearerOf, same } from "./auth.ts";
 import { Asker, JUST_ASK, type Planner } from "./just-ask.ts";
-import { answering, type Who, whoOf, withNote, workingAt } from "./who.ts";
+import { answering, type Who, whoOf, withNote, workingAt, workingNow } from "./who.ts";
+
+/** The hand-offs of a run that are over (answered, gone without, or failed): a together step's, as each finishes. */
+const finishedIn = (log: readonly LogLine[]): Set<string> => new Set(log.flatMap((line) => (line.kind === "answered" || line.kind === "skipped" || line.kind === "failed" ? [line.stepId] : [])));
 
 /**
  * Your gadgets (the Huddle button, or the canvas's virtual one): what each should show, and what it sends
@@ -58,8 +61,11 @@ export type ToDevice =
   | { readonly type: "started"; readonly runId: string; readonly flow: string; readonly assistant: Who | null }
   /** "Just ask": what Huddle will do with what you said, said out loud too; `team`, who'll do it, in order. */
   | { readonly type: "plan"; readonly text: string; readonly team: readonly Who[] }
-  /** A run you started moved on to another assistant: the work is passing between them. */
-  | { readonly type: "working"; readonly runId: string; readonly assistant: Who }
+  /**
+   * A run you started moved on to another assistant: the work is passing between them. `with`: others working at
+   * the same time (a together step), until each finishes.
+   */
+  | { readonly type: "working"; readonly runId: string; readonly assistant: Who; readonly with?: readonly Who[] }
   /** What it heard you say, once the speech server has listened. */
   | { readonly type: "heard"; readonly text: string }
   /** 16-bit mono PCM at sampleRate follows, in binary frames, then "spoken". */
@@ -239,8 +245,12 @@ export class DeviceHub {
   answerFor(runId: string): string | null {
     const log = this.store.logOf(runId);
     if (!log.some((line) => line.kind === "started" && (line.detail as { via?: unknown } | null)?.via === "device")) return null;
-    const text = (log.findLast((line) => line.kind === "answered")?.detail as { text?: unknown } | null)?.text;
-    const team = log.some((line) => line.kind === "planned" && (line.detail as { use?: unknown } | null)?.use === "team");
+    const last = log.findLast((line) => line.kind === "answered");
+    // A run that ended with several at once (a together step): all of theirs, by name.
+    const run = this.store.run(runId);
+    const together = run && last ? turnAt(run.flow, last.stepId)?.group : undefined;
+    const text = together ? run?.context.steps[together]?.text : (last?.detail as { text?: unknown } | null)?.text;
+    const team = together !== undefined || log.some((line) => line.kind === "planned" && (line.detail as { use?: unknown } | null)?.use === "team");
     return typeof text === "string" && text.trim() ? shortAnswer(text, team ? TEAM_ANSWER : undefined) : null;
   }
 
@@ -315,19 +325,28 @@ export class DeviceHub {
     };
 
     const finished = new Set<string>();
-    /** Runs this device started, and who it was last told has the work. */
+    /** Runs this device started, and who it was last told has the work ("claw+hermes" when several do). */
     const ours = new Map<string, string | null>();
+    /**
+     * As the work passes from one assistant to the next, the button shows who has it now; at a together step,
+     * everyone at it, until each finishes. (No step yet with nothing done is the first step; with steps done,
+     * the run is ending.)
+     */
+    const tellWorking = (runId: string) => {
+      const run = this.store.run(runId);
+      if (run?.state !== "running" || !ours.has(run.id)) return;
+      const fresh = run.at === null && Object.keys(run.context.steps).length === 0;
+      if (!run.at && !fresh) return;
+      const team = workingNow(run.flow, run.at, finishedIn(this.store.logOf(run.id)));
+      const key = team.map((who) => who.id).join("+");
+      if (!team.length || key === ours.get(run.id)) return;
+      ours.set(run.id, key);
+      send({ type: "working", runId: run.id, assistant: team[0]!, ...(team.length > 1 ? { with: team.slice(1) } : {}) });
+    };
     const onChange = (change: Change) => {
       if (change.kind === "run") {
+        tellWorking(change.runId);
         const run = this.store.run(change.runId);
-        // As the work passes from one assistant to the next, the button shows who has it now. (No step yet
-        // with nothing done is the first step; with steps done, the run is ending.)
-        const fresh = run?.at === null && Object.keys(run.context.steps).length === 0;
-        const who = run?.state === "running" && ours.has(run.id) && (run.at || fresh) ? workingAt(run.flow, run.at) : null;
-        if (run && who && who.id !== ours.get(run.id)) {
-          ours.set(run.id, who.id);
-          send({ type: "working", runId: run.id, assistant: who });
-        }
         // Saved flows, and the teams "Just ask" made: a router chat ending isn't news for the button.
         if (run && (run.flowId || ours.has(run.id)) && (run.state === "done" || run.state === "failed" || run.state === "declined") && !finished.has(run.id)) {
           finished.add(run.id);
@@ -364,6 +383,7 @@ export class DeviceHub {
           ours.set(started.runId, started.assistant?.id ?? null);
           this.heard(started.runId, text, pcm.byteLength);
           send({ type: "started", ...started });
+          tellWorking(started.runId);
           return;
         }
         await askOne(text, pcm.byteLength, AUTO);
@@ -401,6 +421,8 @@ export class DeviceHub {
       if (asked.plan.say) void say(asked.plan.say);
       ours.set(asked.run.runId, asked.run.assistant?.id ?? null);
       send({ type: "started", ...asked.run });
+      // Several at once from the start (a together step): the button hears all of them now.
+      tellWorking(asked.run.runId);
     };
 
     send({ type: "hello", ...hello, speech: this.speech !== null });
@@ -452,6 +474,7 @@ export class DeviceHub {
               const started = this.start(message.flow, said, hello.name);
               ours.set(started.runId, started.assistant?.id ?? null);
               send({ type: "started", ...started });
+              tellWorking(started.runId);
             } catch (error) {
               send({ type: "error", message: failure(error) });
             }

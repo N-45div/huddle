@@ -25,8 +25,17 @@ export interface Choices {
   readonly assistants: readonly Assistant[];
 }
 
-/** One part of a team's plan: an assistant's job, or a question for you before what follows. */
-export type TeamStep = { readonly assistant: string; readonly ask: string } | { readonly approve: string };
+/** One assistant's job in a team's plan. */
+export interface Part {
+  readonly assistant: string;
+  readonly ask: string;
+}
+
+/**
+ * One part of a team's plan: an assistant's job, jobs that don't need each other's answers (done at the same
+ * time), or a question for you before what follows.
+ */
+export type TeamStep = Part | { readonly together: readonly Part[] } | { readonly approve: string };
 
 export interface PlannerOptions {
   /** The API base (e.g. Token Factory's) or the full chat completions URL. */
@@ -51,12 +60,13 @@ Answer with JSON only, one of:
 {"use": "one", "id": "<an assistant's id>", "say": ""}
   when one assistant can do all of it alone. Most questions are this.
 {"use": "team", "say": "...", "steps": [{"assistant": "<id>", "ask": "..."}, {"approve": "..."}, ...]}
-  when it needs two or more of their assistants, each doing the part it's best at, in order.
+  when it needs two or more of their assistants, each doing the part it's best at.
   Each "ask" gives that assistant its part in a sentence, said to them ("List the person's work commitments for next week."). Each one also sees what the person said and what the ones before it came back with.
+  Parts that don't need each other's answers go in one {"together": [{"assistant": "<id>", "ask": "..."}, {"assistant": "<id>", "ask": "..."}]}: they work at the same time, so the person hears back sooner. Keep a part after the others only when it needs what they came back with.
   Put {"approve": "the question, e.g. Send this list to your team?"} right before any step that sends a message, spends money, books something or changes something hard to undo; the person answers yes or no on the button.
-  At most ${MOST_TURNS} assistant steps. The last one tells the person what was done.
+  At most ${MOST_TURNS} assistants' parts in all, counting each one in a "together". The last one tells the person what was done.
 
-"say" is one short sentence Hud says out loud at once, before the work starts. For a team: who does what, by name ("OpenClaw will pull your work for next week, then Hermes fits in what's on at home."). For a flow: what it'll do. For one assistant: "".
+"say" is one short sentence Hud says out loud at once, before the work starts. For a team: who does what, by name ("OpenClaw pulls your work for next week while Hermes finds what's on at home."). For a flow: what it'll do. For one assistant: "".
 Use only the ids listed below; never make up an assistant or a flow.`;
 
 const described = (name: string, about: string | undefined) => (about?.trim() ? `${name}: ${about.trim()}` : name);
@@ -86,30 +96,49 @@ function wrapAsk(turns: readonly { readonly id: string; readonly name: string }[
  * model, as Hud), a team ends with Hud saying what each came back with, and a member who can't be reached
  * doesn't stop the rest: Hud says so.
  */
-export function teamFlow(said: string, steps: readonly TeamStep[], saved: readonly Assistant[], wrapUp?: Assistant): Flow {
+export function teamFlow(said: string, planned: readonly TeamStep[], saved: readonly Assistant[], wrapUp?: Assistant): Flow {
   const byId = new Map(saved.map((assistant) => [assistant.id, assistant]));
+  const turnsIn = (step: TeamStep): number => ("together" in step ? step.together.length : "assistant" in step ? 1 : 0);
+  const team = planned.reduce((sum, step) => sum + turnsIn(step), 0) > 1;
+  const wrapping = team && wrapUp !== undefined;
+  // Without Hud to sum up, the last one speaks for the team, so there has to be a last one: they go in order.
+  const steps = wrapping ? planned : planned.flatMap((step): TeamStep[] => ("together" in step ? [...step.together] : [step]));
   const used: Assistant[] = [];
   const out: unknown[] = [];
   const done: { readonly id: string; readonly name: string }[] = [];
-  const lastTurn = steps.findLastIndex((step) => "assistant" in step);
-  const team = steps.filter((step) => "assistant" in step).length > 1;
+  // What an approval shows: the answer just before it (all of them, after several at once).
+  let latest: string | null = null;
+  const lastTurn = steps.findLastIndex((step) => turnsIn(step) > 0);
   // On a team, each sees the whole request, but keeps to its own lane.
   const lane = team ? " Do only this part: the rest of the team does the rest." : "";
-  const wrapping = team && wrapUp !== undefined;
+  const member = (part: Part, id: string, earlier: string) => {
+    const assistant = byId.get(part.assistant);
+    if (!assistant) throw new Error(`The plan names an assistant you don't have: "${part.assistant}".`);
+    if (!used.includes(assistant)) used.push(assistant);
+    return { id, agent: assistant.id, ask: `${part.ask}${lane}\n\nWhat the person asked: {{input}}${earlier}`, ...(wrapping ? { optional: true } : {}), name: assistant.name ?? assistant.id };
+  };
   steps.forEach((step, index) => {
     if ("approve" in step) {
       if (index > lastTurn) return;
-      const before = done.at(-1);
-      out.push({ id: `ok${out.length + 1}`, type: "approval", message: before ? `${step.approve}\n\n{{${before.id}.text}}` : step.approve });
+      out.push({ id: `ok${out.length + 1}`, type: "approval", message: latest ? `${step.approve}\n\n{{${latest}.text}}` : step.approve });
       return;
     }
-    const assistant = byId.get(step.assistant);
-    if (!assistant) throw new Error(`The plan names an assistant you don't have: "${step.assistant}".`);
-    if (!used.includes(assistant)) used.push(assistant);
-    const id = `step${out.length + 1}`;
+    // Each one sees what the ones before it came back with; those working at the same time don't see each other's.
     const earlier = done.map((turn) => `\n\nWhat ${turn.name} came back with:\n{{${turn.id}.text}}`).join("");
-    out.push({ id, type: "agent", agent: assistant.id, ask: `${step.ask}${lane}\n\nWhat the person asked: {{input}}${earlier}`, ...(wrapping ? { optional: true } : {}) });
-    done.push({ id, name: assistant.name ?? assistant.id });
+    const parts = "together" in step ? step.together : [step];
+    // step3, or step3a, step3b... for the ones working at the same time.
+    const at = out.length + 1;
+    const members = parts.map((part, n) => member(part, parts.length > 1 ? `step${at}${String.fromCodePoint(97 + n)}` : `step${at}`, earlier));
+    if (members.length > 1) {
+      const id = `together${at}`;
+      out.push({ id, type: "together", steps: members.map(({ name: _name, ...rest }) => rest) });
+      latest = id;
+    } else {
+      const { name: _name, ...rest } = members[0]!;
+      out.push({ type: "agent", ...rest });
+      latest = rest.id;
+    }
+    for (const { id, name } of members) done.push({ id, name });
   });
   if (!done.length) throw new Error("The plan gives no assistant anything to do.");
   if (done.length > MOST_TURNS) throw new Error(`The plan has ${done.length} turns; at most ${MOST_TURNS} run from the button.`);
@@ -139,15 +168,25 @@ export function planFrom(answer: unknown, said: string, choices: Choices, wrapUp
   if (use === "flow" && typeof id === "string" && choices.flows.some((flow) => flow.id === id)) return { use: "flow", flowId: id, say: spoken };
   if (use === "one" && typeof id === "string" && choices.assistants.some((assistant) => assistant.id === id)) return { use: "one", assistant: id, say: "" };
   if (use === "team" && Array.isArray(steps)) {
+    const partOf = (value: unknown): Part | null => {
+      const { assistant, ask } = (value ?? {}) as { assistant?: unknown; ask?: unknown };
+      return typeof assistant === "string" && typeof ask === "string" && ask.trim() ? { assistant, ask: ask.trim() } : null;
+    };
     const parts = steps.flatMap((step): TeamStep[] => {
-      const { assistant, ask, approve } = (step ?? {}) as { assistant?: unknown; ask?: unknown; approve?: unknown };
-      if (typeof assistant === "string" && typeof ask === "string" && ask.trim()) return [{ assistant, ask: ask.trim() }];
+      const { approve, together } = (step ?? {}) as { approve?: unknown; together?: unknown };
+      if (Array.isArray(together)) {
+        const members = together.flatMap((member) => partOf(member) ?? []);
+        // One left on its own is just a part, done in order.
+        return members.length > 1 ? [{ together: members }] : members;
+      }
+      const part = partOf(step);
+      if (part) return [part];
       if (typeof approve === "string" && approve.trim()) return [{ approve: approve.trim() }];
       return [];
     });
-    const turns = parts.filter((part) => "assistant" in part);
+    const turns = parts.flatMap((part) => ("together" in part ? part.together : "assistant" in part ? [part] : []));
     // A "team" of one, with nothing to approve, is one assistant: the router answers it, quicker.
-    if (turns.length === 1 && parts.length === 1 && "assistant" in turns[0]!) return { use: "one", assistant: turns[0]!.assistant, say: "" };
+    if (turns.length === 1 && parts.length === 1) return { use: "one", assistant: turns[0]!.assistant, say: "" };
     return { use: "team", say: spoken, flow: teamFlow(said, parts, choices.assistants, wrapUp) };
   }
   throw new Error(`The model's plan doesn't fit what you have: ${JSON.stringify(answer).slice(0, 200)}`);

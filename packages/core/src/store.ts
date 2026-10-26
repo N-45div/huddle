@@ -389,6 +389,11 @@ export class Store {
     this.changed({ kind: "run", runId: run.id });
   }
 
+  /** A run moved on within a step (one of a together step's assistants finished): the canvas and the button look again. */
+  runMoved(runId: string): void {
+    this.changed({ kind: "run", runId });
+  }
+
   /**
    * Runs that were mid-step when Huddle stopped can't pick up where they were (the call to the assistant
    * is gone), so on start they're marked failed. Runs waiting on an approval are untouched.

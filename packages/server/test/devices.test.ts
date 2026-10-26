@@ -3,7 +3,7 @@ import { type AddressInfo, connect } from "node:net";
 import { describe, it } from "node:test";
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
-import { Engine, mock, parseFlow, Router, type Speech, Store } from "@huddle/core";
+import { type Connector, Engine, mock, parseFlow, Router, type Speech, Store } from "@huddle/core";
 import { createApp } from "../src/app.ts";
 import { asSpoken, DeviceHub, deviceRoutes, guardUpgrades, oneLine, shortAnswer, spokenParts, type ToDevice, VOICE_NOTE } from "../src/devices.ts";
 import { JUST_ASK, type Planner, teamFlow } from "../src/just-ask.ts";
@@ -307,6 +307,38 @@ describe("the Huddle button", () => {
     assert.equal(run?.state, "done");
     assert.ok(sent.some((message) => message.type === "run" && message.answer === "Groceries on Saturday." && message.assistant?.id === "hermes"));
     assert.deepEqual(spoken, ["OpenClaw takes your work, then Hermes fits in home.", "Groceries on Saturday."]);
+    session.close();
+  });
+
+  it("Just ask with a team working at the same time: the button hears all of them, then whoever's still at it", async () => {
+    const store = new Store();
+    let finishClaw = () => {};
+    const clawDone = new Promise<void>((resolve) => (finishClaw = resolve));
+    const slowClaw: Connector = {
+      async send(request) {
+        if (request.assistant.id === "claw") await clawDone;
+        return mock.send(request);
+      },
+    };
+    const engine = new Engine(store, { mock: slowClaw });
+    store.saveAssistants(TEAM.assistants);
+    const hud = parseFlow({ name: "h", assistants: [{ id: "hud", name: "Hud", connector: "mock", replies: { "*": "OpenClaw has three deadlines; Hermes says groceries on Saturday." } }], steps: [{ id: "a", type: "agent", agent: "hud", ask: "x" }] }).assistants[0]!;
+    const planner: Planner = async (said, choices) => ({
+      use: "team",
+      say: "OpenClaw takes your work while Hermes fits in home.",
+      flow: teamFlow(said, [{ together: [{ assistant: "claw", ask: "Work." }, { assistant: "hermes", ask: "Home." }] }], choices.assistants, hud),
+    });
+    const hub = new DeviceHub(store, engine, { router: new Router(store, engine, null), planner });
+    const sent: ToDevice[] = [];
+    const session = hub.connect((message) => sent.push(message), { name: "Virtual button", version: "test" });
+    session.receive(JSON.stringify({ type: "start", flow: JUST_ASK, input: "Plan my week" }));
+    await settle();
+    const working = () => sent.flatMap((message) => (message.type === "working" ? [[message.assistant.id, ...(message.with ?? []).map((who) => who.id)].join("+")] : []));
+    assert.deepEqual(working(), ["claw+hermes", "claw"], "both at once, then OpenClaw alone once Hermes is done");
+    finishClaw();
+    await settle();
+    assert.deepEqual(working(), ["claw+hermes", "claw", "hud"], "then Hud sums up");
+    assert.ok(sent.some((message) => message.type === "run" && message.answer === "OpenClaw has three deadlines; Hermes says groceries on Saturday."));
     session.close();
   });
 

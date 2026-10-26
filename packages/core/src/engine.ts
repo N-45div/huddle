@@ -222,7 +222,8 @@ export class Engine {
           if (!one) return { wait: true };
           ready.push(one);
         }
-        const settled = await Promise.allSettled(ready.map((one) => this.handOff(run, one, context)));
+        // Each one finishing is news for the canvas and the button: who's still at it changes.
+        const settled = await Promise.allSettled(ready.map((one) => this.handOff(run, one, context).finally(() => this.store.runMoved(run.id))));
         const failed = settled.findIndex((outcome) => outcome.status === "rejected");
         if (failed >= 0) {
           // The run fails at the together step; the run page shows which of them it was.

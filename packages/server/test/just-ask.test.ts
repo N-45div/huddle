@@ -97,6 +97,33 @@ describe("Just ask", () => {
     const alone = teamFlow(SAID, [{ assistant: "claw", ask: "Work." }, { approve: "OK?" }], assistants, HUD);
     assert.deepEqual(alone.steps.map((step) => step.id), ["step1"]);
   });
+
+  it("has parts that don't need each other's answers work at the same time, and Hud hears from all of them", () => {
+    const plan = planFrom(
+      { use: "team", say: "OpenClaw pulls your week while Hermes finds Saturday.", steps: [{ together: [{ assistant: "claw", ask: "Work." }, { assistant: "hermes", ask: "Home." }] }, { approve: "Send it?" }, { assistant: "claw", ask: "Send it to the team." }] },
+      SAID,
+      CHOICES,
+      HUD,
+    );
+    assert.equal(plan.use, "team");
+    if (plan.use !== "team") return;
+    const [together, ok, send, wrap] = plan.flow.steps;
+    assert.equal(together?.type, "together");
+    if (together?.type !== "together") return;
+    assert.deepEqual(together.steps.map((member) => [member.id, member.agent, member.optional]), [["step1a", "claw", true], ["step1b", "hermes", true]]);
+    assert.doesNotMatch(together.steps[1]!.ask, /came back with/, "neither sees the other's answer");
+    assert.equal(ok?.type === "approval" ? ok.message : "", "Send it?\n\n{{together1.text}}", "the question shows what both came back with");
+    assert.match(send?.type === "agent" ? send.ask : "", /OpenClaw came back with:\n\{\{step1a\.text\}\}[\s\S]*Hermes came back with:\n\{\{step1b\.text\}\}/);
+    assert.match(wrap?.type === "agent" ? wrap.ask : "", /Hermes came back with:\n\{\{step1b\.text\}\}/);
+    // Without Hud to sum up, they go in order, so the last one can speak for the team.
+    const inOrder = teamFlow(SAID, [{ together: [{ assistant: "claw", ask: "Work." }, { assistant: "hermes", ask: "Home." }] }], assistants);
+    assert.deepEqual(inOrder.steps.map((step) => [step.id, step.type]), [["step1", "agent"], ["step2", "agent"]]);
+    // A "together" of one is just a part; past four parts in all, it's too long for the button.
+    const single = planFrom({ use: "team", steps: [{ together: [{ assistant: "claw", ask: "Work." }, { assistant: "ghost" }] }] }, SAID, CHOICES, HUD);
+    assert.deepEqual(single, { use: "one", assistant: "claw", say: "" });
+    const parts = Array.from({ length: 5 }, () => ({ assistant: "claw", ask: "x" }));
+    assert.throws(() => planFrom({ use: "team", steps: [{ together: parts }] }, SAID, CHOICES, HUD), /at most 4/);
+  });
 });
 
 const HUD = parseFlow({ name: "h", assistants: [{ id: "hud", name: "Hud", connector: "mock", replies: { "*": "OpenClaw has three deadlines; Hermes says groceries on Saturday." } }], steps: [{ id: "a", type: "agent", agent: "hud", ask: "x" }] }).assistants[0]!;
