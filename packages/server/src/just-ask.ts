@@ -91,9 +91,15 @@ function wrapAsk(turns: readonly { readonly id: string; readonly name: string }[
     "{{input}}",
     ...turns.map((turn) => `\n${turn.name} came back with:\n{{${turn.id}.text}}`),
     "",
-    "Tell the person what came back, by name, in one sentence for each: its answer in short, with the specifics that matter most (the first thing to do, a name, a date, a place), and anything it needs from the person. Say only what they said; if one couldn't help, say so plainly. Don't introduce yourself or open with a greeting.",
+    `Tell the person what came back from each of them, by name, one short sentence each, in this order: ${names(turns)}. Leave none of them out. For each: the one or two things that matter most (from a list, its first items; a name, a date, a place), and anything it needs from the person. Say only what they said; if one couldn't help, say so plainly. Don't introduce yourself or open with a greeting.`,
   ].join("\n");
 }
+
+/** "OpenClaw", "OpenClaw and Hermes", "OpenClaw, Hermes and Writer". */
+const names = (turns: readonly { readonly name: string }[]): string => {
+  const all = turns.map((turn) => turn.name);
+  return all.length > 1 ? `${all.slice(0, -1).join(", ")} and ${all.at(-1)}` : (all[0] ?? "");
+};
 
 /**
  * A team's plan as a flow that runs once: each assistant's part, with what was asked and what the ones before
