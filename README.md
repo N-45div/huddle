@@ -100,19 +100,39 @@ saved flows and assistants, by their descriptions, and picks one of three:
 - **A saved flow** that already does it, run with your words as its input.
 - **The one assistant who can do it alone**, through the [router](#the-router-one-api-to-every-assistant-you-run).
   Most questions are this.
-- **A team:** each assistant's part, in order, with an approval before anything that sends, spends or books.
-  Each one sees what you asked and what the ones before it came back with, and keeps to its own part. One
-  that can't be reached is skipped rather than stopping the rest, and Hud (Huddle's own quick model,
-  Nemotron Lightning) ends the run by saying what each came back with.
+- **A team:** each assistant's part, with an approval before anything that sends, spends or books. The model
+  says, for each part, which other parts' answers it uses; parts that don't use each other's work **at the
+  same time** (a [together step](#several-at-once-a-together-step)), and a part that uses another's answer
+  waits for it and sees it. Each keeps to its own part. One that can't be reached is skipped rather than
+  stopping the rest, and Hud (Huddle's own quick model, Nemotron Lightning) ends the run by saying what each
+  came back with.
 
-Huddle says the plan before the work starts ("OpenClaw will plan your work for next week, then Hermes finds a
-relaxed weekend trip near Bengaluru"), and the run's page shows it, with each assistant's row as the work
-passes along. A team that worked out is one click from being yours: **Keep this team** on its run page saves
-it as a flow on your button. Flows and assistants that look at photos aren't offered, since Just ask takes
-none.
+Huddle says the plan before the work starts, built from the plan as it will run, so "while" means at the same
+time and "then" means it waits ("OpenClaw pulls your work for next week while Hermes finds something fun near
+Bengaluru"). The run's page shows the plan, with a row for each assistant as it works. A team that worked
+out is one click from being yours: **Keep this team** on its run page saves it as a flow on your button.
+Flows and assistants that look at photos aren't offered, since Just ask takes none.
 
-On the sentence above, with OpenClaw and Hermes running in Docker on Nemotron 3 Super, the plan was ready 1.6
-seconds after the words were heard, and the team's answer about 11 seconds after that.
+On the sentence above, with OpenClaw and Hermes running in Docker on Nemotron 3 Super, the plan was ready
+about 2 seconds after the words were heard; OpenClaw and Hermes worked on their parts at the same time, and
+Hud's answer was spoken 6 to 10 seconds after that. Asked one after the other, the same team took 35 seconds.
+
+### Several at once: a together step
+
+A flow can ask several assistants at the same time, each on its own part, and go on once all of them have
+answered. None sees another's answer; the steps after see each one's by its id, and all of them, by name, as
+the together step's own text:
+
+```jsonc
+{ "id": "both", "type": "together", "steps": [
+    { "id": "work", "agent": "claw",   "ask": "List what's due at work next week: {{input}}" },
+    { "id": "home", "agent": "hermes", "ask": "Find something fun to do on Saturday: {{input}}", "optional": true }
+  ], "next": "wrap" },
+{ "id": "wrap", "type": "agent", "agent": "hud", "ask": "Say what came back:\n{{both.text}}" }
+```
+
+A member marked `optional` can fail without stopping the others. On the canvas it's one block (**Together**
+in the palette), and the run page and the button show everyone in it working at once.
 
 It's the first choice on the [button](#the-huddle-button) and in the canvas's quick bar, and it's in the API
 and on the MCP server:
@@ -137,8 +157,9 @@ speaker ([the firmware, the parts and how to set it up](firmware/huddle-button/R
 - **Hold to say yes.** An approval shows as one line and is said aloud. A deliberate one-second hold is yes, a
   tap is no, so a knock never approves anything.
 - **See who has the work.** Hud and your assistants appear as Huddlers; OpenClaw and Hermes appear as their own
-  logos, ringed by dots that spin in the logo's colour while they work. A team's line ("OpenClaw > Hermes")
-  picks out whoever has it now, and the answer comes up in a bubble as it's said.
+  logos, ringed by dots that spin in the logo's colour while they work. Two working at the same time stand
+  side by side, each in its own ring, until one finishes. A team's line ("OpenClaw > Hermes") picks out
+  whoever has it now, and the answer comes up in a bubble as it's said.
 - **Show it something.** On a flow whose assistant sees photos, the button takes one as you start to talk:
   "What is this?" pointed at a parcel or a bill goes to Nemotron 3.5 Super VL with the photo. In testing, the
   photo, the question and the spoken answer took about 9 seconds.
