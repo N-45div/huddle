@@ -1,5 +1,5 @@
 import type { Guard, HandOff, Outcome, Verdict } from "../guard.ts";
-import type { Assistant, Flow } from "../schema.ts";
+import { type Assistant, type Flow, turnsOf } from "../schema.ts";
 import type { HeldBy, Run, RunState } from "../store.ts";
 
 /**
@@ -75,12 +75,11 @@ export function armoriqTool(assistant: Pick<Assistant, "connector">, mcp = DEFAU
   return `${mcp}__${assistant.connector}`;
 }
 
-/** Every hand-off a flow can make, in order: the plan ArmorIQ signs. */
+/** Every hand-off a flow can make, in order (a together step's members too): the plan ArmorIQ signs. */
 export function armoriqPlan(flow: Flow, mcp = DEFAULT_MCP): { name: string; args: { step: string; assistant: string } }[] {
-  return flow.steps.flatMap((step) => {
-    if (step.type !== "agent") return [];
-    const assistant = flow.assistants.find((candidate) => candidate.id === step.agent);
-    return assistant ? [{ name: armoriqTool(assistant, mcp), args: { step: step.id, assistant: assistant.id } }] : [];
+  return turnsOf(flow).flatMap((turn) => {
+    const assistant = flow.assistants.find((candidate) => candidate.id === turn.agent);
+    return assistant ? [{ name: armoriqTool(assistant, mcp), args: { step: turn.id, assistant: assistant.id } }] : [];
   });
 }
 

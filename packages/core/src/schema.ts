@@ -177,8 +177,52 @@ const MemoryStep = z.object({
   next: target.optional(),
 });
 
-export const Step = z.discriminatedUnion("type", [AgentStep, ConditionStep, ApprovalStep, MemoryStep]);
+/** One of a together step's assistants: an agent step's hand-off, without a `next` of its own. */
+const Member = z.object({
+  id,
+  agent: id,
+  ask: z.string().min(1),
+  /** The others carry on if this one can't answer, as on an agent step. */
+  optional: z.boolean().optional(),
+});
+
+/**
+ * Several assistants at the same time, each on its own part. The run goes on once every one has answered (an
+ * optional one may instead not have managed to). None sees another's answer; the steps after see each one's as
+ * {{<its id>.text}}, and all of them, by name, as {{<this step's id>.text}}.
+ */
+const TogetherStep = z.object({
+  id,
+  type: z.literal("together"),
+  steps: z.array(Member).min(2).max(8),
+  next: target.optional(),
+});
+
+export const Step = z.discriminatedUnion("type", [AgentStep, ConditionStep, ApprovalStep, MemoryStep, TogetherStep]);
 export type Step = z.infer<typeof Step>;
+
+/** One assistant's turn: an agent step, or one of a together step's members (`group` is that step's id). */
+export interface Turn {
+  readonly id: string;
+  readonly agent: string;
+  readonly ask: string;
+  readonly optional?: boolean | undefined;
+  readonly group?: string;
+}
+
+/** Every assistant's turn in a flow, in order: its agent steps, and the members of its together steps. */
+export function turnsOf(flow: { readonly steps: readonly Step[] }): Turn[] {
+  return flow.steps.flatMap((step): Turn[] => {
+    if (step.type === "agent") return [{ id: step.id, agent: step.agent, ask: step.ask, optional: step.optional }];
+    if (step.type === "together") return step.steps.map((member) => ({ ...member, group: step.id }));
+    return [];
+  });
+}
+
+/** The turn with this id (an agent step, or a together step's member), if the flow has one. */
+export function turnAt(flow: { readonly steps: readonly Step[] }, id: string): Turn | null {
+  return turnsOf(flow).find((turn) => turn.id === id) ?? null;
+}
 
 /** How long between scheduled runs: "15m", "2h", "1d" (at least 1 minute). */
 const every = z.string().regex(/^[1-9]\d*(m|h|d)$/, 'use a number and m, h or d, like "15m", "2h" or "1d"');
@@ -297,18 +341,27 @@ export const Flow = z
     ui: z.object({ positions: z.record(z.string(), z.object({ x: z.number(), y: z.number() })).default({}) }).optional(),
   })
   .superRefine((flow, ctx) => {
+    // Steps are where a run can go; a together step's members share their names, but are reached only through it.
     const steps = new Set<string>();
+    const names = new Set<string>();
+    const name = (stepId: string) => {
+      if (names.has(stepId)) ctx.addIssue({ code: "custom", message: `two steps are called "${stepId}"` });
+      names.add(stepId);
+    };
     for (const step of flow.steps) {
-      if (steps.has(step.id)) ctx.addIssue({ code: "custom", message: `two steps are called "${step.id}"` });
+      name(step.id);
       steps.add(step.id);
+      if (step.type === "together") for (const member of step.steps) name(member.id);
     }
     const assistants = new Set(flow.assistants.map((assistant) => assistant.id));
     for (const assistant of flow.assistants) for (const problem of assistantProblems(assistant)) ctx.addIssue({ code: "custom", message: problem });
     const check = (from: string, to: string | undefined) => {
       if (to !== undefined && to !== "end" && !steps.has(to)) ctx.addIssue({ code: "custom", message: `step "${from}" goes to "${to}", which isn't a step` });
     };
+    for (const turn of turnsOf(flow)) {
+      if (!assistants.has(turn.agent)) ctx.addIssue({ code: "custom", message: `step "${turn.id}" asks "${turn.agent}", which isn't one of the flow's assistants` });
+    }
     for (const step of flow.steps) {
-      if (step.type === "agent" && !assistants.has(step.agent)) ctx.addIssue({ code: "custom", message: `step "${step.id}" asks "${step.agent}", which isn't one of the flow's assistants` });
       if (step.type === "condition") {
         check(step.id, step.then);
         check(step.id, step.else);
