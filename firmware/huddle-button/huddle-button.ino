@@ -266,6 +266,7 @@ std::vector<Sprite> sprites;
 String who = "hud";                       // whose Huddler is on screen: Hud, or the assistant at work
 String whoName;                           // and that assistant's name
 std::vector<String> teamIds, teamNames;   // "Just ask": who the work goes to, in order
+std::vector<String> withIds, withNames;   // others at work at the same time as `who` (a together step)
 unsigned long lastActivity = 0;           // the last press or news; quiet for a while, Hud dozes off
 unsigned long workStart = 0;              // when whoever has the work now took it
 
@@ -285,6 +286,28 @@ const Sprite *spriteFor(const String &key) {
 const Sprite *logoOnScreen() {
   const Sprite *sprite = who == "hud" ? nullptr : spriteFor(who);
   return sprite && sprite->w == LOGO_SIZE ? sprite : nullptr;
+}
+
+// Several at work at the same time (a together step): the first two side by side, smaller, each in its own ring,
+// with its name under it.
+constexpr int DUO_SIZE = 48, DUO_TOP = 18, DUO_R = 29, DUO_DOTS = 14;
+constexpr int DUO_CX[2] = {32, 96};
+constexpr int DUO_CY = DUO_TOP + DUO_SIZE / 2;
+uint16_t duoPixels[DUO_SIZE * DUO_SIZE];
+
+/** Whether several are at work right now, shown side by side. */
+bool duoNow() {
+  return mode == Mode::Thinking && !withIds.empty();
+}
+
+/** Who's in each place side by side: whoever has the work, and the first of the rest. */
+String duoId(int place) {
+  return place == 0 ? who : withIds[0];
+}
+
+String duoName(int place) {
+  if (place == 0) return whoName.length() ? whoName : who;
+  return withNames[0].length() ? withNames[0] : withIds[0];
 }
 
 /** Between two colours, t of the way from a to b. */
@@ -487,18 +510,74 @@ void drawWho() {
  * The ring round a logo: while it cooks, a bright head chasing round with a fading tail in the logo's colour;
  * while it talks, the whole ring lit with its voice.
  */
-void drawRing(const Sprite *logo, unsigned long now, bool cooking, float level) {
-  int head = (int)((now / 55) % RING_DOTS);
-  for (int i = 0; i < RING_DOTS; i++) {
-    float angle = i * 2 * PI / RING_DOTS - PI / 2;
-    int x = RING_X + (int)lroundf(cosf(angle) * RING_R), y = RING_Y + (int)lroundf(sinf(angle) * RING_R);
-    int behind = (head - i + RING_DOTS) % RING_DOTS;
-    uint16_t color = cooking ? (behind < 6 ? mix565(logo->accent, TRACK, behind / 6.0f) : TRACK) : mix565(TRACK, logo->accent, level);
+void drawRingAt(int cx, int cy, int r, int dots, uint16_t accent, unsigned long now, bool cooking, float level, int phase) {
+  // `phase` starts the chase that many dots on, so two rings side by side don't move as one.
+  int head = (int)((now / 55 + phase) % dots);
+  for (int i = 0; i < dots; i++) {
+    float angle = i * 2 * PI / dots - PI / 2;
+    int x = cx + (int)lroundf(cosf(angle) * r), y = cy + (int)lroundf(sinf(angle) * r);
+    int behind = (head - i + dots) % dots;
+    uint16_t color = cooking ? (behind < 6 ? mix565(accent, TRACK, behind / 6.0f) : TRACK) : mix565(TRACK, accent, level);
     tft->fillCircle(x, y, 2, color);
   }
 }
 
-/** How long whoever has the work has had it, top left, and which turn of the team's it is, top right. */
+void drawRing(const Sprite *logo, unsigned long now, bool cooking, float level) {
+  drawRingAt(RING_X, RING_Y, RING_R, RING_DOTS, logo->accent, now, cooking, level, 0);
+}
+
+/** One of several at work, side by side: its picture made smaller, and a Huddler given busy eyes in its visor. */
+void drawDuoMember(int place) {
+  const Sprite *sprite = spriteFor(duoId(place));
+  int left = DUO_CX[place] - DUO_SIZE / 2;
+  if (!sprite) {
+    tft->fillCircle(DUO_CX[place], DUO_CY, DUO_SIZE / 2 - 2, 0x5B1C);
+    return;
+  }
+  for (int y = 0; y < DUO_SIZE; y++) {
+    for (int x = 0; x < DUO_SIZE; x++) duoPixels[y * DUO_SIZE + x] = sprite->px[(y * sprite->h / DUO_SIZE) * sprite->w + x * sprite->w / DUO_SIZE];
+  }
+  tft->drawRGBBitmap(left, DUO_TOP, duoPixels, DUO_SIZE, DUO_SIZE);
+  if (sprite->w == LOGO_SIZE) return;
+  // The canvas's drawing units, at this size: the Think face's eyes.
+  float u = (float)DUO_SIZE / 64;
+  int w = max(2, (int)lroundf(4.6f * u)), h = max(3, (int)lroundf(6 * u));
+  tft->fillRoundRect(left + (int)lroundf(25 * u), DUO_TOP + (int)lroundf(29.5f * u), w, h, 1, FACE);
+  tft->fillRoundRect(left + (int)lroundf(37.5f * u), DUO_TOP + (int)lroundf(29.5f * u), w, h, 1, FACE);
+}
+
+/** Several at once: the first two side by side, with their names under them. */
+void drawDuo() {
+  for (int place = 0; place < 2; place++) {
+    drawDuoMember(place);
+    String name = ascii(duoName(place));
+    if (name.length() > 10) name = name.substring(0, 9) + ".";
+    tft->setFont(nullptr);
+    tft->setTextSize(1);
+    tft->setTextColor(FACE);
+    tft->setCursor(DUO_CX[place] - (int)name.length() * 3, DUO_CY + DUO_R + 6);
+    tft->print(name);
+  }
+}
+
+/** Their rings, each in its own colour, chasing round out of step with each other. */
+void drawDuoRings(unsigned long now) {
+  for (int place = 0; place < 2; place++) {
+    const Sprite *sprite = spriteFor(duoId(place));
+    drawRingAt(DUO_CX[place], DUO_CY, DUO_R, DUO_DOTS, sprite ? sprite->accent : LILAC, now, true, 0, place * DUO_DOTS / 2);
+  }
+}
+
+/** Whether this assistant is at work now: whoever has it, or one beside them. */
+bool working(const String &id) {
+  if (id == who) return true;
+  for (const String &other : withIds) {
+    if (other == id) return true;
+  }
+  return false;
+}
+
+/** How long whoever has the work has had it, top left, and which turn of the team's it is, top right ("1+2/3"). */
 void drawWorkClock(unsigned long now) {
   unsigned long seconds = (now - workStart) / 1000;
   tft->setFont(nullptr);
@@ -507,12 +586,15 @@ void drawWorkClock(unsigned long now) {
   tft->setTextColor(MUTED);
   tft->setCursor(2, 3);
   tft->printf("%lu:%02lu", seconds / 60, seconds % 60);
+  String turns;
   for (size_t i = 0; i < teamIds.size(); i++) {
-    if (teamIds[i] != who) continue;
-    String step = String(i + 1) + "/" + String(teamIds.size());
-    tft->setCursor(126 - (int)step.length() * 6, 3);
-    tft->print(step);
+    if (!working(teamIds[i])) continue;
+    turns += (turns.length() ? "+" : "") + String(i + 1);
   }
+  if (!turns.length()) return;
+  String step = turns + "/" + String(teamIds.size());
+  tft->setCursor(126 - (int)step.length() * 6, 3);
+  tft->print(step);
 }
 
 bool speakingNow() {
@@ -573,7 +655,7 @@ void drawTeam(int y) {
       tft->setTextColor(MUTED);
       tft->print(" > ");
     }
-    tft->setTextColor(teamIds[i] == who ? CYAN : MUTED);
+    tft->setTextColor(working(teamIds[i]) ? CYAN : MUTED);
     tft->print(ascii(teamNames[i]));
   }
 }
@@ -628,7 +710,7 @@ void draw() {
   // A turn that came with a photo shows it while you talk and while Huddle looks; the answer is the Huddler's.
   bool showPhoto = photoNow && thumb && !speaking && (mode == Mode::Listening || mode == Mode::Thinking);
   if (showPhoto) drawPhoto();
-  else drawWho();
+  else if (!duoNow() || speaking) drawWho();
   if (mode == Mode::Connecting) {
     drawFace(Face::Sleep);
     caption(114, "Connecting", FACE);
@@ -655,6 +737,15 @@ void draw() {
       tft->print(line);
       y += 11;
     }
+    return;
+  }
+  if (duoNow() && !showPhoto) {
+    // Several at once (a together step): side by side, each in its own ring, and the team's turns under them.
+    drawDuo();
+    caption(100, "Together", FACE);
+    small(106, withIds.size() > 1 ? "and " + String(withIds.size() - 1) + " more cooking..." : "both cooking...", LILAC);
+    if (!teamNames.empty()) drawTeam(124);
+    lastTimer = 0;  // the rings and the clock move in animate()
     return;
   }
   if (mode == Mode::Thinking && !showPhoto && logoOnScreen()) {
@@ -834,6 +925,8 @@ void onMessage(uint8_t *payload, size_t length) {
       who = String(doc["assistant"]["id"] | "hud");
       whoName = String(doc["assistant"]["name"] | "");
     }
+    withIds.clear();
+    withNames.clear();
     if (mode == Mode::Thinking) mode = Mode::Idle;
   } else if (type == "started") {
     lastActivity = millis();
@@ -841,6 +934,8 @@ void onMessage(uint8_t *payload, size_t length) {
     replyText = "";
     replyUntil = 0;
     mode = Mode::Thinking;
+    withIds.clear();
+    withNames.clear();
     // Whoever starts the work takes the screen while they're at it.
     if (!doc["assistant"].isNull()) {
       who = String(doc["assistant"]["id"] | "hud");
@@ -859,11 +954,20 @@ void onMessage(uint8_t *payload, size_t length) {
     lastActivity = millis();
     logLine("  plan: %s", (const char *)(doc["text"] | ""));
   } else if (type == "working") {
-    // The work passed to another assistant: their logo or Huddler takes the screen, and their clock starts.
+    // The work passed to another assistant, or to several at once ("with": those beside them, until each is
+    // done): their logos or Huddlers take the screen, and the clock starts again for someone new.
     if (mode != Mode::Approval) {
-      who = String(doc["assistant"]["id"] | "hud");
+      String next = String(doc["assistant"]["id"] | "hud");
+      if (next != who) workStart = millis();
+      who = next;
       whoName = String(doc["assistant"]["name"] | "");
-      workStart = millis();
+      withIds.clear();
+      withNames.clear();
+      for (JsonObject other : doc["with"].as<JsonArray>()) {
+        if (withIds.size() >= 3) break;
+        withIds.push_back(String(other["id"] | ""));
+        withNames.push_back(String(other["name"] | ""));
+      }
       if (mode == Mode::Idle) mode = Mode::Thinking;  // after a yes, the team carries on
     }
     lastActivity = millis();
@@ -1229,6 +1333,20 @@ void animate() {
     drawFace(Face::Talk, 0, speakLevel);
     if (const Sprite *logo = logoOnScreen(); logo && speaking) drawRing(logo, now, false, 0.15f + speakLevel);
     if (speaking) setLed(0, (uint8_t)(6 + speakLevel * 90), 0);
+    return;
+  }
+  if (duoNow() && !photoNow) {
+    shown = -1;
+    drawDuoRings(now);
+    if (now - lastTimer > 500) {
+      lastTimer = now;
+      drawWorkClock(now);
+    }
+    // The LED breathes in the colour of each in turn.
+    const Sprite *lit = spriteFor(duoId((now / 1800) % 2));
+    uint16_t a = lit ? lit->accent : LILAC;
+    float breath = 0.5f + 0.5f * sinf(now / 450.0f);
+    setLed((uint8_t)(((a >> 11) & 31) * breath * 1.5f), (uint8_t)(((a >> 5) & 63) * breath * 0.6f), (uint8_t)((a & 31) * breath * 1.5f));
     return;
   }
   if (const Sprite *logo = logoOnScreen(); logo && mode == Mode::Thinking && !photoNow) {
