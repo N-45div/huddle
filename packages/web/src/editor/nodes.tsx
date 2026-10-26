@@ -21,6 +21,7 @@ export const KIND_LABEL: Record<StepType, string> = {
   condition: "Condition",
   approval: "Approval",
   memory: "Memory",
+  together: "Together",
 };
 
 function Missing({ children }: { readonly children: string }) {
@@ -49,18 +50,40 @@ export const StepNodeView = memo(function StepNodeView({ id, data, selected }: N
   const state = runStates[id];
   const incomplete = isIncomplete(data, assistantList);
   const classes = ["step-node", `kind-${data.type}`, selected ? "is-selected" : "", state ? `run-${state}` : "", incomplete ? "is-incomplete" : ""].filter(Boolean).join(" ");
+  const mood = state === "current" ? "thinking" : state === "waiting" ? "waiting" : state === "failed" ? "oops" : state === "done" ? "happy" : "idle";
+  const who = (agent: string) => {
+    const assistant = assistants.get(agent);
+    return (
+      <>
+        {assistant && <Huddler id={assistant.id} connector={assistant.connector} size={22} mood={mood} />}
+        {assistant ? <strong>{assistant.name || assistant.id}</strong> : agent ? <Missing>{`No assistant "${agent}"`}</Missing> : <Missing>Pick an assistant</Missing>}
+      </>
+    );
+  };
 
   let body;
   switch (data.type) {
     case "agent": {
-      const assistant = assistants.get(data.agent);
       body = (
         <>
-          <p className="node-line">
-            {assistant && <Huddler id={assistant.id} connector={assistant.connector} size={22} mood={state === "current" ? "thinking" : state === "waiting" ? "waiting" : state === "failed" ? "oops" : state === "done" ? "happy" : "idle"} />}
-            {assistant ? <strong>{assistant.name || assistant.id}</strong> : data.agent ? <Missing>{`No assistant "${data.agent}"`}</Missing> : <Missing>Pick an assistant</Missing>}
-          </p>
+          <p className="node-line">{who(data.agent)}</p>
           <p className="node-text">{data.ask || <Missing>No ask yet</Missing>}</p>
+        </>
+      );
+      break;
+    }
+    case "together": {
+      body = (
+        <>
+          <p className="node-line">At the same time:</p>
+          <ul className="node-members">
+            {data.members.map((member) => (
+              <li key={member.id}>
+                <p className="node-line">{who(member.agent)}</p>
+                <p className="node-text node-text-one">{member.ask || <Missing>No ask yet</Missing>}</p>
+              </li>
+            ))}
+          </ul>
         </>
       );
       break;

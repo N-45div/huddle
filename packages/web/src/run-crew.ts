@@ -139,7 +139,9 @@ export function crewOf(detail: Pick<RunDetail, "run" | "flow" | "log">): CrewNod
   }
   const before = (line: LogLine): string => log[Math.max(0, log.indexOf(line) - 1)]?.at ?? line.at;
   // The step being worked on: the run says which once it's moved on from its first, the log says before that.
-  const current = live ? (run.at ?? log.findLast((line) => steps.has(line.stepId))?.stepId ?? null) : null;
+  const at = live ? (run.at ?? log.findLast((line) => steps.has(line.stepId))?.stepId ?? null) : null;
+  // At a together step, every one of its members is being worked on.
+  const current = at ? (memberAt(flow, at)?.group ?? at) : null;
 
   const children: CrewNode[] = [];
   const heard = log.find((line) => line.kind === "heard");
@@ -165,8 +167,10 @@ export function crewOf(detail: Pick<RunDetail, "run" | "flow" | "log">): CrewNod
 
   for (const [stepId, lines] of steps) {
     const step = flow.steps.find((candidate) => candidate.id === stepId);
+    const member = step ? null : memberAt(flow, stepId);
     if (step?.type === "agent") children.push(assistantNode(flow, run, step.id, step.agent, lines, current === step.id));
     else if (step?.type === "approval") children.push(approvalNode(run, step.id, step.message, lines, before));
+    else if (member) children.push(assistantNode(flow, run, member.id, member.agent, lines, current === member.group));
     // Conditions and memory steps are the flow's own logic, not someone working: the run's log shows them.
   }
 
@@ -213,6 +217,16 @@ export function crewOf(detail: Pick<RunDetail, "run" | "flow" | "log">): CrewNod
     approvalId: run.state === "waiting" ? (run.waiting?.id ?? null) : null,
     children,
   };
+}
+
+/** A together step's member with this id, and the together step it's part of. */
+function memberAt(flow: Flow, id: string): { readonly id: string; readonly agent: string; readonly group: string } | null {
+  for (const step of flow.steps) {
+    if (step.type !== "together") continue;
+    const member = step.steps.find((candidate) => candidate.id === id);
+    if (member) return { id: member.id, agent: member.agent, group: step.id };
+  }
+  return null;
 }
 
 function assistantNode(flow: Flow, run: Pick<RunDetail["run"], "state" | "at" | "waiting">, stepId: string, agentId: string, lines: readonly LogLine[], working: boolean): CrewNode {

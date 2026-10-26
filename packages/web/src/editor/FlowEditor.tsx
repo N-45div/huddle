@@ -34,6 +34,7 @@ import {
   type Graph,
   graphToFlow,
   handleOf,
+  idsInUse,
   isStepNode,
   layoutSteps,
   type LinkHandle,
@@ -66,7 +67,7 @@ type Confirming = { readonly kind: "discard" } | { readonly kind: "describe"; re
 
 const FIT: FitViewOptions<EditorNode> = { padding: 0.25, maxZoom: 1 };
 const DELETE_KEYS = ["Backspace", "Delete"];
-const STEP_TYPES: readonly StepType[] = ["agent", "condition", "approval", "memory"];
+const STEP_TYPES: readonly StepType[] = ["agent", "together", "condition", "approval", "memory"];
 const EMPTY_META: Meta = { name: "", description: "", example: "", trigger: { type: "manual" }, assistants: [] };
 
 function problemNotice(headline: string, caught: unknown): Notice {
@@ -162,7 +163,11 @@ function Editor({ flowId, openDescribe, openRun }: { readonly flowId: string; re
 
   const usage = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const node of stepNodes) if (node.data.type === "agent") counts.set(node.data.agent, (counts.get(node.data.agent) ?? 0) + 1);
+    const count = (agent: string) => counts.set(agent, (counts.get(agent) ?? 0) + 1);
+    for (const node of stepNodes) {
+      if (node.data.type === "agent") count(node.data.agent);
+      else if (node.data.type === "together") for (const member of node.data.members) count(member.agent);
+    }
     return counts;
   }, [stepNodes]);
 
@@ -248,9 +253,10 @@ function Editor({ flowId, openDescribe, openRun }: { readonly flowId: string; re
   // ---- Steps ----
 
   const addStep = (type: StepType) => {
-    const taken = new Set(nodes.map((node) => node.id));
+    const taken = idsInUse(nodes);
     taken.add("end");
     const id = uniqueStepId(type, taken);
+    taken.add(id);
     const anchor = selected;
     let position: XYPosition;
     if (anchor) {
@@ -264,7 +270,7 @@ function Editor({ flowId, openDescribe, openRun }: { readonly flowId: string; re
     for (let tries = 0; tries < 20 && nodes.some((node) => Math.abs(node.position.x - position.x) < 80 && Math.abs(node.position.y - position.y) < 60); tries += 1) {
       position = { x: position.x + 70, y: position.y + 40 };
     }
-    const node: StepNode = { id, type: "step", position, data: defaultContent(type, meta.assistants), selected: true };
+    const node: StepNode = { id, type: "step", position, data: defaultContent(type, meta.assistants, taken), selected: true };
     const hadSteps = stepNodes.length > 0;
     setNodes((current) => [...current.map((other) => (other.selected ? { ...other, selected: false } : other)), node]);
     setEdges((current) => {
@@ -294,11 +300,18 @@ function Editor({ flowId, openDescribe, openRun }: { readonly flowId: string; re
     setSelectedId(null);
   };
 
-  const renameStep = (from: string, to: string): string | null => {
-    if (from === to) return null;
+  /** Why `to` can't name a step or a member, or null when it can. */
+  const badName = (from: string, to: string): string | null => {
     if (!ID_PATTERN.test(to)) return "Use letters, numbers, - and _ (up to 64), starting with a letter or number.";
     if (to === "end") return 'A link to "end" finishes the run, so a step can\'t be called that.';
-    if (nodes.some((node) => node.id === to)) return `There's already a step called "${to}".`;
+    if (to !== from && idsInUse(nodes).has(to)) return `There's already a step called "${to}".`;
+    return null;
+  };
+
+  const renameStep = (from: string, to: string): string | null => {
+    if (from === to) return null;
+    const problem = badName(from, to);
+    if (problem) return problem;
     setNodes((current) =>
       current.map((node) => {
         if (!isStepNode(node)) return node;
@@ -310,10 +323,32 @@ function Editor({ flowId, openDescribe, openRun }: { readonly flowId: string; re
     return null;
   };
 
+  /** A together step's member renamed: its own id, and every {{from...}} that reads its answer. */
+  const renameMember = (from: string, to: string): string | null => {
+    if (from === to) return null;
+    const problem = badName(from, to);
+    if (problem) return problem;
+    setNodes((current) =>
+      current.map((node) => {
+        if (!isStepNode(node)) return node;
+        const data = retargetContent(node.data, from, to);
+        return data.type === "together" ? { ...node, data: { ...data, members: data.members.map((member) => (member.id === from ? { ...member, id: to } : member)) } } : { ...node, data };
+      }),
+    );
+    return null;
+  };
+
   const changeAssistants = (assistants: Assistant[], renamed?: { readonly from: string; readonly to: string }) => {
     setMeta((current) => ({ ...current, assistants }));
     if (renamed) {
-      setNodes((current) => current.map((node) => (isStepNode(node) && node.data.type === "agent" && node.data.agent === renamed.from ? { ...node, data: { ...node.data, agent: renamed.to } } : node)));
+      setNodes((current) =>
+        current.map((node) => {
+          if (!isStepNode(node)) return node;
+          if (node.data.type === "agent" && node.data.agent === renamed.from) return { ...node, data: { ...node.data, agent: renamed.to } };
+          if (node.data.type === "together") return { ...node, data: { ...node.data, members: node.data.members.map((member) => (member.agent === renamed.from ? { ...member, agent: renamed.to } : member)) } };
+          return node;
+        }),
+      );
     }
   };
 
@@ -586,6 +621,8 @@ function Editor({ flowId, openDescribe, openRun }: { readonly flowId: string; re
                   slices={slices}
                   onChange={(content) => updateStep(selected.id, content)}
                   onRename={(to) => renameStep(selected.id, to)}
+                  onRenameMember={renameMember}
+                  newMemberId={() => uniqueStepId("part", idsInUse(nodes))}
                   onLink={(handle, target) => setLink(selected.id, handle, target)}
                   onRemove={() => removeStep(selected.id)}
                   onOpenAssistants={() => setTab("assistants")}

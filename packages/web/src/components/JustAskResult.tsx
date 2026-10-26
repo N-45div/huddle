@@ -43,8 +43,10 @@ export function JustAskResult({ asked, question, onAsk }: { readonly asked: AskR
   const run = detail.data?.run;
   const flow = detail.data?.flow;
   const step = run?.state === "running" ? flow?.steps.find((candidate) => candidate.id === (run.at ?? flow.steps[0]?.id)) : undefined;
-  const workingId = step?.type === "agent" ? step.agent : null;
-  const working = asked.plan.team.find((who) => who.id === workingId);
+  // Who has the work: the step's assistant, or, at a together step, each of them that hasn't finished yet.
+  const finished = new Set((detail.data?.log ?? []).filter((line) => line.kind === "answered" || line.kind === "skipped" || line.kind === "failed").map((line) => line.stepId));
+  const workingIds = step?.type === "agent" ? [step.agent] : step?.type === "together" ? step.steps.filter((member) => !finished.has(member.id)).map((member) => member.agent) : [];
+  const working = asked.plan.team.filter((who) => workingIds.includes(who.id));
   const answer = run?.state === "done" ? textOf(detail.data?.log.findLast((line) => line.kind === "answered")) : "";
   const answeredBy = asked.plan.team.at(-1);
 
@@ -52,14 +54,21 @@ export function JustAskResult({ asked, question, onAsk }: { readonly asked: AskR
     <section className="quick-reply just-ask" aria-live="polite">
       {asked.plan.say && <p className="eyebrow">{asked.plan.say}</p>}
       <ol className="just-ask-team" aria-label="Who's on it, in order">
-        {asked.plan.team.map((who) => (
-          <li key={who.id} className={who.id === workingId ? "just-ask-member on" : "just-ask-member"}>
-            <Huddler id={who.id} connector={who.connector} mood={who.id === workingId ? "thinking" : run?.state === "done" ? "happy" : "idle"} size={28} live={who.id === workingId} />
-            {who.name}
-          </li>
-        ))}
+        {asked.plan.team.map((who) => {
+          const on = workingIds.includes(who.id);
+          return (
+            <li key={who.id} className={on ? "just-ask-member on" : "just-ask-member"}>
+              <Huddler id={who.id} connector={who.connector} mood={on ? "thinking" : run?.state === "done" ? "happy" : "idle"} size={28} live={on} />
+              {who.name}
+            </li>
+          );
+        })}
       </ol>
-      {(!run || run.state === "running") && <p className="hint" role="status">{working ? `${working.name} is on it…` : "On it…"}</p>}
+      {(!run || run.state === "running") && (
+        <p className="hint" role="status">
+          {working.length ? `${working.map((who) => who.name).join(" and ")} ${working.length > 1 ? "are" : "is"} on it…` : "On it…"}
+        </p>
+      )}
       {run?.state === "waiting" && (
         <p className="hint">
           Waiting for your OK: <Link to={href.approvals()}>answer it in Approvals</Link>, or on the button.

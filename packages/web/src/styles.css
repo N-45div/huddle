@@ -25,6 +25,7 @@
   --kind-condition: #5f6b7a;
   --kind-approval: #b07012;
   --kind-memory: #2f7d4b;
+  --kind-together: #6d4fc2;
   --canvas: #f1f1ed;
   --dots: #d3d3cc;
   --edge: #b2b2aa;
@@ -64,6 +65,7 @@
     --kind-condition: #9aa6b5;
     --kind-approval: #e2ab4f;
     --kind-memory: #6cc28a;
+    --kind-together: #a993f0;
     --canvas: #161615;
     --dots: #2e2e2b;
     --edge: #6b6b63;
@@ -4319,4 +4321,41 @@ h1 .badge {
   object-fit: cover;
   border-radius: 8px;
   border: 1px solid var(--border);
+}
+
+/* A together step: several assistants at once, one row each. */
+.kind-together {
+  --kind: var(--kind-together);
+}
+
+.node-members {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.node-members li {
+  border-left: 2px solid var(--kind);
+  padding-left: 8px;
+}
+
+.node-text-one {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+.member-part {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px 12px;
+  margin: 0 0 12px;
+}
+
+.member-part legend {
+  padding: 0 4px;
+  font-weight: 600;
+  font-size: 13px;
 }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Hint, TemplateHint } from "../components/bits.tsx";
 import type { Assistant } from "../types.ts";
-import type { LinkHandle, StepContent, StepNode } from "./graph.ts";
+import { FEWEST_MEMBERS, type LinkHandle, type MemberContent, MOST_MEMBERS, type StepContent, type StepNode } from "./graph.ts";
 import { KIND_LABEL } from "./nodes.tsx";
 
 interface Props {
@@ -14,18 +14,95 @@ interface Props {
   readonly onChange: (content: StepContent) => void;
   /** Returns a reason when the new id can't be used. */
   readonly onRename: (to: string) => string | null;
+  /** A together step's member renamed: returns a reason when the new id can't be used. */
+  readonly onRenameMember: (from: string, to: string) => string | null;
+  /** An id no step or member uses yet, for a together step's new member. */
+  readonly newMemberId: () => string;
   readonly onLink: (handle: LinkHandle, target: string | null) => void;
   readonly onRemove: () => void;
   readonly onOpenAssistants: () => void;
 }
 
-export function StepInspector({ node, stepIds, links, assistants, slices, onChange, onRename, onLink, onRemove, onOpenAssistants }: Props) {
+export function StepInspector({ node, stepIds, links, assistants, slices, onChange, onRename, onRenameMember, newMemberId, onLink, onRemove, onOpenAssistants }: Props) {
   const content = node.data;
 
   return (
     <div className="inspector-section">
       <p className="eyebrow">{KIND_LABEL[content.type]} step</p>
       <StepIdField key={node.id} id={node.id} onRename={onRename} />
+
+      {content.type === "together" && (
+        <>
+          <Hint>
+            These assistants work at the same time, each on its own part, and the run goes on once all of them have answered. None sees another's answer. Later steps read each one's as{" "}
+            <code>{`{{${content.members[0]?.id ?? "part"}.text}}`}</code>, and all of them, by name, as <code>{`{{${node.id}.text}}`}</code>.
+          </Hint>
+          {assistants.length === 0 && (
+            <div className="note note-soft">
+              <p>This flow has no assistants yet.</p>
+              <button type="button" className="btn btn-sm" onClick={onOpenAssistants}>
+                Add an assistant
+              </button>
+            </div>
+          )}
+          {content.members.map((member, index) => {
+            const change = (changed: MemberContent) => onChange({ ...content, members: content.members.map((other) => (other.id === member.id ? changed : other)) });
+            return (
+              <fieldset key={member.id} className="member-part">
+                <legend>Part {index + 1}</legend>
+                <StepIdField id={member.id} inputId={`member-id-${index}`} label="Its id" onRename={(to) => onRenameMember(member.id, to)} />
+                <div className="field">
+                  <label htmlFor={`member-agent-${index}`}>Assistant</label>
+                  <select id={`member-agent-${index}`} value={member.agent} onChange={(event) => change({ ...member, agent: event.target.value })}>
+                    {!assistants.some((assistant) => assistant.id === member.agent) && <option value={member.agent}>{member.agent ? `"${member.agent}" (not in this flow)` : "Pick one"}</option>}
+                    {assistants.map((assistant) => (
+                      <option key={assistant.id} value={assistant.id}>
+                        {assistant.name ? `${assistant.name} (${assistant.id})` : assistant.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor={`member-ask-${index}`}>Ask</label>
+                  <textarea id={`member-ask-${index}`} rows={3} value={member.ask} onChange={(event) => change({ ...member, ask: event.target.value })} />
+                </div>
+                <div className="field">
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={member.optional === true}
+                      onChange={(event) => {
+                        const { optional: _optional, ...rest } = member;
+                        change(event.target.checked ? { ...rest, optional: true } : rest);
+                      }}
+                    />
+                    The others go on if it can't answer
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost danger-text"
+                  disabled={content.members.length <= FEWEST_MEMBERS}
+                  title={content.members.length <= FEWEST_MEMBERS ? `A together step needs at least ${FEWEST_MEMBERS}` : undefined}
+                  onClick={() => onChange({ ...content, members: content.members.filter((other) => other.id !== member.id) })}
+                >
+                  Remove this part
+                </button>
+              </fieldset>
+            );
+          })}
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={content.members.length >= MOST_MEMBERS}
+            onClick={() => onChange({ ...content, members: [...content.members, { id: newMemberId(), agent: assistants[0]?.id ?? "", ask: "" }] })}
+          >
+            Add another part
+          </button>
+          <TemplateHint id="step-together-hint" />
+          <LinkSelect id="step-next" label="Then" value={links.next} options={stepIds} self={node.id} endLabel="End the run" onChange={(target) => onLink("next", target)} />
+        </>
+      )}
 
       {content.type === "agent" && (
         <>
@@ -127,9 +204,10 @@ export function StepInspector({ node, stepIds, links, assistants, slices, onChan
   );
 }
 
-function StepIdField({ id, onRename }: { readonly id: string; readonly onRename: (to: string) => string | null }) {
+function StepIdField({ id, onRename, inputId = "step-id", label = "Step id" }: { readonly id: string; readonly onRename: (to: string) => string | null; readonly inputId?: string; readonly label?: string }) {
   const [draft, setDraft] = useState(id);
   const [error, setError] = useState<string | null>(null);
+  const hintId = `${inputId}-hint`;
 
   const apply = () => {
     const next = draft.trim();
@@ -143,15 +221,15 @@ function StepIdField({ id, onRename }: { readonly id: string; readonly onRename:
 
   return (
     <div className="field">
-      <label htmlFor="step-id">Step id</label>
+      <label htmlFor={inputId}>{label}</label>
       <input
-        id="step-id"
+        id={inputId}
         className="mono"
         value={draft}
         autoComplete="off"
         spellCheck={false}
         aria-invalid={error ? true : undefined}
-        aria-describedby="step-id-hint"
+        aria-describedby={hintId}
         onChange={(event) => {
           setDraft(event.target.value);
           setError(null);
@@ -168,11 +246,11 @@ function StepIdField({ id, onRename }: { readonly id: string; readonly onRename:
         }}
       />
       {error ? (
-        <p className="error-text" id="step-id-hint" role="alert">
+        <p className="error-text" id={hintId} role="alert">
           {error}
         </p>
       ) : (
-        <Hint id="step-id-hint">
+        <Hint id={hintId}>
           Later steps read its answer as <code>{`{{${id}.text}}`}</code>. Renaming updates those references.
         </Hint>
       )}

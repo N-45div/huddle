@@ -11,12 +11,26 @@ import type { Assistant, Callers, Flow, Step, StepType, Trigger } from "../types
 /** The trigger's marker. Step ids can't start with "_", so this never clashes with one. */
 export const START_ID = "__start";
 
+/** One of a together step's assistants: its own id (later steps read {{id.text}}), who, and what it's asked. */
+export interface MemberContent {
+  readonly id: string;
+  readonly agent: string;
+  readonly ask: string;
+  /** The others carry on if this one can't answer. */
+  readonly optional?: boolean;
+}
+
+/** The most a together step asks at once (the flow format's limit), and the fewest it makes sense with. */
+export const MOST_MEMBERS = 8;
+export const FEWEST_MEMBERS = 2;
+
 export type StepContent =
   | { readonly type: "agent"; readonly agent: string; readonly ask: string }
   | { readonly type: "condition"; readonly if: string }
   /** `noFinishes`: a "no" with no link finishes the run as done (onNo: "end") instead of ending it as declined. */
   | { readonly type: "approval"; readonly message: string; readonly noFinishes?: boolean }
-  | { readonly type: "memory"; readonly slice: string; readonly note: string };
+  | { readonly type: "memory"; readonly slice: string; readonly note: string }
+  | { readonly type: "together"; readonly members: readonly MemberContent[] };
 
 export type StepNode = Node<StepContent, "step">;
 export type StartNode = Node<Record<string, never>, "start">;
@@ -96,10 +110,13 @@ export function contentOf(step: Step): StepContent {
       return step.onNo === "end" ? { type: "approval", message: step.message, noFinishes: true } : { type: "approval", message: step.message };
     case "memory":
       return { type: "memory", slice: step.slice, note: step.note };
+    case "together":
+      return { type: "together", members: step.steps.map((member) => ({ id: member.id, agent: member.agent, ask: member.ask, ...(member.optional ? { optional: true } : {}) })) };
   }
 }
 
-export function defaultContent(type: StepType, assistants: readonly Assistant[]): StepContent {
+/** A new step's content. `taken` holds the ids in use, so a together step's members get names of their own. */
+export function defaultContent(type: StepType, assistants: readonly Assistant[], taken: ReadonlySet<string> = new Set()): StepContent {
   switch (type) {
     case "agent":
       return { type, agent: assistants[0]?.id ?? "", ask: "" };
@@ -109,6 +126,15 @@ export function defaultContent(type: StepType, assistants: readonly Assistant[])
       return { type, message: "" };
     case "memory":
       return { type, slice: "", note: "" };
+    case "together": {
+      const names = new Set(taken);
+      const members = Array.from({ length: FEWEST_MEMBERS }, (_, index): MemberContent => {
+        const id = uniqueStepId("part", names);
+        names.add(id);
+        return { id, agent: assistants[index]?.id ?? assistants[0]?.id ?? "", ask: "" };
+      });
+      return { type, members };
+    }
   }
 }
 
@@ -123,7 +149,19 @@ export function isIncomplete(content: StepContent, assistants: readonly Assistan
       return !content.message.trim();
     case "memory":
       return !content.slice.trim() || !content.note.trim();
+    case "together":
+      return content.members.length < FEWEST_MEMBERS || content.members.some((member) => !member.ask.trim() || !assistants.some((assistant) => assistant.id === member.agent));
   }
+}
+
+/** Every id a canvas uses: its steps', and their members'. A new step or member needs one that isn't here. */
+export function idsInUse(nodes: readonly EditorNode[]): Set<string> {
+  const ids = new Set<string>();
+  for (const node of nodes) {
+    ids.add(node.id);
+    if (isStepNode(node) && node.data.type === "together") for (const member of node.data.members) ids.add(member.id);
+  }
+  return ids;
 }
 
 export function uniqueStepId(base: string, taken: ReadonlySet<string>): string {
@@ -340,6 +378,14 @@ export function graphToFlow(meta: Meta, nodes: readonly EditorNode[], edges: rea
       case "memory":
         steps.push({ id, type: "memory", slice: content.slice, note: content.note, next: to(id, "next") ?? "end" });
         break;
+      case "together":
+        steps.push({
+          id,
+          type: "together",
+          steps: content.members.map((member) => ({ id: member.id, agent: member.agent, ask: member.ask, ...(member.optional ? { optional: true } : {}) })),
+          next: to(id, "next") ?? "end",
+        });
+        break;
     }
   }
   const positions: Record<string, XYPosition> = {};
@@ -375,6 +421,8 @@ export function retargetContent(content: StepContent, from: string, to: string):
       return { ...content, message: retarget(content.message, from, to) };
     case "memory":
       return { ...content, note: retarget(content.note, from, to) };
+    case "together":
+      return { ...content, members: content.members.map((member) => ({ ...member, ask: retarget(member.ask, from, to) })) };
   }
 }
 

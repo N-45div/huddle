@@ -116,6 +116,41 @@ describe("who is on a run", () => {
     assert.equal(crew.children[0]!.error, "Couldn't help, so the team went on without it: connect ECONNREFUSED 127.0.0.1:18789");
   });
 
+  it("shows everyone at a together step as working at once, and each done as it answers", async () => {
+    const waits = new Map<string, (text: string) => void>();
+    const held: Connector = { send: (request) => new Promise((resolve) => waits.set(request.assistant.id, (text) => resolve({ text }))) };
+    const flow = parseFlow({
+      name: "Just ask",
+      assistants: [
+        { id: "claw", name: "OpenClaw", connector: "http", url: "http://claw.test" },
+        { id: "hermes", name: "Hermes", connector: "http", url: "http://hermes.test" },
+      ],
+      steps: [
+        {
+          id: "both",
+          type: "together",
+          steps: [
+            { id: "work", agent: "claw", ask: "Work." },
+            { id: "home", agent: "hermes", ask: "Home." },
+          ],
+        },
+      ],
+    });
+    const store = new Store();
+    const engine = new Engine(store, { http: held });
+    const runId = engine.launch(flow, "");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.deepEqual(crewOf(detailOf(store, engine, runId)).children.map((node) => [node.name, node.status]), [["OpenClaw", "running"], ["Hermes", "running"]]);
+    waits.get("hermes")!("Saturday: Nandi Hills.");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.deepEqual(crewOf(detailOf(store, engine, runId)).children.map((node) => [node.name, node.status]), [["OpenClaw", "running"], ["Hermes", "done"]]);
+    waits.get("claw")!("Three deadlines.");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const done = crewOf(detailOf(store, engine, runId));
+    assert.equal(done.status, "done");
+    assert.deepEqual(done.children.map((node) => [node.name, node.status]), [["OpenClaw", "done"], ["Hermes", "done"]]);
+  });
+
   it("names models the way people say them, and times the way a card shows them", () => {
     assert.equal(modelName("nvidia/nemotron-3-super-120b-a12b"), "Nemotron 3 Super");
     assert.equal(modelName("nvidia/Nemotron-3_5-Lightning"), "Nemotron 3.5 Lightning");
