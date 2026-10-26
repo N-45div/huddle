@@ -25,10 +25,11 @@ export interface Choices {
   readonly assistants: readonly Assistant[];
 }
 
-/** One assistant's job in a team's plan. */
+/** One assistant's job in a team's plan; `doing`, that job in a few words for the person to hear. */
 export interface Part {
   readonly assistant: string;
   readonly ask: string;
+  readonly doing?: string;
 }
 
 /**
@@ -59,14 +60,19 @@ Answer with JSON only, one of:
   when one of their saved flows already does what they asked.
 {"use": "one", "id": "<an assistant's id>", "say": ""}
   when one assistant can do all of it alone. Most questions are this.
-{"use": "team", "say": "...", "steps": [{"assistant": "<id>", "ask": "..."}, {"approve": "..."}, ...]}
-  when it needs two or more of their assistants, each doing the part it's best at.
-  Each "ask" gives that assistant its part in a sentence, said to them ("List the person's work commitments for next week."). Each one also sees what the person said and what the ones before it came back with.
-  Parts that don't need each other's answers go in one {"together": [{"assistant": "<id>", "ask": "..."}, {"assistant": "<id>", "ask": "..."}]}: they work at the same time, so the person hears back sooner. Keep a part after the others only when it needs what they came back with.
-  Put {"approve": "the question, e.g. Send this list to your team?"} right before any step that sends a message, spends money, books something or changes something hard to undo; the person answers yes or no on the button.
-  At most ${MOST_TURNS} assistants' parts in all, counting each one in a "together". The last one tells the person what was done.
+{"use": "team", "say": "...", "steps": [...]}
+  when it needs two or more of their assistants, each doing the part it's best at. "steps" lists the parts in order, numbered from 1; each is one of:
+  {"assistant": "<id>", "ask": "...", "doing": "...", "needs": [<the numbers of earlier steps whose answers this job uses>]}
+    one assistant's job. "ask" gives it its part in a sentence, said to it ("List the person's work commitments for next week."). "doing" says that job in a few words, about it, for the person to hear ("pulls your work for next week"). "needs" is [] when it uses nothing another job finds out. Jobs that don't need each other work at the same time, so the person hears back sooner.
+  {"approve": "the question, e.g. Send this list to your team?"}
+    right before any job that sends a message, spends money, books something or changes something hard to undo; the person answers yes or no on the button.
+  At most ${MOST_TURNS} assistants' jobs in all.
+  For example:
+    "Plan my work week and find something fun for Saturday": the outing doesn't use the work plan, so both jobs have "needs": [].
+    "Find a dinner place for Friday and invite my team to it": the invitation uses the place, so it has "needs": [1].
+    "Check Saturday's weather and plan a picnic around it": the picnic uses the weather, so it has "needs": [1].
 
-"say" is one short sentence Hud says out loud at once, before the work starts. For a team: who does what, by name ("OpenClaw pulls your work for next week while Hermes finds what's on at home."). For a flow: what it'll do. For one assistant: "".
+"say" is one short sentence Hud says out loud at once, before the work starts. For a flow: what it'll do. For a team: who does what, by name ("OpenClaw pulls your work for next week while Hermes finds what's on at home."). For one assistant: "".
 Use only the ids listed below; never make up an assistant or a flow.`;
 
 const described = (name: string, about: string | undefined) => (about?.trim() ? `${name}: ${about.trim()}` : name);
@@ -160,6 +166,27 @@ export function teamFlow(said: string, planned: readonly TeamStep[], saved: read
   return checked.flow;
 }
 
+/**
+ * What Hud says a team will do, from the plan as it will run: each by name with what it's doing, "while" for those
+ * at the same time and "then" for one that waits ("OpenClaw pulls your week while Hermes finds Saturday, then
+ * Writer drafts the invite."). Null when a job doesn't say what it's doing: the model's own sentence stands.
+ */
+export function planSaid(parts: readonly TeamStep[], assistants: readonly Assistant[]): string | null {
+  const name = (id: string) => assistants.find((assistant) => assistant.id === id)?.name ?? id;
+  const clause = (part: Part) => (part.doing ? `${name(part.assistant)} ${part.doing.replace(/[.!]+$/, "")}` : null);
+  const groups: string[] = [];
+  for (const part of parts) {
+    if ("approve" in part) continue;
+    const clauses = ("together" in part ? part.together : [part]).map(clause);
+    if (clauses.some((said) => said === null)) return null;
+    const all = clauses as string[];
+    groups.push(all.length === 2 ? `${all[0]} while ${all[1]}` : all.length > 2 ? `${all.slice(0, -1).join(", ")} and ${all.at(-1)}, all at once` : all[0]!);
+  }
+  if (!groups.length) return null;
+  const sentence = groups.join(", then ");
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+}
+
 /** The model's answer as a plan, if it is one, and only over what was listed. */
 export function planFrom(answer: unknown, said: string, choices: Choices, wrapUp?: Assistant): Plan {
   if (!answer || typeof answer !== "object") throw new Error("The model didn't answer with a plan.");
@@ -169,25 +196,46 @@ export function planFrom(answer: unknown, said: string, choices: Choices, wrapUp
   if (use === "one" && typeof id === "string" && choices.assistants.some((assistant) => assistant.id === id)) return { use: "one", assistant: id, say: "" };
   if (use === "team" && Array.isArray(steps)) {
     const partOf = (value: unknown): Part | null => {
-      const { assistant, ask } = (value ?? {}) as { assistant?: unknown; ask?: unknown };
-      return typeof assistant === "string" && typeof ask === "string" && ask.trim() ? { assistant, ask: ask.trim() } : null;
+      const { assistant, ask, doing } = (value ?? {}) as { assistant?: unknown; ask?: unknown; doing?: unknown };
+      if (typeof assistant !== "string" || typeof ask !== "string" || !ask.trim()) return null;
+      return typeof doing === "string" && doing.trim() ? { assistant, ask: ask.trim(), doing: doing.trim() } : { assistant, ask: ask.trim() };
     };
-    const parts = steps.flatMap((step): TeamStep[] => {
-      const { approve, together } = (step ?? {}) as { approve?: unknown; together?: unknown };
+    // Jobs that don't use each other's answers go together, so they work at the same time; one that uses the
+    // answer of a job in the group (or doesn't say what it uses) waits for that group.
+    const parts: TeamStep[] = [];
+    let group: { readonly part: Part; readonly number: number }[] = [];
+    const close = () => {
+      if (group.length > 1) parts.push({ together: group.map((job) => job.part) });
+      else if (group.length === 1) parts.push(group[0]!.part);
+      group = [];
+    };
+    steps.forEach((step, index) => {
+      const { approve, together, needs } = (step ?? {}) as { approve?: unknown; together?: unknown; needs?: unknown };
       if (Array.isArray(together)) {
+        close();
         const members = together.flatMap((member) => partOf(member) ?? []);
         // One left on its own is just a part, done in order.
-        return members.length > 1 ? [{ together: members }] : members;
+        parts.push(...(members.length > 1 ? [{ together: members }] : members));
+        return;
       }
       const part = partOf(step);
-      if (part) return [part];
-      if (typeof approve === "string" && approve.trim()) return [{ approve: approve.trim() }];
-      return [];
+      if (part) {
+        const uses = Array.isArray(needs) ? needs.filter((number): number is number => typeof number === "number") : null;
+        if (uses === null || uses.some((number) => group.some((job) => job.number === number))) close();
+        group.push({ part, number: index + 1 });
+        return;
+      }
+      if (typeof approve === "string" && approve.trim()) {
+        close();
+        parts.push({ approve: approve.trim() });
+      }
     });
+    close();
     const turns = parts.flatMap((part) => ("together" in part ? part.together : "assistant" in part ? [part] : []));
     // A "team" of one, with nothing to approve, is one assistant: the router answers it, quicker.
     if (turns.length === 1 && parts.length === 1) return { use: "one", assistant: turns[0]!.assistant, say: "" };
-    return { use: "team", say: spoken, flow: teamFlow(said, parts, choices.assistants, wrapUp) };
+    const flow = teamFlow(said, parts, choices.assistants, wrapUp);
+    return { use: "team", say: planSaid(parts, choices.assistants) ?? spoken, flow };
   }
   throw new Error(`The model's plan doesn't fit what you have: ${JSON.stringify(answer).slice(0, 200)}`);
 }
@@ -195,7 +243,7 @@ export function planFrom(answer: unknown, said: string, choices: Choices, wrapUp
 export function planner(options: PlannerOptions): Planner {
   const fetcher = options.fetcher ?? globalThis.fetch;
   const endpoint = /\/chat\/completions\/?$/.test(options.url) ? options.url : `${options.url.replace(/\/$/, "")}/chat/completions`;
-  return async (said, choices) => {
+  const ask = async (said: string, choices: Choices): Promise<Plan> => {
     const response = await fetcher(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json", ...(options.key ? { authorization: `Bearer ${options.key}` } : {}) },
@@ -218,10 +266,26 @@ export function planner(options: PlannerOptions): Planner {
       throw new Error(`The model said: ${options.key ? why.replaceAll(options.key, "[key]") : why}`);
     }
     const content = body?.choices?.[0]?.message?.content;
-    if (typeof content !== "string" || !content.trim()) throw new Error("The model sent an empty answer.");
-    return planFrom(jsonIn(content), said, choices, options.wrapUp);
+    if (typeof content !== "string" || !content.trim()) throw new UnreadPlan("The model sent an empty answer.");
+    try {
+      return planFrom(jsonIn(content), said, choices, options.wrapUp);
+    } catch (error) {
+      throw new UnreadPlan(error instanceof Error ? error.message : String(error));
+    }
+  };
+  // Now and then the model's answer doesn't come back as a plan that fits: it's asked once more before giving up.
+  return async (said, choices) => {
+    try {
+      return await ask(said, choices);
+    } catch (error) {
+      if (!(error instanceof UnreadPlan)) throw error;
+      return ask(said, choices);
+    }
   };
 }
+
+/** The model answered, but not with a plan Huddle could read. */
+class UnreadPlan extends Error {}
 
 /** What Just ask did with something said. */
 export interface Asked {

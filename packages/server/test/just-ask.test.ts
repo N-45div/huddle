@@ -124,6 +124,40 @@ describe("Just ask", () => {
     const parts = Array.from({ length: 5 }, () => ({ assistant: "claw", ask: "x" }));
     assert.throws(() => planFrom({ use: "team", steps: [{ together: parts }] }, SAID, CHOICES, HUD), /at most 4/);
   });
+
+  it("puts jobs side by side from what each needs, and says the plan as it will run, names and all", () => {
+    const shape = (plan: ReturnType<typeof planFrom>) =>
+      plan.use === "team" ? plan.flow.steps.map((step) => (step.type === "together" ? `together(${step.steps.map((member) => member.agent).join(",")})` : step.type === "agent" ? step.agent : step.type)) : [plan.use];
+    // Neither needs the other: at the same time, and said with "while".
+    const apart = planFrom({ use: "team", say: "ignored", steps: [{ assistant: "claw", ask: "Work.", doing: "pulls your week", needs: [] }, { assistant: "hermes", ask: "Home.", doing: "finds Saturday.", needs: [] }] }, SAID, CHOICES, HUD);
+    assert.deepEqual(shape(apart), ["together(claw,hermes)", "hud"]);
+    assert.equal(apart.say, "OpenClaw pulls your week while Hermes finds Saturday.");
+    // The second uses the first's answer: it waits, and it's said with "then".
+    const after = planFrom({ use: "team", steps: [{ assistant: "hermes", ask: "Find a place.", doing: "finds a place", needs: [] }, { assistant: "claw", ask: "Invite them.", doing: "invites the team", needs: [1] }] }, SAID, CHOICES, HUD);
+    assert.deepEqual(shape(after), ["hermes", "claw", "hud"]);
+    assert.equal(after.say, "Hermes finds a place, then OpenClaw invites the team.");
+    // Two that use the first's answer work at the same time after it; one that doesn't say what it needs waits.
+    const fan = planFrom({ use: "team", steps: [{ assistant: "claw", ask: "a", needs: [] }, { assistant: "hermes", ask: "b", needs: [1] }, { assistant: "claw", ask: "c", needs: [1] }] }, SAID, CHOICES, HUD);
+    assert.deepEqual(shape(fan), ["claw", "together(hermes,claw)", "hud"]);
+    const unsaid = planFrom({ use: "team", steps: [{ assistant: "claw", ask: "a" }, { assistant: "hermes", ask: "b" }] }, SAID, CHOICES, HUD);
+    assert.deepEqual(shape(unsaid), ["claw", "hermes", "hud"]);
+    // A question for you ends a group; without every job's few words, the model's own sentence is said.
+    const asked = planFrom({ use: "team", say: "Their sentence.", steps: [{ assistant: "claw", ask: "a", needs: [] }, { approve: "Go on?" }, { assistant: "hermes", ask: "b", needs: [] }] }, SAID, CHOICES, HUD);
+    assert.deepEqual(shape(asked), ["claw", "approval", "hermes", "hud"]);
+    assert.equal(asked.say, "Their sentence.");
+  });
+
+  it("asks the model once more when its answer isn't a plan it can read, and only then", async () => {
+    let calls = 0;
+    const answers = ['{"use": "team", "steps": [{"assistant"', '{"use": "one", "id": "claw", "say": ""}'];
+    const fetcher = (async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ choices: [{ message: { content: answers.shift() ?? "" } }] }));
+    }) as typeof fetch;
+    const plan = await planner({ url: "https://api.tokenfactory.nebius.com/v1", model: "m", fetcher })(SAID, CHOICES);
+    assert.deepEqual(plan, { use: "one", assistant: "claw", say: "" });
+    assert.equal(calls, 2);
+  });
 });
 
 const HUD = parseFlow({ name: "h", assistants: [{ id: "hud", name: "Hud", connector: "mock", replies: { "*": "OpenClaw has three deadlines; Hermes says groceries on Saturday." } }], steps: [{ id: "a", type: "agent", agent: "hud", ask: "x" }] }).assistants[0]!;
