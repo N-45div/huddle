@@ -30,6 +30,7 @@ import { FlowPanel } from "./FlowPanel.tsx";
 import {
   defaultContent,
   type EditorNode,
+  extraHeight,
   flowToGraph,
   type Graph,
   graphToFlow,
@@ -353,7 +354,7 @@ function Editor({ flowId, openDescribe, openRun }: { readonly flowId: string; re
   };
 
   const tidy = () => {
-    const positions = layoutSteps(stepIds, edges);
+    const positions = layoutSteps(stepIds, edges, Object.fromEntries(stepNodes.map((node) => [node.id, extraHeight(node.data)])));
     const first = firstStep ?? stepIds[0];
     setNodes((current) => current.map((node) => (node.type === "start" ? { ...node, position: startPosition(first ? positions[first] : undefined) } : { ...node, position: positions[node.id] ?? node.position })));
     refit();

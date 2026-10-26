@@ -172,12 +172,18 @@ export function uniqueStepId(base: string, taken: ReadonlySet<string>): string {
   }
 }
 
+/** How much taller than a plain step a step's node stands: a together step grows with its members. */
+export function extraHeight(content: StepContent): number {
+  return content.type === "together" ? Math.max(0, 48 * content.members.length - 40) : 0;
+}
+
 /**
  * Lays steps out top to bottom from the first one. Each step sits a row below every step that leads to
  * it (links that loop back up are left out of that), and where a step splits two ways its "yes" goes
- * left and its "no" right, so links don't run behind other steps.
+ * left and its "no" right, so links don't run behind other steps. A row with a taller step in it (`extra`,
+ * pixels by step id) leaves that much more room below.
  */
-export function layoutSteps(stepIds: readonly string[], edges: readonly Edge[]): Record<string, XYPosition> {
+export function layoutSteps(stepIds: readonly string[], edges: readonly Edge[], extra: Readonly<Record<string, number>> = {}): Record<string, XYPosition> {
   const valid = new Set(stepIds);
   const first = linkTarget(edges, START_ID, "next");
   const children = new Map<string, { readonly id: string; readonly handle: LinkHandle }[]>();
@@ -227,6 +233,13 @@ export function layoutSteps(stepIds: readonly string[], edges: readonly Edge[]):
   // Steps that land on the same spot in a row are pushed apart.
   const rows = new Map<number, string[]>();
   for (const id of stepIds) rows.set(row.get(id) ?? 0, [...(rows.get(row.get(id) ?? 0) ?? []), id]);
+  // Each row's top: a row's height, plus whatever its tallest step needs.
+  const tops: number[] = [];
+  let top = ROW;
+  for (let index = 0; index <= Math.max(0, ...rows.keys()); index += 1) {
+    tops[index] = top;
+    top += ROW + Math.max(0, ...(rows.get(index) ?? []).map((id) => extra[id] ?? 0));
+  }
   const positions: Record<string, XYPosition> = {};
   for (const [index, ids] of rows) {
     const sorted = [...ids].sort((a, b) => (column.get(a) ?? 0) - (column.get(b) ?? 0));
@@ -234,16 +247,16 @@ export function layoutSteps(stepIds: readonly string[], edges: readonly Edge[]):
     for (const id of sorted) {
       const x = Math.max((column.get(id) ?? 0) * COLUMN, last + COLUMN);
       last = x;
-      positions[id] = { x: Math.round(x - NODE_WIDTH / 2), y: ROW * (index + 1) };
+      positions[id] = { x: Math.round(x - NODE_WIDTH / 2), y: tops[index] ?? ROW * (index + 1) };
     }
   }
   return positions;
 }
 
 /** Saved positions where there are some; any step without one goes in a column to the right. */
-function placeSteps(stepIds: readonly string[], edges: readonly Edge[], saved: Readonly<Record<string, XYPosition>>): Record<string, XYPosition> {
+function placeSteps(stepIds: readonly string[], edges: readonly Edge[], saved: Readonly<Record<string, XYPosition>>, extra: Readonly<Record<string, number>>): Record<string, XYPosition> {
   const known = stepIds.filter((id) => saved[id]);
-  if (known.length === 0) return layoutSteps(stepIds, edges);
+  if (known.length === 0) return layoutSteps(stepIds, edges, extra);
   const positions: Record<string, XYPosition> = {};
   let maxX = -Infinity;
   let minY = Infinity;
@@ -304,6 +317,7 @@ export function flowToGraph(flow: Flow): Graph {
     steps.map((step) => step.id),
     edges,
     flow.ui?.positions ?? {},
+    Object.fromEntries(steps.map((step) => [step.id, extraHeight(contentOf(step))])),
   );
   const start: StartNode = { id: START_ID, type: "start", position: startPosition(first ? positions[first] : undefined), data: {}, deletable: false };
   const nodes: EditorNode[] = [start, ...steps.map((step): StepNode => ({ id: step.id, type: "step", position: positions[step.id] ?? { x: 0, y: 0 }, data: contentOf(step) }))];
