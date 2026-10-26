@@ -953,6 +953,11 @@ which keys your server still needs. **Use this** opens it on its Run tab with a 
 Or make a flow yourself (with a model set up, press **Describe it**) and press **Run**. Runs that stop
 for an approval wait in **Approvals**; what your assistants suggest remembering waits in **Memory**.
 
+A new Huddle with keys set starts with a small crew on the **Assistants** page, so Just ask has someone to
+hand work to straight away: *Quick answers*, *Writer* and *Planner* on Nemotron (`NEBIUS_API_KEY`), *Web
+search* (`TAVILY_API_KEY`) and *Reader* (`CONTEXT_DEV_API_KEY`). It's added once: change or remove them
+as you like, and they stay that way.
+
 ### With Docker
 
 ```bash

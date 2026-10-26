@@ -11,6 +11,7 @@ import { deviceRoutes, guardUpgrades } from "./devices.ts";
 import { monidCatalog } from "./monid.ts";
 import { SandboxWatcher } from "./sandbox-requests.ts";
 import { Scheduler } from "./scheduler.ts";
+import { addStarters, starterCrew } from "./starters.ts";
 import { webApp } from "./static.ts";
 
 /**
@@ -105,6 +106,8 @@ const publicUrl = (env("HUDDLE_PUBLIC_URL") ?? env("RENDER_EXTERNAL_URL") ?? `ht
 const store = new Store(env("HUDDLE_DB") ?? "huddle.db");
 const interrupted = store.failInterrupted();
 if (interrupted) console.log(`[huddle] ${interrupted} run(s) were cut off when Huddle last stopped; marked failed.`);
+// A fresh Huddle with keys gets a crew to start with, once, so Just ask and the button have someone to ask.
+const starters = addStarters(store, starterCrew(process.env));
 let shell: OpenShell | null;
 try {
   shell = OpenShell.fromEnv();
@@ -225,6 +228,7 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   scheduler.start();
   sandboxes?.start();
   console.log(`Huddle ${version} is on ${publicUrl}${token ? " (token required)" : ""}`);
+  if (starters.length) console.log(`  A crew to start with, on the Assistants page: ${starters.map((assistant) => assistant.name ?? assistant.id).join(", ")}`);
   console.log(`  A2A Agent Card: ${publicUrl}/.well-known/agent-card.json`);
   console.log(`  MCP server (Claude, Cursor, any MCP client): ${publicUrl}/mcp`);
   console.log(`  Router (OpenAI-compatible): ${publicUrl}/v1, model = one of your assistants' ids, or "auto" (${judge ? `judged by ${judge.name}` : "no judge: your list's order"})`);
