@@ -16,10 +16,11 @@ assistant, on 24 everyday asks (8 quick ones, 8 messages to write, 8 plans), on 
 - **Everyday asks cost 89% less** (quick and writing together: $0.0017 against $0.0149, 9 times less),
   and writing was faster too. Plans go to Ultra either way, so the total saving is 15%: what you save
   depends on how much of your day is quick asks and messages rather than plans.
-- **Quality, graded blind by Nemotron Super** (the two answers in random order, unlabelled; the model that
-  wrote one of them never grades): writing, auto better on 5 of 8; quick asks, the big model better on 4 of
-  8, tied on 3; plans, 4 each. Plans are the control: both sides are the same Ultra, so a 4–4 split is the
-  grader's own noise. Read the quick-ask result as a small cost in quality for a 95% saving.
+- **Quality, graded blind by Nemotron Super** (the two answers in random order, unlabelled): quick asks,
+  the big model better on 4 of 8, tied on 3; plans, 4 each. Plans are the control: both sides are the same
+  Ultra, so a 4–4 split is the grader's own noise. Read the quick-ask result as a small cost in quality for
+  a 95% saving. Writing came out auto better on 5 of 8, but auto's writing is Super's own, so there Super
+  graded itself: don't read much into that one.
 
 ## Run it yourself
 

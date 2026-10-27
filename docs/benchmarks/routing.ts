@@ -6,9 +6,9 @@
  *             Super (writing) or Ultra with thinking (plans). The judge's own call is counted in its cost.
  *   best      every ask to the best assistant, Ultra with thinking: "just use the biggest model".
  *
- * Nemotron Super then grades each pair blind (the two answers in a random order, which one is which hidden),
- * so the model that wrote one of them never judges itself. Costs are Token Factory's listed prices on the
- * tokens each call reports.
+ * Nemotron Super then grades each pair blind (the two answers in a random order, which one is which hidden).
+ * For writing, auto's answer is Super's own, so that verdict is self-graded. Costs are Token Factory's listed
+ * prices on the tokens each call reports.
  *
  *   NEBIUS_API_KEY=... node --no-warnings docs/benchmarks/routing.ts
  *

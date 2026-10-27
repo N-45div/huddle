@@ -399,7 +399,7 @@ from a sentence, using the assistants you've saved. On the button, Nemotron 3.5 
 Nemotron 3.5 Super VL looks at its photos.
 
 Does letting Nemotron pick the size pay? On 24 everyday asks it sent every one to the right size, and quick
-asks and messages cost 89% less than sending everything to Ultra, with writing graded better 5 times in 8
+asks and messages cost 89% less than sending everything to Ultra
 ([the benchmark, and how to rerun it](docs/benchmarks/routing.md)).
 
 **Photos.** A run can start with up to four photos (attach them on the Run tab, or `"images"` in
