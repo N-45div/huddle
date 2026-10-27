@@ -753,8 +753,8 @@ openshell sandbox create --name hermes-nemotron --from huddle/hermes-sandbox:loc
 The profile lets only `curl` call Token Factory, so the first time Hermes asks (with
 [`flow-nemotron.json`](examples/openshell-hermes/flow-nemotron.json)), OpenShell blocks its Python and
 drafts the rule; Huddle shows it in Approvals, flagged because it would let Hermes use the key. Tested with
-OpenShell 0.1.2 and Hermes Agent 0.22.2: Hermes also asked for `models.dev:443`, which we denied in Huddle,
-and it still answered from Nemotron, in 8 seconds, with the memory its slice allows.
+OpenShell 0.1.2 and Hermes Agent 0.22.2: Hermes also asked for `models.dev:443`, and with that denied in
+Huddle it still answered from Nemotron, in 8 seconds, with the memory its slice allows.
 
 ## The router: one API to every assistant you run
 

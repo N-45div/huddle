@@ -1,7 +1,7 @@
 # Does letting Nemotron pick the size pay?
 
 Huddle's router can send each ask to the assistant that fits it, judged by NVIDIA Nemotron 3.5 Lightning on
-Nebius Token Factory. We measured that against the obvious alternative, sending everything to your best
+Nebius Token Factory. This measures that against the obvious alternative, sending everything to your best
 assistant, on 24 everyday asks (8 quick ones, 8 messages to write, 8 plans), on 16 October 2026.
 
 | | Auto (Nemotron picks) | Always the best (Ultra, thinking) |
