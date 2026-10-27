@@ -52,6 +52,30 @@ export function writeToken(token: string): void {
 
 let memoryToken = readToken();
 
+/**
+ * The token a link carries, for sharing a Huddle with someone: `https://your-huddle/#token=...`. Undefined when
+ * the link has none. After the #, it's never sent to the server, so it stays out of request logs.
+ */
+export function linkToken(hash: string): string | undefined {
+  const match = /^#token=([^&]*)/.exec(hash);
+  if (!match) return undefined;
+  try {
+    return decodeURIComponent(match[1]!).trim();
+  } catch {
+    return "";
+  }
+}
+
+// Before the router reads the address: a token from the link is kept like a typed one, then taken out of the
+// address bar, so it isn't passed on with a copied address.
+if (typeof window !== "undefined") {
+  const token = linkToken(window.location.hash);
+  if (token !== undefined) {
+    if (token) writeToken(token);
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  }
+}
+
 /** A call that didn't work, in words a person can read. `problems` lists what's wrong with a flow. */
 export class ApiFailure extends Error {
   readonly status: number;
