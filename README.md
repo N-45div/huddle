@@ -228,6 +228,41 @@ questions, this engine scored 89.2% on LongMemEval. That number is Sochen's: Hud
 but not the reader, stems words with SQLite's Porter stemmer rather than Postgres', and hasn't been
 benchmarked yet.
 
+## NVIDIA Nemotron on Nebius Token Factory
+
+With `NEBIUS_API_KEY` set, everything Huddle thinks for itself runs on NVIDIA Nemotron through
+[Nebius Token Factory](https://tokenfactory.nebius.com), each job on the size it needs:
+
+| Model | What it does in Huddle |
+|---|---|
+| Nemotron 3.5 Lightning (`nvidia/Nemotron-3_5-Lightning`) | routes each ask to the assistant that fits (`"auto"`), lists the facts an approval should check, picks how an answer is shown, and, as Hud, sums up a Just ask team |
+| Nemotron 3 Super (`nvidia/nemotron-3-super-120b-a12b`) | plans Just ask, weighs the sources in a fact check, fills in tables and charts, tidies memory and learns from what you say |
+| Nemotron 3 Ultra (`nvidia/Nemotron-3-Ultra-550b-a55b`), thinking on | drafts whole flows from a sentence ("describe it") |
+| Nemotron 3.5 Super VL (`nvidia/Nemotron-3.5-Super-VL`) | reads photos, like a bill from the button's camera |
+
+Token Factory is what makes several model calls per request practical:
+
+- **One key, every size.** The API is OpenAI-compatible, so a job moves to another size by changing one
+  model name, with no GPU to run. Hermes can run on Nemotron through it too
+  ([`hermes-config.yaml`](examples/openshell-hermes/hermes-config.yaml)).
+- **Live prices.** Huddle reads Token Factory's public catalog (`/api/public/models_info`) when it starts,
+  so the router knows what each size costs. On 24 everyday asks it sent every one to the right size, and
+  quick asks and messages cost 89% less than sending everything to Ultra
+  ([the benchmark](docs/benchmarks/routing.md)).
+- **Thinking only where it pays.** Nemotron thinks first unless told not to. Huddle sets
+  `chat_template_kwargs.enable_thinking`, so a routing call takes 0.4 s and 16 tokens instead of 5.8 s
+  and 1,344.
+- **A cap on its own calls.** Every call Huddle makes for itself goes through one meter, held to
+  `HUDDLE_BUDGET` and `HUDDLE_OWN_CALLS_PER_MINUTE`.
+
+Huddle uses Token Factory only. None of its Nemotron calls needs a GPU of your own, so there's nothing to
+run on Nebius AI Cloud. Two other NVIDIA open-source tools are part of it:
+
+- [OpenShell](#sandboxed-assistants-with-nvidia-openshell) sandboxes agents, with a provider profile that
+  binds `NEBIUS_API_KEY` to Token Factory alone;
+- on [the Huddle button](#the-huddle-button), Nemotron 3.5 ASR and Magpie TTS hear and speak on your own
+  machine, through NVIDIA NeMo-Speech.cpp.
+
 ## Connectors
 
 | Connector | Reaches | Status |
