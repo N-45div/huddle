@@ -1026,8 +1026,10 @@ docker compose up -d   # http://localhost:7700, data in the huddle-data volume
 `render.yaml` is a Render Blueprint: in Render, **New > Blueprint** and pick your copy of this repository.
 It builds the Dockerfile on a Starter instance with a 1 GB disk, asks for your Nebius, Tavily and
 context.dev keys, makes `HUDDLE_TOKEN` for you, and caps what Huddle spends at $2 a day. The canvas asks
-for the token: find it under the service's **Environment**. There's no voice there (NeMo-Speech runs on
-your own machine), so the Devices page's virtual button reads answers with your browser's voice.
+for the token: find it under the service's **Environment**. To let someone in without that step, send them
+`https://<your service>.onrender.com/#token=<the token>`: the canvas keeps the token in their browser and
+takes it out of the address. There's no voice there (NeMo-Speech runs on your own machine), so the Devices
+page's virtual button reads answers with your browser's voice.
 
 ### Settings
 
