@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["packages/core/src", "packages/core/test", "packages/server/src", "packages/server/test", "packages/web/test"]
+  "include": ["packages/core/src", "packages/core/test", "packages/server/src", "packages/server/test", "packages/shop/src", "packages/shop/test", "packages/web/test"]
 }

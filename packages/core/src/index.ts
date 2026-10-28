@@ -75,6 +75,7 @@ export {
   boardKey,
   expired,
   fingerprint,
+  keyText,
   type LinkRequest,
   MAX_ITEMS,
   MAX_SIGNABLE,

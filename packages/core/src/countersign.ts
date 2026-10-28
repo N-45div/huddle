@@ -171,6 +171,12 @@ export function boardKey(raw: string): KeyObject {
   }
 }
 
+/** A board's key written the one way: base64url has spare bits at its end, so one key could be written a few ways. */
+export function keyText(raw: string): string {
+  boardKey(raw);
+  return Buffer.from(raw, "base64url").toString("base64url");
+}
+
 /**
  * A key's fingerprint, the same on the board's screen and in the canvas so you can see they match: the first
  * 8 bytes of the SHA-256 of the raw key, in hex, in fours ("1A2B 3C4D 5E6F 7A8B").

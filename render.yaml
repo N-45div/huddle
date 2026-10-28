@@ -28,3 +28,12 @@ services:
         sync: false
       - key: CONTEXT_DEV_API_KEY
         sync: false
+      # Bean & Leaf, the demo shop at /shop: a PayPal sandbox app, the webhook's id, and a token for the shop's own pages.
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: SHOP_ADMIN_TOKEN
+        generateValue: true

@@ -6,6 +6,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/core/package.json packages/core/
 COPY packages/server/package.json packages/server/
+COPY packages/shop/package.json packages/shop/
 COPY packages/web/package.json packages/web/
 RUN npm ci
 COPY packages packages
@@ -20,10 +21,13 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/core/package.json packages/core/
 COPY packages/server/package.json packages/server/
+COPY packages/shop/package.json packages/shop/
 COPY packages/web/package.json packages/web/
 RUN npm ci --omit=dev && npm cache clean --force
 COPY packages/core/src packages/core/src
 COPY packages/server/src packages/server/src
+COPY packages/shop/src packages/shop/src
+COPY packages/shop/catalog.json packages/shop/
 COPY --from=build /app/packages/web/dist packages/web/dist
 COPY examples examples
 COPY --chmod=755 entrypoint.sh /usr/local/bin/huddle-entrypoint

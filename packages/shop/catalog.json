@@ -1,0 +1,21 @@
+{
+  "name": "Bean & Leaf",
+  "about": "Coffee, tea and the things you brew them with. A demo shop in PayPal's sandbox: it sells to your assistants, and charges your PayPal only for carts your board signed.",
+  "currency": "USD",
+  "products": [
+    { "sku": "beans-house", "name": "House blend beans, 1 lb", "price": "12.00", "tags": ["coffee", "beans", "whole bean", "medium roast", "everyday"] },
+    { "sku": "beans-ethiopia", "name": "Ethiopia Yirgacheffe beans, 12 oz", "price": "16.50", "tags": ["coffee", "beans", "single origin", "light roast", "fruity"] },
+    { "sku": "beans-decaf", "name": "Swiss water decaf beans, 12 oz", "price": "14.00", "tags": ["coffee", "beans", "decaf", "medium roast"] },
+    { "sku": "ground-espresso", "name": "Espresso roast, ground, 12 oz", "price": "13.00", "tags": ["coffee", "ground", "espresso", "dark roast"] },
+    { "sku": "cold-brew", "name": "Cold brew concentrate, 32 oz", "price": "11.00", "tags": ["coffee", "cold brew", "iced", "ready to drink"] },
+    { "sku": "tea-sencha", "name": "Sencha green tea, 50 g", "price": "9.00", "tags": ["tea", "green tea", "loose leaf", "japanese"] },
+    { "sku": "tea-chai", "name": "Masala chai blend, 100 g", "price": "8.00", "tags": ["tea", "chai", "spiced", "black tea", "loose leaf"] },
+    { "sku": "tea-chamomile", "name": "Chamomile flowers, 40 g", "price": "7.50", "tags": ["tea", "herbal", "caffeine free", "sleep", "calm"] },
+    { "sku": "oat-milk", "name": "Barista oat milk, 1 l", "price": "4.50", "tags": ["milk", "oat", "dairy free", "latte"] },
+    { "sku": "filters", "name": "Paper filters, 100", "price": "8.50", "tags": ["filters", "pour over", "brewing", "paper"] },
+    { "sku": "mug", "name": "Stoneware mug", "price": "14.00", "tags": ["mug", "cup", "gift", "ceramic"] },
+    { "sku": "grinder", "name": "Hand burr grinder", "price": "49.00", "tags": ["grinder", "burr", "brewing", "gear"] },
+    { "sku": "kettle", "name": "Gooseneck kettle", "price": "39.00", "tags": ["kettle", "pour over", "brewing", "gear"] },
+    { "sku": "gift-200", "name": "Gift card, $200", "price": "200.00", "tags": ["gift card", "gift", "voucher"] }
+  ]
+}

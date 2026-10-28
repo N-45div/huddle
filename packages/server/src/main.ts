@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
+import { demoShop } from "@huddle/shop";
 import { Assistants, type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, factChecker, jevJudge, jevPresenter, type Judge, Memory, Meter, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, OWN_CALLS_PER_MINUTE, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, nemoSpeech, noteTaker, SignIns, Store, storedGrants, tidyMemory, viewWriter } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
@@ -65,6 +66,11 @@ import { webApp } from "./static.ts";
  *                               Set the policy up once with: npm run huddle -- armoriq register
  *                      http     your own policy service: HUDDLE_GUARD_URL answers allow, block or hold
  *                               (HUDDLE_GUARD_KEY as a Bearer token; HUDDLE_GUARD_ON_FAILURE block|allow)
+ *   PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET   a PayPal app (the sandbox's): Huddle opens Bean & Leaf, its demo shop,
+ *                      at /shop, which sells to your assistants and charges your PayPal only for carts your board
+ *                      signed (HUDDLE_SHOP=on opens it without PayPal, off keeps it shut). PAYPAL_ENVIRONMENT sandbox
+ *                      (default) or live; PAYPAL_WEBHOOK_ID checks PayPal's events at /shop/paypal/webhook;
+ *                      SHOP_ADMIN_TOKEN opens the shop's own pages (every order, refunds)
  *   HUDDLE_OWN_CALLS_PER_MINUTE  the most model calls Huddle makes for itself in a minute (default 30): drafting
  *                      flows, judging "auto", views, fact checks, learning, tidying. They count in spend and
  *                      stop once HUDDLE_BUDGET is spent, so a Huddle others can reach can't run up a bill
@@ -211,6 +217,12 @@ const app = createApp({
   // Tidying memory up: the fill-in model reads each slice's kept notes, only when the person asks.
   tidy: llmUrl && fillModel ? (notes) => tidyMemory(notes, { model: { url: llmUrl, model: fillModel, key: llmKey }, fetcher: meter.fetchFor("tidy up") }) : undefined,
 });
+// Bean & Leaf, the demo shop, with its own database beside Huddle's: Huddle reaches it over HTTP, as any shop.
+const shop = demoShop(process.env, { publicUrl: `${publicUrl}/shop`, db: join(dirname(env("HUDDLE_DB") ?? "huddle.db"), "shop.db") });
+if (shop) {
+  app.get("/shop/", (c) => c.redirect("/shop", 308));
+  app.route("/shop", shop.app);
+}
 // Your gadgets (the Huddle button, the canvas's virtual one) over a WebSocket, before the canvas's catch-all.
 const websockets = createNodeWebSocket({ app });
 const speechUrl = env("HUDDLE_SPEECH_URL");
@@ -231,6 +243,7 @@ const server = serve({ fetch: app.fetch, hostname: host, port }, () => {
   if (starters.length) console.log(`  A crew to start with, on the Assistants page: ${starters.map((assistant) => assistant.name ?? assistant.id).join(", ")}`);
   console.log(`  A2A Agent Card: ${publicUrl}/.well-known/agent-card.json`);
   console.log(`  MCP server (Claude, Cursor, any MCP client): ${publicUrl}/mcp`);
+  if (shop) console.log(`  Demo shop: ${shop.name} at ${publicUrl}/shop, ${shop.paypal ? `on PayPal's ${shop.paypal}` : "without PayPal (set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET to link and charge)"}`);
   console.log(`  Router (OpenAI-compatible): ${publicUrl}/v1, model = one of your assistants' ids, or "auto" (${judge ? `judged by ${judge.name}` : "no judge: your list's order"})`);
   if (spendCap) console.log(`  Budget: ${dollars(spendCap.usd)} a ${spendCap.period} for priced assistants and Huddle's own model calls; ${dollars(engine.spent())} spent so far`);
   if (llmUrl || typesafeKey) console.log(`  Spending guard: Huddle's own model calls count in spend, at most ${meter.perMinute} a minute${spendCap ? ", and none once the budget is spent" : " (set HUDDLE_BUDGET to cap them)"}`);

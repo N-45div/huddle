@@ -1,0 +1,19 @@
+{
+  "name": "@huddle/shop",
+  "version": "0.2.1",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "description": "Bean & Leaf, a demo shop that sells to agents through PayPal, and charges only for carts your board signed.",
+  "exports": {
+    ".": "./src/shop.ts"
+  },
+  "scripts": {
+    "start": "node --no-warnings src/main.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.0",
+    "@huddle/core": "*",
+    "hono": "^4.10.0"
+  }
+}

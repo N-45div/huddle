@@ -10,9 +10,10 @@
     "start": "node --no-warnings packages/server/src/main.ts",
     "build": "npm run build -w @huddle/web",
     "dev": "npm run dev -w @huddle/web",
+    "shop": "npm start -w @huddle/shop",
     "huddle": "node --no-warnings packages/core/src/cli.ts",
     "example": "node --no-warnings packages/core/src/cli.ts run examples/invoices.json --input @examples/invoice.txt",
-    "test": "node --no-warnings --test \"packages/core/test/*.test.ts\" \"packages/server/test/*.test.ts\" \"packages/web/test/*.test.ts\"",
+    "test": "node --no-warnings --test \"packages/core/test/*.test.ts\" \"packages/server/test/*.test.ts\" \"packages/shop/test/*.test.ts\" \"packages/web/test/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
