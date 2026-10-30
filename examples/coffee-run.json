@@ -1,0 +1,46 @@
+{
+  "name": "Coffee run",
+  "description": "Say what you're out of. Bean & Leaf, the demo shop at /shop, says what it has; NVIDIA Nemotron 3 Super picks a cart within your budget; the shop prices it, and your board shows the shop, each line and the total. Nothing is bought until you hold the board's button to sign: then the shop charges the PayPal you linked there, and Nemotron 3.5 Lightning says what was bought. Needs NEBIUS_API_KEY, a PayPal sandbox app for the shop (PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET), and a board in Devices.",
+  "example": "We're out of coffee and filters. Keep it under $40.",
+  "assistants": [
+    {
+      "id": "beans",
+      "name": "Bean & Leaf",
+      "connector": "shop",
+      "url": "http://localhost:7700/shop",
+      "description": "A coffee and tea shop that sells to agents, and charges only for carts your board signed."
+    },
+    {
+      "id": "picker",
+      "name": "Picker (Nemotron Super)",
+      "connector": "nebius",
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "maxTokens": 400,
+      "description": "Picks what to buy from what a shop has."
+    },
+    {
+      "id": "say",
+      "name": "Hud (Nemotron Lightning)",
+      "connector": "nebius",
+      "model": "nvidia/Nemotron-3_5-Lightning",
+      "maxTokens": 120,
+      "description": "Says what happened, in a sentence."
+    }
+  ],
+  "steps": [
+    { "id": "find", "type": "agent", "agent": "beans", "ask": "{{input}}" },
+    {
+      "id": "pick",
+      "type": "agent",
+      "agent": "picker",
+      "ask": "You're buying for me. What I said: {{input}}\n\nWhat the shop has, as sku: name, price for one:\n{{find.text}}\n\nPick only what I asked for, one of each unless I said more, within any budget I gave. Use only skus from that list. Answer with JSON and nothing else: {\"cart\": [{\"sku\": \"...\", \"qty\": 1}], \"why\": \"one short sentence\"}"
+    },
+    { "id": "pay", "type": "pay", "shop": "beans", "cart": "{{pick.data.cart}}" },
+    {
+      "id": "said",
+      "type": "agent",
+      "agent": "say",
+      "ask": "In one short sentence, as you'd say it out loud, tell me what was bought, for how much, and that PayPal took it: {{pay.text}} What was in it: {{pay.data.items}}"
+    }
+  ]
+}

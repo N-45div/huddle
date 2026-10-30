@@ -21,7 +21,7 @@ export interface Template {
 }
 
 /** The ones worth trying first come first; any others follow by name. */
-const ORDER = ["weekend-plan", "read-it-for-me", "who-is-this", "bill-reader", "morning-brief", "inbox-digest", "job-hunt", "second-opinion", "openshell-hermes/flow-nemotron", "crew", "invoices"];
+const ORDER = ["coffee-run", "weekend-plan", "read-it-for-me", "who-is-this", "bill-reader", "morning-brief", "inbox-digest", "job-hunt", "second-opinion", "openshell-hermes/flow-nemotron", "crew", "invoices"];
 
 const NAMES: Partial<Record<Assistant["connector"], string>> = {
   nebius: "NVIDIA Nemotron",
@@ -37,6 +37,7 @@ const NAMES: Partial<Record<Assistant["connector"], string>> = {
   ollama: "Ollama",
   vllm: "vLLM",
   mock: "stand-ins",
+  shop: "a shop that sells to agents",
 };
 
 /** The key variable a connector reads when the assistant names none. */
@@ -64,6 +65,10 @@ export function missingFor(flow: Flow, env: NodeJS.ProcessEnv = process.env): st
     const key = assistant.keyEnv ?? DEFAULT_KEY[assistant.connector];
     if (key && !env[key]?.trim()) missing.add(key);
     if (assistant.connector === "openshell" && !env.HUDDLE_OPENSHELL_GATEWAY) missing.add("an OpenShell gateway (HUDDLE_OPENSHELL_GATEWAY)");
+    // Bean & Leaf inside Huddle opens only with a PayPal app (or HUDDLE_SHOP=on, which can't charge).
+    if (assistant.connector === "shop" && /\/shop\/?$/.test(assistant.url ?? "") && !(env.PAYPAL_CLIENT_ID?.trim() && env.PAYPAL_CLIENT_SECRET?.trim())) {
+      missing.add("a PayPal sandbox app for the demo shop (PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET)");
+    }
   }
   return [...missing];
 }
@@ -80,6 +85,7 @@ export function readTemplates(env: NodeJS.ProcessEnv = process.env): Template[] 
       const flow = parseFlow(JSON.parse(readFileSync(join(root, file), "utf8")));
       const uses = [...new Set(flow.assistants.map((assistant) => NAMES[assistant.connector] ?? assistant.connector))];
       if (flow.steps.some((step) => step.type === "approval" && step.check)) uses.push("fact checks");
+      if (flow.steps.some((step) => step.type === "pay")) uses.push("PayPal, signed on your board");
       templates.push({ id: file.slice(0, -".json".length), flow, uses, missing: missingFor(flow, env) });
     } catch {
       // Not a flow (or not a valid one): not a template.
