@@ -30,8 +30,8 @@ export interface RunView {
   readonly state: Run["state"];
   readonly at: string | null;
   readonly error: string | null;
-  /** What the run is waiting on, when it is; heldBy when only a guard's own approver can say yes. */
-  readonly waiting: Pick<Approval, "id" | "message" | "heldBy"> | null;
+  /** What the run is waiting on, when it is; heldBy when only a guard's own approver can say yes, signs when only your board's signature can. */
+  readonly waiting: Pick<Approval, "id" | "message" | "heldBy" | "signs"> | null;
   readonly context: RunContext;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -245,7 +245,7 @@ export class Engine {
       state: run.state,
       at: run.at,
       error: run.error,
-      waiting: waiting ? { id: waiting.id, message: waiting.message, heldBy: waiting.heldBy } : null,
+      waiting: waiting ? { id: waiting.id, message: waiting.message, heldBy: waiting.heldBy, signs: waiting.signs } : null,
       context: run.context,
       createdAt: run.createdAt,
       updatedAt: run.updatedAt,
@@ -455,8 +455,9 @@ export class Engine {
       throw new Error(`${cart.shop.name}'s cart can't be signed: ${error instanceof Error ? error.message : String(error)}`);
     }
     this.store.addSignRequest({ id: payment.id, kind: "buy", text, runId: run.id, stepId: step.id, shop: shop.url, expires: payment.expires });
-    const approval = this.store.addApproval(run.id, step.id, signableLine(payment), null, null, payment.id);
-    this.store.log(run.id, step.id, "waiting", { approval: approval.id, sign: payment.id, shop: payment.shop, cart: cart.id, total: payment.total, currency: payment.currency, lines: payment.items.length, expires: payment.expires });
+    const message = signableLine(payment);
+    const approval = this.store.addApproval(run.id, step.id, message, null, null, payment.id);
+    this.store.log(run.id, step.id, "waiting", { approval: approval.id, message, sign: payment.id, shop: payment.shop, cart: cart.id, total: payment.total, currency: payment.currency, lines: payment.items.length, expires: payment.expires });
     return { wait: true };
   }
 
