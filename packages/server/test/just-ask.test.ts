@@ -63,7 +63,7 @@ describe("Just ask", () => {
       const next = answers.shift();
       return next ? new Response(next) : new Response(JSON.stringify({ error: { message: "bad key sk-secret" } }), { status: 401 });
     }) as typeof fetch;
-    const plan = await planner({ url: "https://api.tokenfactory.nebius.com/v1", model: "nvidia/nemotron-3-super-120b-a12b", key: "sk-secret", fetcher })(SAID, CHOICES);
+    const plan = await planner({ url: "https://api.tokenfactory.nebius.com/v1", model: "nvidia/Nemotron-3.5-Super-VL", key: "sk-secret", fetcher })(SAID, CHOICES);
     assert.equal(plan.use, "team");
     assert.equal(plan.say, "OpenClaw, then Hermes.");
     assert.deepEqual(body.chat_template_kwargs, { enable_thinking: false });

@@ -1,6 +1,6 @@
 {
   "name": "Who's this?",
-  "description": "Someone you don't know wrote to you: context.dev looks up the company behind their email address (a personal address is skipped, at no cost), NVIDIA Nemotron 3 Super says who they are and whether it's worth a reply, and you choose whether to remember them. Needs CONTEXT_DEV_API_KEY and NEBIUS_API_KEY.",
+  "description": "Someone you don't know wrote to you: context.dev looks up the company behind their email address (a personal address is skipped, at no cost), NVIDIA Nemotron 3.5 Super VL says who they are and whether it's worth a reply, and you choose whether to remember them. Needs CONTEXT_DEV_API_KEY and NEBIUS_API_KEY.",
   "example": "From: Nithin <nithin@zerodha.com>\nSubject: Partnering on your trading app\n\nHi, we'd love to talk about listing your app on our developer platform. Free for a call this week?",
   "learn": false,
   "assistants": [
@@ -13,9 +13,9 @@
     },
     {
       "id": "judge",
-      "name": "Sizer-up (Nemotron Super)",
+      "name": "Sizer-up (Nemotron Super VL)",
       "connector": "nebius",
-      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "model": "nvidia/Nemotron-3.5-Super-VL",
       "memory": ["me"],
       "maxTokens": 500,
       "description": "Weighs up who someone is and what they want."

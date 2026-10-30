@@ -10,4 +10,4 @@ providers:
         enable_thinking: false
 model:
   provider: custom:tokenfactory
-  default: nvidia/nemotron-3-super-120b-a12b
+  default: nvidia/Nemotron-3.5-Super-VL
