@@ -98,6 +98,28 @@ export interface WaitingApproval {
   readonly heldBy: HeldBy | null;
   /** What the web says about the facts in the message, when the step asked for a check. */
   readonly checks: FactCheck | null;
+  /** A payment only your board's signature says yes to: exactly the text it signs, and when that expires. */
+  readonly signs: { readonly id: string; readonly text: string; readonly expires: string } | null;
+}
+
+/** Something your board signed, or is asked to: a payment or a link to a shop, and what came of it. */
+export interface SignView {
+  readonly id: string;
+  readonly kind: "buy" | "link";
+  readonly status: "waiting" | "signed" | "paid" | "linked" | "declined" | "expired" | "failed";
+  /** Exactly what the board is shown and signs. */
+  readonly text: string;
+  readonly runId: string | null;
+  readonly stepId: string | null;
+  readonly shop: string;
+  readonly expires: string;
+  /** The fingerprint of the board that signed it. */
+  readonly board: string | null;
+  /** The shop's order, once paid. */
+  readonly result: unknown;
+  readonly error: string | null;
+  readonly createdAt: string;
+  readonly signedAt: string | null;
 }
 
 /** How one assistant has done through the router lately (from its runs). */
@@ -252,7 +274,9 @@ export interface SandboxRequests {
  *   GET    /api/runs?flow=&limit=          -> RunSummary[]
  *   GET    /api/runs/:id                   -> RunDetail
  *   GET    /api/approvals                  -> WaitingApproval[]
- *   POST   /api/approvals/:id { yes }      -> 202 { runId }
+ *   POST   /api/approvals/:id { yes }      -> 202 { runId }      (409 for a yes to a payment: only your board's signature says yes)
+ *   GET    /api/signs?status=waiting       -> SignView[]          (what your board signed or is asked to, newest first)
+ *   POST   /api/signs/:id { signature, key } -> 202 { runId }    (a board's signature of a payment, raw P-256 r||s and key, base64url)
  *   GET    /api/templates                  -> Template[]          (the example flows, with what each still needs here)
  *   GET    /api/devices                    -> Device[]
  *   POST   /api/devices { name }           -> 201 { device, token }   (the token is shown this once; for /devices/ws)

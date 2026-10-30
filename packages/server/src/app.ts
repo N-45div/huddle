@@ -7,7 +7,7 @@ import { type EmailOptions, emailRoutes } from "./email.ts";
 import { mcpRoutes, toolNames } from "./mcp.ts";
 import { routerRoutes } from "./router.ts";
 import { bearerOf, same } from "./auth.ts";
-import type { ApiError, AskReply, FlowView, Info, LearningView, PresentedView, RouterUsage, RouterView, RunDetail, RunSummary, SpendView, WaitingApproval } from "./api-types.ts";
+import type { ApiError, AskReply, FlowView, Info, LearningView, PresentedView, RouterUsage, RouterView, RunDetail, RunSummary, SignView, SpendView, WaitingApproval } from "./api-types.ts";
 import type { Asker } from "./just-ask.ts";
 import { CONNECTORS } from "./connectors-info.ts";
 import type { MonidCatalog } from "./monid.ts";
@@ -386,7 +386,20 @@ export function createApp(options: AppOptions): Hono {
   });
   app.get("/api/approvals", (c) =>
     c.json<WaitingApproval[]>(
-      store.waitingApprovals().map((approval) => ({ id: approval.id, runId: approval.runId, stepId: approval.stepId, flowName: store.run(approval.runId)?.flow.name ?? "", message: approval.message, createdAt: approval.createdAt, heldBy: approval.heldBy, checks: approval.checks })),
+      store.waitingApprovals().map((approval) => {
+        const signs = approval.signs ? store.signRequest(approval.signs) : null;
+        return {
+          id: approval.id,
+          runId: approval.runId,
+          stepId: approval.stepId,
+          flowName: store.run(approval.runId)?.flow.name ?? "",
+          message: approval.message,
+          createdAt: approval.createdAt,
+          heldBy: approval.heldBy,
+          checks: approval.checks,
+          signs: signs ? { id: signs.id, text: signs.text, expires: signs.expires } : null,
+        };
+      }),
     ),
   );
   app.post("/api/approvals/:id", async (c) => {
@@ -394,6 +407,40 @@ export function createApp(options: AppOptions): Hono {
     if (typeof yes !== "boolean") return bad(c, 'Send { "yes": true } or { "yes": false }.');
     try {
       return c.json({ runId: engine.answer(c.req.param("id"), yes) }, 202);
+    } catch (error) {
+      return bad(c, error instanceof Error ? error.message : String(error), 409);
+    }
+  });
+
+  // What your boards signed, or are asked to: payments and links to shops.
+  app.get("/api/signs", (c) => {
+    const waiting = c.req.query("status") === "waiting";
+    const requests = waiting ? store.waitingSignRequests() : store.signRequests(Math.min(200, Math.max(1, Number(c.req.query("limit") ?? 100) || 100)));
+    return c.json<SignView[]>(
+      requests.map((request) => ({
+        id: request.id,
+        kind: request.kind,
+        status: request.status,
+        text: request.text,
+        runId: request.runId,
+        stepId: request.stepId,
+        shop: request.shop,
+        expires: request.expires,
+        board: request.key ? (store.signer(request.key)?.fingerprint ?? null) : null,
+        result: request.result,
+        error: request.error,
+        createdAt: request.createdAt,
+        signedAt: request.signedAt,
+      })),
+    );
+  });
+  // A board's signature of a payment: checked here, again at the shop, and the run carries on in the background.
+  app.post("/api/signs/:id", async (c) => {
+    const { signature, key } = await body(c);
+    if (typeof signature !== "string" || typeof key !== "string") return bad(c, "Send the board's signature and key as { signature, key }, base64url.");
+    if (!store.signRequest(c.req.param("id"))) return bad(c, "There's nothing to sign by that id.", 404);
+    try {
+      return c.json({ runId: engine.sign(c.req.param("id"), signature, key) }, 202);
     } catch (error) {
       return bad(c, error instanceof Error ? error.message : String(error), 409);
     }
