@@ -139,15 +139,21 @@ export class PayPal {
   /** An access token, reused until a minute before PayPal says it expires. */
   private async accessToken(): Promise<string> {
     if (this.token && this.token.until > this.now()) return this.token.value;
-    const response = await this.fetcher(`${this.base}/v1/oauth2/token`, {
-      method: "POST",
-      headers: {
-        authorization: `Basic ${Buffer.from(`${this.clientId}:${this.clientSecret}`).toString("base64")}`,
-        "content-type": "application/x-www-form-urlencoded",
-        accept: "application/json",
-      },
-      body: "grant_type=client_credentials",
-    });
+    let response: Response;
+    try {
+      response = await this.fetcher(`${this.base}/v1/oauth2/token`, {
+        method: "POST",
+        headers: {
+          authorization: `Basic ${Buffer.from(`${this.clientId}:${this.clientSecret}`).toString("base64")}`,
+          "content-type": "application/x-www-form-urlencoded",
+          accept: "application/json",
+        },
+        body: "grant_type=client_credentials",
+      });
+    } catch (error) {
+      // Said the same way as any call that can't get through, so a caller can tell it from PayPal saying no.
+      throw new Error(this.masked(`PayPal couldn't be reached to sign Huddle in: ${error instanceof Error ? error.message : String(error)}`));
+    }
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) throw new PayPalError("sign Huddle in (check PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET, and that they're the sandbox's)", response.status, body);
     const token = (body as { access_token?: unknown; expires_in?: unknown } | null) ?? {};

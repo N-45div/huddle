@@ -141,6 +141,17 @@ describe("the PayPal client", () => {
     assert.equal(saved.vaultId, "8kk8451t");
   });
 
+  it("says PayPal couldn't be reached when signing in fails on the way, as for any call, so it can be told from a no", async () => {
+    const down = (async () => {
+      throw new TypeError("fetch failed");
+    }) as typeof fetch;
+    await assert.rejects(new PayPal({ clientId: ID, clientSecret: SECRET, fetcher: down }).savePayPal("5C991763VB2781612"), (error: unknown) => {
+      assert.ok(!(error instanceof PayPalError));
+      assert.match((error as Error).message, /^PayPal couldn't be reached to sign Huddle in: fetch failed$/);
+      return true;
+    });
+  });
+
   it("says which credentials are wrong, without the secret", async () => {
     const fake = fakePayPal();
     const client = new PayPal({ clientId: ID, clientSecret: "wrong-secret", fetcher: fake.fetcher });
