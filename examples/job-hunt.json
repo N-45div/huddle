@@ -1,6 +1,6 @@
 {
   "name": "Job hunt",
-  "description": "Google's job listings through Monid (about $0.0025 a search), then NVIDIA Nemotron 3 Super shortlists up to five that fit what it knows about your work, and notes what you looked for. Needs MONID_API_KEY and NEBIUS_API_KEY.",
+  "description": "Google's job listings through Monid (about $0.0025 a search), then NVIDIA Nemotron 3.5 Super VL shortlists up to five that fit what it knows about your work, and notes what you looked for. Needs MONID_API_KEY and NEBIUS_API_KEY.",
   "example": "Backend engineer, Node.js or Go, Bengaluru",
   "assistants": [
     {
@@ -17,7 +17,7 @@
       "id": "picker",
       "name": "Shortlister",
       "connector": "nebius",
-      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "model": "nvidia/Nemotron-3.5-Super-VL",
       "memory": ["career"],
       "description": "Picks the openings that fit what it knows about my work.",
       "maxTokens": 900

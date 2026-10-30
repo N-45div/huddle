@@ -1,6 +1,6 @@
 {
   "name": "Coffee run",
-  "description": "Say what you're out of. Bean & Leaf, the demo shop at /shop, says what it has; NVIDIA Nemotron 3 Super picks a cart within your budget; the shop prices it, and your board shows the shop, each line and the total. Nothing is bought until you hold the board's button to sign: then the shop charges the PayPal you linked there, and Nemotron 3.5 Lightning says what was bought. Needs NEBIUS_API_KEY, a PayPal sandbox app for the shop (PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET), and a board in Devices.",
+  "description": "Say what you're out of. Bean & Leaf, the demo shop at /shop, says what it has; NVIDIA Nemotron 3.5 Super VL picks a cart within your budget; the shop prices it, and your board shows the shop, each line and the total. Nothing is bought until you hold the board's button to sign: then the shop charges the PayPal you linked there, and Nemotron 3.5 Lightning says what was bought. Needs NEBIUS_API_KEY, a PayPal sandbox app for the shop (PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET), and a board in Devices.",
   "example": "We're out of coffee and filters. Keep it under $40.",
   "assistants": [
     {
@@ -12,9 +12,9 @@
     },
     {
       "id": "picker",
-      "name": "Picker (Nemotron Super)",
+      "name": "Picker (Nemotron Super VL)",
       "connector": "nebius",
-      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "model": "nvidia/Nemotron-3.5-Super-VL",
       "maxTokens": 400,
       "description": "Picks what to buy from what a shop has."
     },

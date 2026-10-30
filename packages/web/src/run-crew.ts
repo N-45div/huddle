@@ -16,7 +16,7 @@ export interface CrewNode {
   readonly key: string;
   readonly kind: CrewKind;
   readonly name: string;
-  /** The model or service doing it: "Nemotron 3 Super", "Tavily · Nemotron 3 Super". */
+  /** The model or service doing it: "Nemotron 3.5 Super VL", "Tavily · Nemotron 3.5 Super VL". */
   readonly by: string;
   /** Whose Huddler to draw (an assistant's id and connector); none for Hud. */
   readonly avatar: { readonly id?: string; readonly connector?: string };
@@ -59,7 +59,7 @@ const CONNECTORS: Record<string, string> = {
 
 const UPPER = new Set(["gpt", "glm", "vl", "oss", "nvidia", "asr", "tts"]);
 
-/** A model id people can read: "nvidia/nemotron-3-super-120b-a12b" is "Nemotron 3 Super". */
+/** A model id people can read: "nvidia/Nemotron-3.5-Super-VL" is "Nemotron 3.5 Super VL". */
 export function modelName(model: string): string {
   const base = (model.split("/").pop() ?? model).replace(/(\d)_(\d)/g, "$1.$2");
   const words = base

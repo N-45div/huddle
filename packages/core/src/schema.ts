@@ -37,7 +37,7 @@ export const Assistant = z.object({
   keyEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/, "an environment variable name, like SOCHEN_API_KEY").optional(),
   /** homeassistant: which conversation agent; agentzero: which agent profile; openshell: which sandbox; cli: which agent CLI; contextdev: read, search or company (left out: picked from each request). */
   agentId: z.string().min(1).optional(),
-  /** openai, ollama, vllm, nebius, cli: the model to ask for (e.g. "openclaw/main" for an OpenClaw agent, what vLLM serves, "nvidia/nemotron-3-super-120b-a12b" on Token Factory, or "sonnet" for Claude Code). */
+  /** openai, ollama, vllm, nebius, cli: the model to ask for (e.g. "openclaw/main" for an OpenClaw agent, what vLLM serves, "nvidia/Nemotron-3.5-Super-VL" on Token Factory, or "sonnet" for Claude Code). */
   model: z.string().min(1).optional(),
   /** May see the images a run starts with (photos you attach). Off when left out; it needs a model that reads images, like nvidia/Nemotron-3.5-Super-VL. */
   images: z.boolean().optional(),
@@ -101,7 +101,7 @@ export function assistantProblems(assistant: Assistant): string[] {
     problems.push(`assistant "${assistant.id}" is a model served by vLLM: give the model's name as vLLM serves it (model)`);
   }
   if (assistant.connector === "nebius" && !assistant.model) {
-    problems.push(`assistant "${assistant.id}" is a model on Nebius Token Factory: say which one (model), like nvidia/nemotron-3-super-120b-a12b`);
+    problems.push(`assistant "${assistant.id}" is a model on Nebius Token Factory: say which one (model), like nvidia/Nemotron-3.5-Super-VL`);
   }
   if (assistant.connector === "cli") {
     if (!(CLI_AGENTS as readonly string[]).includes(assistant.agentId ?? "")) {

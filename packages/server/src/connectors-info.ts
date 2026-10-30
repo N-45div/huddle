@@ -63,9 +63,9 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
     id: "nebius",
     name: "NVIDIA Nemotron on Nebius",
     description:
-      "NVIDIA's open Nemotron models on Nebius Token Factory, paid per token: Lightning or Nano for quick everyday answers, Super for most work, Ultra for hard reasoning. Set NEBIUS_API_KEY where Huddle runs. Thinking is off unless you turn it on: it helps on hard problems, but it's slower and billed.",
+      "NVIDIA's open Nemotron models on Nebius Token Factory, paid per token: Lightning for quick everyday answers, Super VL for most work (it reads photos too), Ultra for hard reasoning. Set NEBIUS_API_KEY where Huddle runs. Thinking is off unless you turn it on: it helps on hard problems, but it's slower and billed.",
     fields: [
-      { key: "model", label: "Model", required: true, placeholder: "nvidia/nemotron-3-super-120b-a12b", suggest: "models" },
+      { key: "model", label: "Model", required: true, placeholder: "nvidia/Nemotron-3.5-Super-VL", suggest: "models" },
       {
         key: "thinking",
         label: "Think before answering",
