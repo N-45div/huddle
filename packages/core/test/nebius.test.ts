@@ -27,7 +27,7 @@ describe("NVIDIA Nemotron on Nebius Token Factory", () => {
     await assert.rejects(nebius(fetcher).send({ assistant: assistant({ model: NEMOTRON.lightning }), ask: "hi", memory: [] }), /needs its key in the NEBIUS_API_KEY environment variable/);
   });
 
-  it("asks the replacement of a model Token Factory retired, so flows saved with one keep working", async () => {
+  it("asks the replacement of a model Token Factory retires, so flows saved with one keep working", async () => {
     process.env.NEBIUS_API_KEY = "tf-secret";
     const models: unknown[] = [];
     const fetcher = (async (_url: string, init: RequestInit) => {

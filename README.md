@@ -94,7 +94,7 @@ say what you need, and Huddle works out who does it.
 
 > Plan my work for next week, and find me a relaxed weekend trip near Bengaluru.
 
-One quick call to a model (NVIDIA Nemotron 3 Super on Token Factory, with thinking off) reads that beside your
+One quick call to a model (NVIDIA Nemotron 3.5 Super VL on Token Factory, with thinking off) reads that beside your
 saved flows and assistants, by their descriptions, and picks one of three:
 
 - **A saved flow** that already does it, run with your words as its input.
@@ -113,7 +113,8 @@ Bengaluru"). The run's page shows the plan, with a row for each assistant as it 
 out is one click from being yours: **Keep this team** on its run page saves it as a flow on your button.
 Flows and assistants that look at photos aren't offered, since Just ask takes none.
 
-On the sentence above, with OpenClaw and Hermes running in Docker on Nemotron 3 Super, the plan was ready
+On the sentence above, with OpenClaw and Hermes running in Docker on Nemotron 3 Super (which Token Factory
+retires on November 9, 2026; see [below](#nvidia-nemotron-on-nebius-token-factory)), the plan was ready
 about 2 seconds after the words were heard; OpenClaw and Hermes worked on their parts at the same time, and
 Hud's answer was spoken 6 to 10 seconds after that. Asked one after the other, the same team took 35 seconds.
 
@@ -193,7 +194,7 @@ canvas has a search box that ranks notes the same way.
 
 A note a slice already holds isn't added again, whatever its case, spacing or full stop. **Tidy up** on the
 Memory page finds the rest. Exact copies are found on your machine. With a model set up (`NEBIUS_API_KEY`
-puts this on Nemotron 3 Super), it also reads each slice's kept notes, one slice at a time and only when
+puts this on Nemotron 3.5 Super VL), it also reads each slice's kept notes, one slice at a time and only when
 you click, for:
 - notes that say the same thing in other words;
 - notes that can't both be true, like an old and a new city.
@@ -210,7 +211,7 @@ one-note offer.
 **Learn from what you say** (a switch on the Memory page, off until you turn it on) lets memory grow on
 its own:
 - **When:** after a flow you run in the canvas, or a chat through the router.
-- **What it reads:** Nemotron 3 Super reads what you wrote, and only that: not the answers, not your notes.
+- **What it reads:** Nemotron 3.5 Super VL reads what you wrote, and only that: not the answers, not your notes.
   It suggests up to three lasting things about you, like "Mother lives in Kochi" or "Does not drink
   alcohol". They wait in Memory like any other suggestion.
 - **What it never reads:** mail, webhooks, and messages from contacts or AI clients. A flow whose input
@@ -236,9 +237,14 @@ With `NEBIUS_API_KEY` set, everything Huddle thinks for itself runs on NVIDIA Ne
 | Model | What it does in Huddle |
 |---|---|
 | Nemotron 3.5 Lightning (`nvidia/Nemotron-3_5-Lightning`) | routes each ask to the assistant that fits (`"auto"`), lists the facts an approval should check, picks how an answer is shown, and, as Hud, sums up a Just ask team |
-| Nemotron 3 Super (`nvidia/nemotron-3-super-120b-a12b`) | plans Just ask, weighs the sources in a fact check, fills in tables and charts, tidies memory and learns from what you say |
+| Nemotron 3.5 Super VL (`nvidia/Nemotron-3.5-Super-VL`) | plans Just ask, weighs the sources in a fact check, fills in tables and charts, tidies memory, learns from what you say, and reads photos, like a bill from the button's camera |
 | Nemotron 3 Ultra (`nvidia/Nemotron-3-Ultra-550b-a55b`), thinking on | drafts whole flows from a sentence ("describe it") |
-| Nemotron 3.5 Super VL (`nvidia/Nemotron-3.5-Super-VL`) | reads photos, like a bill from the button's camera |
+
+Token Factory takes Nemotron 3 Super (`nvidia/nemotron-3-super-120b-a12b`) and Nemotron 3 Nano off
+Serverless on November 9, 2026. Huddle runs Super's work on Nemotron 3.5 Super VL, Nebius's replacement at the
+same price, and a flow or an assistant saved with either of them is asked its replacement (Nano's is
+Lightning), so it keeps working. The timings and benchmarks in this README that name Nemotron 3 Super were
+measured on it.
 
 Token Factory is what makes several model calls per request practical:
 
@@ -382,9 +388,9 @@ canvas lists the ones your key can use), or in a flow file:
 { "id": "planner", "connector": "nebius", "model": "nvidia/Nemotron-3-Ultra-550b-a55b", "thinking": true, "memory": ["me"] }
 ```
 
-Pick the size for the job: `nvidia/Nemotron-3_5-Lightning` or `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` for
-quick everyday answers ($0.06 in, $0.24 out per million tokens), `nvidia/nemotron-3-super-120b-a12b` for
-most work ($0.30 / $0.90), `nvidia/Nemotron-3-Ultra-550b-a55b` for hard reasoning ($1 / $3). Huddle knows
+Pick the size for the job: `nvidia/Nemotron-3_5-Lightning` for quick everyday answers ($0.06 in, $0.24 out
+per million tokens), `nvidia/Nemotron-3.5-Super-VL` for most work ($0.30 / $0.90), and
+`nvidia/Nemotron-3-Ultra-550b-a55b` for hard reasoning ($1 / $3). Huddle knows
 these prices (it reads the current ones from Token Factory's catalog when it starts), so the router's
 `"auto"` sends each ask to the cheapest model that fits it. Nemotron thinks before it answers unless told
 not to, and the thinking is slow and billed: asked which assistant should plan a trip, Lightning took 5.8 s
