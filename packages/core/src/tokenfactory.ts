@@ -15,14 +15,26 @@ const CATALOG_URL = "https://tokenfactory.nebius.com/api/public/models_info";
 export const NEMOTRON = {
   /** Fast and cheap, a million tokens of context: routing and everyday answers. */
   lightning: "nvidia/Nemotron-3_5-Lightning",
-  nano: "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
-  /** Most work: writing, filling in views. */
-  super: "nvidia/nemotron-3-super-120b-a12b",
+  /** Most work: writing, filling in views. Nemotron 3.5 Super VL, which reads images and video as well as text. */
+  super: "nvidia/Nemotron-3.5-Super-VL",
   /** The hardest reasoning: plans, drafting whole flows. */
   ultra: "nvidia/Nemotron-3-Ultra-550b-a55b",
   /** Reads images and video as well as text. */
   vision: "nvidia/Nemotron-3.5-Super-VL",
 } as const;
+
+/**
+ * Models Token Factory retired from Serverless on November 9 2026, and what to ask instead: Nebius's own
+ * replacement for Nemotron 3 Super, and Lightning, at Nano's price, for Nano. A flow or an assistant saved with
+ * one of them is asked its replacement, so it keeps working.
+ */
+export const RETIRED: Readonly<Record<string, string>> = {
+  "nvidia/nemotron-3-super-120b-a12b": NEMOTRON.super,
+  "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B": NEMOTRON.lightning,
+};
+
+/** The model to ask Token Factory for: a retired one's replacement, else the model itself. */
+export const currentModel = (model: string): string => RETIRED[model] ?? model;
 
 export const isTokenFactory = (url: string | undefined): boolean => {
   if (!url) return false;
@@ -39,14 +51,12 @@ export const thinkingFor = (url: string | undefined, thinking: boolean): Record<
 /** Per million tokens, from Token Factory's public catalog on Oct 15 2026; refreshed from it when Huddle starts. */
 const prices = new Map<string, Price>([
   [NEMOTRON.lightning, { input: 0.06, output: 0.24, call: 0 }],
-  [NEMOTRON.nano, { input: 0.06, output: 0.24, call: 0 }],
   [NEMOTRON.super, { input: 0.3, output: 0.9, call: 0 }],
   [NEMOTRON.ultra, { input: 1, output: 3, call: 0 }],
-  [NEMOTRON.vision, { input: 0.3, output: 0.9, call: 0 }],
 ]);
 
-/** What a Token Factory model charges, if Huddle knows it. */
-export const tokenFactoryPrice = (model: string | undefined): Price | null => (model ? (prices.get(model) ?? null) : null);
+/** What a Token Factory model charges, if Huddle knows it: a retired one, what its replacement charges. */
+export const tokenFactoryPrice = (model: string | undefined): Price | null => (model ? (prices.get(currentModel(model)) ?? null) : null);
 
 /** Reads every model's current price from Token Factory's public catalog (no key needed); answers how many it read. */
 export async function refreshTokenFactoryPrices(fetcher: typeof fetch = globalThis.fetch): Promise<number> {
