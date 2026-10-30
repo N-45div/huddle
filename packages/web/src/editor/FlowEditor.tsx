@@ -68,7 +68,7 @@ type Confirming = { readonly kind: "discard" } | { readonly kind: "describe"; re
 
 const FIT: FitViewOptions<EditorNode> = { padding: 0.25, maxZoom: 1 };
 const DELETE_KEYS = ["Backspace", "Delete"];
-const STEP_TYPES: readonly StepType[] = ["agent", "together", "condition", "approval", "memory"];
+const STEP_TYPES: readonly StepType[] = ["agent", "together", "condition", "approval", "pay", "memory"];
 const EMPTY_META: Meta = { name: "", description: "", example: "", trigger: { type: "manual" }, assistants: [] };
 
 function problemNotice(headline: string, caught: unknown): Notice {

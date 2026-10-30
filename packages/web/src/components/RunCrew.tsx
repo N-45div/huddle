@@ -47,6 +47,7 @@ export function RunCrew({ detail, onChange }: { readonly detail: RunDetail; read
       hidden={hidden.has(node.key)}
       onToggle={() => toggle(node.key)}
       heldBy={detail.run.waiting?.heldBy ?? null}
+      signs={detail.run.waiting?.signs ?? null}
       canRetry={detail.run.state === "failed"}
       runId={detail.run.id}
       onChange={onChange}
@@ -81,6 +82,8 @@ interface RowProps {
   readonly hidden: boolean;
   readonly onToggle: () => void;
   readonly heldBy: HeldBy | null;
+  /** The payment the run waits on, when only your board's signature says yes to it. */
+  readonly signs: string | null;
   readonly canRetry: boolean;
   readonly runId: string;
   readonly onChange: () => void;
@@ -97,7 +100,7 @@ const LABEL: Record<CrewStatus, { readonly text: string; readonly badge: string 
 
 const MOOD = { running: "thinking", done: "happy", "needs-you": "waiting", failed: "oops", stopped: "sleepy", declined: "sleepy" } as const;
 
-function CrewRow({ node, nested, hidden, onToggle, heldBy, canRetry, runId, onChange, renderChild }: RowProps & { readonly renderChild: (child: CrewNode) => ReactNode }) {
+function CrewRow({ node, nested, hidden, onToggle, heldBy, signs, canRetry, runId, onChange, renderChild }: RowProps & { readonly renderChild: (child: CrewNode) => ReactNode }) {
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const isRun = node.kind === "run";
@@ -142,7 +145,7 @@ function CrewRow({ node, nested, hidden, onToggle, heldBy, canRetry, runId, onCh
             {node.task}
           </p>
         )}
-        {node.status === "needs-you" && node.approvalId && !isRun && <AnswerButtons approvalId={node.approvalId} heldBy={heldBy} onAnswered={onChange} />}
+        {node.status === "needs-you" && node.approvalId && !isRun && <AnswerButtons approvalId={node.approvalId} heldBy={heldBy} signs={signs} onAnswered={onChange} />}
         {node.status === "failed" && !isRun && node.error && (
           <div className="note note-error crew-error">
             <p>{node.error}</p>

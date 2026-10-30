@@ -119,7 +119,33 @@ function describe(line: LogLine): Described {
     case "unchecked":
       return { title: "Facts not checked", body: text(detail, "reason"), tone: "warn" };
     case "waiting":
-      return { title: field(detail, "heldBy") ? `Held: waiting for a yes in ${text(field(detail, "heldBy"), "by")}` : "Waiting for a yes or no", body: text(detail, "message"), tone: "warn" };
+      return {
+        title: field(detail, "heldBy") ? `Held: waiting for a yes in ${text(field(detail, "heldBy"), "by")}` : field(detail, "sign") ? "Waiting for your board's signature" : "Waiting for a yes or no",
+        body: text(detail, "message"),
+        tone: "warn",
+      };
+    case "signed":
+      return {
+        title: (
+          <>
+            Signed on <strong>{text(detail, "by") || "your board"}</strong>
+            {text(detail, "board") && <span className="muted"> (key {text(detail, "board")})</span>}
+          </>
+        ),
+        tone: "ok",
+      };
+    case "paid": {
+      const total = text(detail, "total");
+      const currency = text(detail, "currency");
+      const order = text(field(detail, "paypal"), "orderId");
+      const pending = text(detail, "status") === "pending";
+      return {
+        title: pending ? "PayPal is reviewing the payment" : `Paid ${currency === "USD" ? `$${total}` : `${total} ${currency}`} with PayPal`,
+        body: order ? `PayPal order ${order}` : undefined,
+        data: detail,
+        tone: pending ? ("warn" as const) : ("ok" as const),
+      };
+    }
     case "released":
       return { title: `Approved in ${text(detail, "by") || "the guard"}`, tone: "ok" };
     case "refused": {

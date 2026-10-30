@@ -26,6 +26,7 @@
   --kind-approval: #b07012;
   --kind-memory: #2f7d4b;
   --kind-together: #6d4fc2;
+  --kind-pay: #0b6aa8;
   --canvas: #f1f1ed;
   --dots: #d3d3cc;
   --edge: #b2b2aa;
@@ -66,6 +67,7 @@
     --kind-approval: #e2ab4f;
     --kind-memory: #6cc28a;
     --kind-together: #a993f0;
+    --kind-pay: #5fb3ea;
     --canvas: #161615;
     --dots: #2e2e2b;
     --edge: #6b6b63;
@@ -2534,6 +2536,10 @@ h1 .badge {
   --kind: var(--kind-approval);
 }
 
+.kind-pay {
+  --kind: var(--kind-pay);
+}
+
 .kind-memory {
   --kind: var(--kind-memory);
 }
@@ -4359,4 +4365,36 @@ h1 .badge {
   padding: 0 4px;
   font-weight: 600;
   font-size: 13px;
+}
+
+/* A payment waiting for your board: the shop, each line and the total, as the board shows them. */
+.payment {
+  margin: 0.5rem 0 0.75rem;
+}
+
+.payment-shop {
+  margin: 0 0 0.35rem;
+}
+
+.payment-lines {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.payment-lines td {
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.payment-lines td.num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.payment-lines tfoot td {
+  border-bottom: 0;
+  font-weight: 600;
 }

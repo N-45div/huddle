@@ -174,6 +174,59 @@ export function StepInspector({ node, stepIds, links, assistants, slices, onChan
         </>
       )}
 
+      {content.type === "pay" && (
+        <>
+          <Hint>
+            The shop prices the cart, never an assistant. Your board shows the shop, each line and the total, and the run goes on only once you hold its button to sign; then the shop charges your PayPal saved
+            there. Later steps read what was paid as <code>{`{{${node.id}.text}}`}</code>, and PayPal's order id as <code>{`{{${node.id}.data.paypal.orderId}}`}</code>.
+          </Hint>
+          <div className="field">
+            <label htmlFor="step-shop">Shop</label>
+            <select id="step-shop" value={content.shop} onChange={(event) => onChange({ ...content, shop: event.target.value })}>
+              {!assistants.some((assistant) => assistant.id === content.shop && assistant.connector === "shop") && <option value={content.shop}>{content.shop ? `${content.shop} (not a shop)` : "Pick a shop"}</option>}
+              {assistants
+                .filter((assistant) => assistant.connector === "shop")
+                .map((assistant) => (
+                  <option key={assistant.id} value={assistant.id}>
+                    {assistant.name || assistant.id}
+                  </option>
+                ))}
+            </select>
+            {!assistants.some((assistant) => assistant.connector === "shop") && (
+              <div className="note note-soft">
+                <p>
+                  This flow has no shop yet: add an assistant with the Shop connector, like Bean & Leaf at <code>/shop</code>.
+                </p>
+                <button type="button" className="btn btn-sm" onClick={onOpenAssistants}>
+                  Add a shop
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="field">
+            <label htmlFor="step-cart">Cart</label>
+            <textarea id="step-cart" className="mono" rows={3} value={content.cart} aria-describedby="step-cart-hint" onChange={(event) => onChange({ ...content, cart: event.target.value })} />
+            <Hint id="step-cart-hint">
+              What to buy, as JSON: <code>{'[{ "sku": "beans-house", "qty": 2 }]'}</code>, usually an earlier step's answer, like <code>{"{{pick.data}}"}</code>.
+            </Hint>
+          </div>
+          <LinkSelect id="step-paid" label="Once paid, go to" value={links.next} options={stepIds} self={node.id} endLabel="End the run" onChange={(target) => onLink("next", target)} />
+          <LinkSelect
+            id="step-pay-no"
+            label="If no, go to"
+            value={links.onNo ?? (content.noFinishes ? FINISH : undefined)}
+            options={stepIds}
+            self={node.id}
+            endLabel="End the run as declined"
+            extra={{ value: FINISH, label: "End the run as done" }}
+            onChange={(target) => {
+              if (Boolean(content.noFinishes) !== (target === FINISH)) onChange({ ...content, noFinishes: target === FINISH });
+              onLink("onNo", target === FINISH ? null : target);
+            }}
+          />
+        </>
+      )}
+
       {content.type === "memory" && (
         <>
           <div className="field">

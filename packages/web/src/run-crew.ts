@@ -54,6 +54,7 @@ const CONNECTORS: Record<string, string> = {
   instinct: "open-instinct",
   email: "Email",
   monid: "Monid",
+  shop: "Shop",
 };
 
 const UPPER = new Set(["gpt", "glm", "vl", "oss", "nvidia", "asr", "tts"]);
@@ -170,6 +171,7 @@ export function crewOf(detail: Pick<RunDetail, "run" | "flow" | "log">): CrewNod
     const member = step ? null : memberAt(flow, stepId);
     if (step?.type === "agent") children.push(assistantNode(flow, run, step.id, step.agent, lines, current === step.id));
     else if (step?.type === "approval") children.push(approvalNode(run, step.id, step.message, lines, before));
+    else if (step?.type === "pay") children.push(payNode(flow, run, step.id, step.shop, lines));
     else if (member) children.push(assistantNode(flow, run, member.id, member.agent, lines, current === member.group));
     // Conditions and memory steps are the flow's own logic, not someone working: the run's log shows them.
   }
@@ -337,6 +339,63 @@ function approvalNode(run: Pick<RunDetail["run"], "state" | "at" | "waiting">, s
     startedAt: waiting?.at ?? lines[0]?.at ?? "",
     endedAt: decided?.at ?? null,
     error: null,
+    approvalId: needsYou ? (run.waiting?.id ?? null) : null,
+    children,
+  };
+}
+
+/**
+ * A payment: you, signing it on your board (it needs you until you do); under it, once you have, the shop taking
+ * the money through PayPal. Only its latest try counts: a payment that expired or failed is asked for again.
+ */
+function payNode(flow: Flow, run: Pick<RunDetail["run"], "state" | "at" | "waiting">, stepId: string, shopId: string, lines: readonly LogLine[]): CrewNode {
+  const from = lines.findLastIndex((line) => line.kind === "waiting");
+  const attempt = from >= 0 ? lines.slice(from) : lines;
+  const waiting = attempt.find((line) => line.kind === "waiting");
+  const signed = attempt.find((line) => line.kind === "signed");
+  const declined = attempt.find((line) => line.kind === "declined");
+  const paid = attempt.find((line) => line.kind === "paid");
+  const failed = attempt.findLast((line) => line.kind === "failed");
+  const shop = flow.assistants.find((assistant) => assistant.id === shopId);
+  const amount = (detail: unknown) => {
+    const total = text(detail, "total");
+    const currency = text(detail, "currency");
+    return currency === "USD" ? `$${total}` : `${total} ${currency}`.trim();
+  };
+  const children: CrewNode[] = [];
+  if (signed) {
+    const orderId = text(field(paid?.detail, "paypal"), "orderId");
+    children.push({
+      key: `${stepId}:shop`,
+      kind: "assistant",
+      name: shop?.name || shop?.id || shopId,
+      by: "PayPal",
+      avatar: { id: shop?.id ?? shopId, connector: "shop" },
+      task: paid ? `Took ${amount(paid.detail)} with PayPal${orderId ? `, order ${orderId}` : ""}` : failed ? "Didn't take the payment" : "Taking the payment with PayPal",
+      tools: ["business"],
+      status: paid ? "done" : failed ? "failed" : run.state === "running" ? "running" : "stopped",
+      costUsd: null,
+      startedAt: signed.at,
+      endedAt: paid?.at ?? failed?.at ?? null,
+      error: !paid && failed ? text(failed.detail, "error") || null : null,
+      approvalId: null,
+      children: [],
+    });
+  }
+  const needsYou = !signed && !declined && run.state === "waiting" && run.at === stepId;
+  return {
+    key: stepId,
+    kind: "you",
+    name: "You",
+    by: signed ? `Signed on ${text(signed.detail, "by") || "your board"}` : "Your board's signature",
+    avatar: {},
+    task: plain(text(waiting?.detail, "message")),
+    tools: [],
+    status: signed ? "done" : declined ? "declined" : needsYou ? "needs-you" : failed ? "failed" : "stopped",
+    costUsd: null,
+    startedAt: waiting?.at ?? lines[0]?.at ?? "",
+    endedAt: signed?.at ?? declined?.at ?? null,
+    error: !signed && failed ? text(failed.detail, "error") || null : null,
     approvalId: needsYou ? (run.waiting?.id ?? null) : null,
     children,
   };

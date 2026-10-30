@@ -4,6 +4,7 @@ import { useApp } from "../app-context.ts";
 import { AnswerButtons } from "../components/Answer.tsx";
 import { Empty, ErrorNote, Link, Loading } from "../components/bits.tsx";
 import { FactChecks } from "../components/FactChecks.tsx";
+import { PaymentSummary } from "../components/Payment.tsx";
 import { useChanges } from "../events.ts";
 import { ago, fullTime } from "../format.ts";
 import { useDebounced, useResource } from "../hooks.ts";
@@ -22,7 +23,7 @@ export function ApprovalsScreen() {
   const refetchSignIns = useDebounced(() => void signIns.reload(), 200);
 
   useChanges((change) => {
-    if (change.kind === "approval" || change.kind === "run" || change.kind === "resync") refetch();
+    if (change.kind === "approval" || change.kind === "run" || change.kind === "sign" || change.kind === "resync") refetch();
     if (change.kind === "sandbox" || change.kind === "resync") refetchSandboxes();
     if (change.kind === "signin" || change.kind === "resync") refetchSignIns();
   });
@@ -72,11 +73,13 @@ export function ApprovalsScreen() {
               </time>
             </p>
             <p className="waiting-message">{approval.message}</p>
+            {approval.signs && <PaymentSummary text={approval.signs.text} />}
             {approval.checks && <FactChecks checks={approval.checks} />}
             <div className="approval-foot">
               <AnswerButtons
                 approvalId={approval.id}
                 heldBy={approval.heldBy}
+                signs={approval.signs?.id ?? null}
                 onAnswered={() => {
                   approvals.setData((current) => current?.filter((other) => other.id !== approval.id) ?? null);
                   refetch();

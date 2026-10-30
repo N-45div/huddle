@@ -163,3 +163,48 @@ describe("who is on a run", () => {
     assert.equal(elapsed("2026-10-20T10:00:00Z", "2026-10-20T12:05:00Z"), "2h 05m");
   });
 });
+
+describe("a payment on a run", () => {
+  it("needs you until your board signs, then shows the shop taking it with PayPal", async () => {
+    const { generateKeyPairSync, sign } = await import("node:crypto");
+    const { parseSignable } = await import("../../core/src/countersign.ts");
+    const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    const jwk = publicKey.export({ format: "jwk" });
+    const key = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x!, "base64url"), Buffer.from(jwk.y!, "base64url")]).toString("base64url");
+    const shopInfo = { id: "shop.test", name: "Bean & Leaf" };
+    const shop = {
+      url: "http://shop.test",
+      about: async () => ({ shop: shopInfo, currency: "USD", paypal: "sandbox", about: "" }),
+      search: async () => ({ shop: shopInfo, products: [] }),
+      price: async () => ({ id: "cart_1", shop: shopInfo, items: [{ sku: "mug", name: "Stoneware mug", qty: 1, price: "14.00" }], total: "14.00", currency: "USD", expires: "2099-01-01T00:00:00Z" }),
+      checkout: async ({ text }: { text: string }) => ({ id: "order_1", payment: (parseSignable(text) as { id: string }).id, cart: "cart_1", board: "", status: "paid", total: "14.00", currency: "USD", paypal: { orderId: "5O190127TN364715T", captureId: "C" }, error: null }),
+      startLink: async () => ({ id: "", text: "", expires: "" }),
+      signedLink: async () => ({ approveUrl: "" }),
+      link: async () => ({ id: "", status: "", paypal: null, error: null }),
+      board: async () => ({ linked: true, paypal: null }),
+    };
+    const flow = parseFlow({
+      name: "A mug",
+      assistants: [{ id: "beans", name: "Bean & Leaf", connector: "shop", url: "http://shop.test" }],
+      steps: [{ id: "pay", type: "pay", shop: "beans", cart: '[{"sku":"mug"}]' }],
+    });
+    const store = new Store();
+    const engine = new Engine(store, { mock }, { shops: () => shop });
+    store.addSigner({ key, name: "Desk button" });
+    const run = await engine.start(flow, "");
+
+    const waiting = crewOf(detailOf(store, engine, run.id));
+    assert.deepEqual(waiting.children.map((node) => [node.name, node.by, node.status]), [["You", "Your board's signature", "needs-you"]]);
+    assert.equal(waiting.children[0]!.task, "Pay $14.00 to Bean & Leaf: 1× Stoneware mug");
+    assert.equal(waiting.children[0]!.approvalId, run.waiting!.id);
+    assert.equal(engine.view(run.id).waiting?.signs, store.waitingSignRequests()[0]!.id, "the card knows only the board can say yes");
+
+    const request = store.waitingSignRequests()[0]!;
+    await engine.countersign(request.id, sign("sha256", Buffer.from(request.text), { key: privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url"), key);
+    const paid = crewOf(detailOf(store, engine, run.id));
+    assert.equal(paid.status, "done");
+    const you = paid.children[0]!;
+    assert.deepEqual([you.by, you.status], ["Signed on Desk button", "done"]);
+    assert.deepEqual(you.children.map((node) => [node.name, node.by, node.task, node.status]), [["Bean & Leaf", "PayPal", "Took $14.00 with PayPal, order 5O190127TN364715T", "done"]]);
+  });
+});
