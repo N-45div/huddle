@@ -195,7 +195,8 @@ export type ChangeEvent =
   | { readonly kind: "assistants" }
   | { readonly kind: "contacts" }
   | { readonly kind: "devices" }
-  | { readonly kind: "signin" };
+  | { readonly kind: "signin" }
+  | { readonly kind: "sign"; readonly runId: string | null };
 
 /** A network rule an OpenShell sandbox needs, drafted by OpenShell after it blocked a connection. */
 export interface SandboxRequestView {

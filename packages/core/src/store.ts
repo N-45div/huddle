@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { DatabaseSync } from "node:sqlite";
 import type { Spend } from "./cost.ts";
 import type { FactCheck } from "./factcheck.ts";
+import { fingerprint } from "./countersign.ts";
 import { findSecret, redactSecrets, SensitiveNote } from "./memory/sensitive.ts";
 import { noteKey } from "./memory/tidy.ts";
 import type { Assistant, ContactTier, Flow } from "./schema.ts";
@@ -42,6 +43,8 @@ export interface Approval {
   readonly heldBy: HeldBy | null;
   /** What the web says about the facts in the message, when the step asked for a check. */
   readonly checks: FactCheck | null;
+  /** A payment waiting for your board's signature (a pay step's): only the signature says yes; a no works anywhere. */
+  readonly signs: string | null;
 }
 
 /** Where a held hand-off is approved: who holds it, their id for it, and the page to approve it on. */
@@ -110,7 +113,9 @@ export type Change =
   | { readonly kind: "contacts" }
   /** A gadget was added, removed or seen (the Huddle button). */
   | { readonly kind: "devices" }
-  | { readonly kind: "signin" };
+  | { readonly kind: "signin" }
+  /** Something waiting for a board's signature came or went, or a board was added. */
+  | { readonly kind: "sign"; readonly runId: string | null };
 
 /** A gadget of yours (the Huddle button) that shows what's waiting for you and takes your yes or no. */
 export interface Device {
@@ -130,6 +135,44 @@ export interface Contact {
   readonly createdAt: string;
   /** When their token last reached Huddle. */
   readonly lastSeenAt: string | null;
+}
+
+/** A board that signs for you (the Huddle button, or a virtual board in a browser): its key, pinned when it's added. */
+export interface Signer {
+  /** Its P-256 public key, raw and base64url, written the one way. */
+  readonly key: string;
+  readonly fingerprint: string;
+  readonly name: string;
+  /** The device it is, when it's one of your gadgets; null for a board in a browser. */
+  readonly deviceId: string | null;
+  readonly createdAt: string;
+  readonly lastSignedAt: string | null;
+}
+
+/**
+ * Something waiting for your board's signature: a payment a pay step wrote, or linking your board to your
+ * PayPal at a shop. `text` is exactly what the board is shown and signs.
+ */
+export interface SignRequest {
+  /** The signable's own one-time id (pay_…, link_…). */
+  readonly id: string;
+  readonly kind: "buy" | "link";
+  readonly text: string;
+  /** waiting for the board; signed; then paid (a payment) or linked (a link); or declined, expired or failed. */
+  readonly status: "waiting" | "signed" | "paid" | "linked" | "declined" | "expired" | "failed";
+  readonly runId: string | null;
+  readonly stepId: string | null;
+  /** The shop's address. */
+  readonly shop: string;
+  readonly expires: string;
+  readonly signature: string | null;
+  /** The key that signed it. */
+  readonly key: string | null;
+  /** What came of it: the shop's order, once paid; the link at the shop, while linking. */
+  readonly result: unknown;
+  readonly error: string | null;
+  readonly createdAt: string;
+  readonly signedAt: string | null;
 }
 
 export interface LogLine {
@@ -165,11 +208,14 @@ export class Store {
       CREATE TABLE IF NOT EXISTS contacts (id TEXT PRIMARY KEY, name TEXT NOT NULL, tier TEXT NOT NULL, emails TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, last_seen_at TEXT);
       CREATE TABLE IF NOT EXISTS spend (seq INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, step_id TEXT NOT NULL, flow_id TEXT, flow_name TEXT NOT NULL, assistant TEXT NOT NULL, input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, cached_tokens INTEGER NOT NULL, cost_usd REAL, estimated INTEGER NOT NULL, saved_usd REAL, saved_by TEXT, at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS answers (key TEXT PRIMARY KEY, assistant TEXT NOT NULL, run_id TEXT NOT NULL, text TEXT NOT NULL, data TEXT NOT NULL, cost_usd REAL, expires_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS signers (key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, name TEXT NOT NULL, device_id TEXT UNIQUE, created_at TEXT NOT NULL, last_signed_at TEXT);
+      CREATE TABLE IF NOT EXISTS signs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL, run_id TEXT, step_id TEXT, shop TEXT NOT NULL, expires TEXT NOT NULL, signature TEXT, key TEXT, result TEXT, error TEXT, created_at TEXT NOT NULL, signed_at TEXT);
       CREATE INDEX IF NOT EXISTS spend_at ON spend (at);
       CREATE INDEX IF NOT EXISTS spend_assistant ON spend (assistant, seq);
       CREATE INDEX IF NOT EXISTS approvals_run ON approvals (run_id);
       CREATE INDEX IF NOT EXISTS notes_slice ON notes (slice, status);
       CREATE INDEX IF NOT EXISTS log_run ON log (run_id, seq);
+      CREATE INDEX IF NOT EXISTS signs_run ON signs (run_id, step_id, created_at);
     `);
     // Databases from before saved flows: add the column runs use to point at one.
     const columns = this.db.prepare("PRAGMA table_info(runs)").all() as Row[];
@@ -179,6 +225,8 @@ export class Store {
     if (!approvalColumns.some((column) => column.name === "held_by")) this.db.exec("ALTER TABLE approvals ADD COLUMN held_by TEXT");
     // ...and from before approvals could carry a check of their facts.
     if (!approvalColumns.some((column) => column.name === "checks")) this.db.exec("ALTER TABLE approvals ADD COLUMN checks TEXT");
+    // ...and from before a payment could wait on an approval for a board's signature.
+    if (!approvalColumns.some((column) => column.name === "sign_id")) this.db.exec("ALTER TABLE approvals ADD COLUMN sign_id TEXT");
     this.db.exec("CREATE INDEX IF NOT EXISTS runs_flow ON runs (flow_id, created_at)");
   }
 
@@ -422,11 +470,11 @@ export class Store {
 
   // Approvals --------------------------------------------------------------------------------------
 
-  addApproval(runId: string, stepId: string, message: string, heldBy: HeldBy | null = null, checks: FactCheck | null = null): Approval {
-    const approval: Approval = { id: newId("ok"), runId, stepId, message, status: "waiting", createdAt: now(), decidedAt: null, heldBy, checks };
+  addApproval(runId: string, stepId: string, message: string, heldBy: HeldBy | null = null, checks: FactCheck | null = null, signs: string | null = null): Approval {
+    const approval: Approval = { id: newId("ok"), runId, stepId, message, status: "waiting", createdAt: now(), decidedAt: null, heldBy, checks, signs };
     this.db
-      .prepare("INSERT INTO approvals (id, run_id, step_id, message, status, created_at, held_by, checks) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(approval.id, runId, stepId, message, approval.status, approval.createdAt, heldBy ? JSON.stringify(heldBy) : null, checks ? JSON.stringify(checks) : null);
+      .prepare("INSERT INTO approvals (id, run_id, step_id, message, status, created_at, held_by, checks, sign_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(approval.id, runId, stepId, message, approval.status, approval.createdAt, heldBy ? JSON.stringify(heldBy) : null, checks ? JSON.stringify(checks) : null, signs);
     this.changed({ kind: "approval", runId });
     return approval;
   }
@@ -453,6 +501,97 @@ export class Store {
     const decided = Number(result.changes) === 1;
     if (decided) this.changed({ kind: "approval", runId: this.approval(id)?.runId ?? "" });
     return decided;
+  }
+
+  /** The approval waiting on a board's signature of this payment, if one is. */
+  approvalForSign(signId: string): Approval | null {
+    const row = this.db.prepare("SELECT * FROM approvals WHERE sign_id = ? AND status = 'waiting'").get(signId) as Row | undefined;
+    return row ? toApproval(row) : null;
+  }
+
+  // Boards that sign, and what's waiting for their signature ------------------------------------------
+
+  /** Adds a board that signs for you; its key is pinned from now on. A key or device seen already is refused. */
+  addSigner(input: { readonly key: string; readonly name: string; readonly deviceId?: string | null }): Signer {
+    const result = this.db
+      .prepare("INSERT INTO signers (key, fingerprint, name, device_id, created_at, last_signed_at) VALUES (?, ?, ?, ?, ?, NULL) ON CONFLICT DO NOTHING")
+      .run(input.key, fingerprint(input.key), input.name.trim() || "A board", input.deviceId ?? null, now());
+    if (Number(result.changes) !== 1) throw new Error("That board, or that device's key, is already added.");
+    this.changed({ kind: "sign", runId: null });
+    return this.signer(input.key)!;
+  }
+
+  signer(key: string): Signer | null {
+    const row = this.db.prepare("SELECT * FROM signers WHERE key = ?").get(key) as Row | undefined;
+    return row ? toSigner(row) : null;
+  }
+
+  /** The key a device of yours signs with, pinned when it was first seen. */
+  signerForDevice(deviceId: string): Signer | null {
+    const row = this.db.prepare("SELECT * FROM signers WHERE device_id = ?").get(deviceId) as Row | undefined;
+    return row ? toSigner(row) : null;
+  }
+
+  signers(): Signer[] {
+    return (this.db.prepare("SELECT * FROM signers ORDER BY created_at").all() as Row[]).map(toSigner);
+  }
+
+  /** Takes a board off: its signature counts for nothing here from then on. */
+  removeSigner(key: string): boolean {
+    const removed = Number(this.db.prepare("DELETE FROM signers WHERE key = ?").run(key).changes) > 0;
+    if (removed) this.changed({ kind: "sign", runId: null });
+    return removed;
+  }
+
+  addSignRequest(input: Pick<SignRequest, "id" | "kind" | "text" | "runId" | "stepId" | "shop" | "expires"> & { readonly result?: unknown }): SignRequest {
+    this.db
+      .prepare("INSERT INTO signs (id, kind, text, status, run_id, step_id, shop, expires, result, created_at) VALUES (?, ?, ?, 'waiting', ?, ?, ?, ?, ?, ?)")
+      .run(input.id, input.kind, input.text, input.runId, input.stepId, input.shop, input.expires, input.result === undefined ? null : JSON.stringify(input.result), now());
+    this.changed({ kind: "sign", runId: input.runId });
+    return this.signRequest(input.id)!;
+  }
+
+  signRequest(id: string): SignRequest | null {
+    const row = this.db.prepare("SELECT * FROM signs WHERE id = ?").get(id) as Row | undefined;
+    return row ? toSignRequest(row) : null;
+  }
+
+  /** The latest request a run's step made, if it made one. */
+  signRequestFor(runId: string, stepId: string): SignRequest | null {
+    const row = this.db.prepare("SELECT * FROM signs WHERE run_id = ? AND step_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1").get(runId, stepId) as Row | undefined;
+    return row ? toSignRequest(row) : null;
+  }
+
+  /** What's waiting for a board's signature, oldest first. */
+  waitingSignRequests(): SignRequest[] {
+    return (this.db.prepare("SELECT * FROM signs WHERE status = 'waiting' ORDER BY created_at, rowid").all() as Row[]).map(toSignRequest);
+  }
+
+  signRequests(limit = 100): SignRequest[] {
+    return (this.db.prepare("SELECT * FROM signs ORDER BY created_at DESC, rowid DESC LIMIT ?").all(limit) as Row[]).map(toSignRequest);
+  }
+
+  /** Records a board's signature, once; false if the request wasn't waiting any more. */
+  markSigned(id: string, signature: string, key: string): boolean {
+    const at = now();
+    const result = this.db.prepare("UPDATE signs SET status = 'signed', signature = ?, key = ?, signed_at = ? WHERE id = ? AND status = 'waiting'").run(signature, key, at, id);
+    const signed = Number(result.changes) === 1;
+    if (signed) {
+      this.db.prepare("UPDATE signers SET last_signed_at = ? WHERE key = ?").run(at, key);
+      this.changed({ kind: "sign", runId: this.signRequest(id)?.runId ?? null });
+    }
+    return signed;
+  }
+
+  /** Moves a request on from `from` (one of them); false if it wasn't in it. */
+  moveSignRequest(id: string, from: SignRequest["status"] | readonly SignRequest["status"][], change: { readonly status: SignRequest["status"]; readonly result?: unknown; readonly error?: string | null }): boolean {
+    const froms = typeof from === "string" ? [from] : [...from];
+    const result = this.db
+      .prepare(`UPDATE signs SET status = ?, result = COALESCE(?, result), error = ? WHERE id = ? AND status IN (${froms.map(() => "?").join(", ")})`)
+      .run(change.status, change.result === undefined ? null : JSON.stringify(change.result), change.error ?? null, id, ...froms);
+    const moved = Number(result.changes) === 1;
+    if (moved) this.changed({ kind: "sign", runId: this.signRequest(id)?.runId ?? null });
+    return moved;
   }
 
   // Memory -----------------------------------------------------------------------------------------
@@ -686,7 +825,39 @@ function toApproval(row: Row): Approval {
     createdAt: String(row.created_at),
     heldBy: row.held_by ? (JSON.parse(String(row.held_by)) as HeldBy) : null,
     checks: row.checks ? (JSON.parse(String(row.checks)) as FactCheck) : null,
+    signs: row.sign_id ? String(row.sign_id) : null,
     decidedAt: row.decided_at === null ? null : String(row.decided_at),
+  };
+}
+
+function toSigner(row: Row): Signer {
+  return {
+    key: String(row.key),
+    fingerprint: String(row.fingerprint),
+    name: String(row.name),
+    deviceId: row.device_id == null ? null : String(row.device_id),
+    createdAt: String(row.created_at),
+    lastSignedAt: row.last_signed_at == null ? null : String(row.last_signed_at),
+  };
+}
+
+function toSignRequest(row: Row): SignRequest {
+  const optional = (value: unknown) => (value == null ? null : String(value));
+  return {
+    id: String(row.id),
+    kind: String(row.kind) as SignRequest["kind"],
+    text: String(row.text),
+    status: String(row.status) as SignRequest["status"],
+    runId: optional(row.run_id),
+    stepId: optional(row.step_id),
+    shop: String(row.shop),
+    expires: String(row.expires),
+    signature: optional(row.signature),
+    key: optional(row.key),
+    result: row.result == null ? null : (JSON.parse(String(row.result)) as unknown),
+    error: optional(row.error),
+    createdAt: String(row.created_at),
+    signedAt: optional(row.signed_at),
   };
 }
 

@@ -68,7 +68,7 @@ export { type Candidate, jevJudge, type JevOptions, type Judge, modelJudge, type
 export { type Destination, destinationOf, type Disclosure, type Receipt, receiptOf, type Search, type SentNote } from "./receipt.ts";
 export { nextRun, type ScheduleTrigger, scheduleText, type Weekday, WEEKDAYS } from "./schedule.ts";
 export { askFirst, Assistant, assistantProblems, Assistants, type Caller, callerDecision, Callers, CLI_AGENTS, type CliAgent, CONTACT_TIERS, type ContactTier, EMAIL_PATTERN, everyMs, Flow, knownTimeZone, parseFlow, Step, TIERS, type Tier, Trigger, type Turn, turnAt, turnsOf } from "./schema.ts";
-export { type Approval, type Change, type Contact, type Device, type HeldBy, type KeptAnswer, type LogLine, type Note, type Run, type RunState, type SavedFlow, type SpendTotal, Store } from "./store.ts";
+export { type Approval, type Change, type Contact, type Device, type HeldBy, type KeptAnswer, type LogLine, type Note, type Run, type RunState, type SavedFlow, type Signer, type SignRequest, type SpendTotal, Store } from "./store.ts";
 export { lookup, render, type RunContext, type StepAnswer } from "./template.ts";
 export { type Charge, cents, decimal, type Money, type OrderItem, PayPal, PayPalError, type PayPalOptions, PAYPAL_LIVE, PAYPAL_SANDBOX, type SavedPayPal } from "./paypal.ts";
 export {
