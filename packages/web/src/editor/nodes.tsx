@@ -22,6 +22,7 @@ export const KIND_LABEL: Record<StepType, string> = {
   approval: "Approval",
   memory: "Memory",
   together: "Together",
+  pay: "Pay",
 };
 
 function Missing({ children }: { readonly children: string }) {
@@ -29,12 +30,12 @@ function Missing({ children }: { readonly children: string }) {
 }
 
 function OutHandles({ type }: { readonly type: StepType }) {
-  if (type === "condition" || type === "approval") {
+  if (type === "condition" || type === "approval" || type === "pay") {
     const [left, right] = type === "condition" ? (["then", "else"] as const) : (["next", "onNo"] as const);
     return (
       <>
         <div className="node-outs" aria-hidden="true">
-          <span>yes</span>
+          <span>{type === "pay" ? "paid" : "yes"}</span>
           <span>no</span>
         </div>
         <Handle type="source" position={Position.Bottom} id={left} className="handle-out handle-yes" style={{ left: "25%" }} />
@@ -102,6 +103,18 @@ export const StepNodeView = memo(function StepNodeView({ id, data, selected }: N
         </>
       );
       break;
+    case "pay": {
+      const shop = assistants.get(data.shop);
+      body = (
+        <>
+          <p className="node-line">
+            Buys at {shop?.connector === "shop" ? <strong>{shop.name || shop.id}</strong> : <Missing>Pick a shop</Missing>}, once your board signs
+          </p>
+          <p className="node-text mono">{data.cart || <Missing>No cart yet</Missing>}</p>
+        </>
+      );
+      break;
+    }
   }
 
   return (

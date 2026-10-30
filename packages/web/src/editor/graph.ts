@@ -30,13 +30,15 @@ export type StepContent =
   /** `noFinishes`: a "no" with no link finishes the run as done (onNo: "end") instead of ending it as declined. */
   | { readonly type: "approval"; readonly message: string; readonly noFinishes?: boolean }
   | { readonly type: "memory"; readonly slice: string; readonly note: string }
-  | { readonly type: "together"; readonly members: readonly MemberContent[] };
+  | { readonly type: "together"; readonly members: readonly MemberContent[] }
+  /** Buys `cart` (JSON, usually "{{pick.data}}") at `shop`, once your board signs; `noFinishes` as on an approval. */
+  | { readonly type: "pay"; readonly shop: string; readonly cart: string; readonly noFinishes?: boolean };
 
 export type StepNode = Node<StepContent, "step">;
 export type StartNode = Node<Record<string, never>, "start">;
 export type EditorNode = StepNode | StartNode;
 
-/** The source handles: agent, memory and the trigger have `next`; conditions `then`/`else`; approvals `next`/`onNo`. */
+/** The source handles: agent, memory and the trigger have `next`; conditions `then`/`else`; approvals and payments `next`/`onNo`. */
 export type LinkHandle = "next" | "then" | "else" | "onNo";
 const LINK_ORDER: readonly LinkHandle[] = ["next", "then", "else", "onNo"];
 
@@ -61,7 +63,7 @@ const ROW = 170;
 
 export function handlesOf(type: StepType | "start"): readonly LinkHandle[] {
   if (type === "condition") return ["then", "else"];
-  if (type === "approval") return ["next", "onNo"];
+  if (type === "approval" || type === "pay") return ["next", "onNo"];
   return ["next"];
 }
 
@@ -73,6 +75,7 @@ export function handleOf(edge: Edge): LinkHandle {
 function edgeLabel(sourceType: StepType | "start", handle: LinkHandle): string | undefined {
   if (sourceType === "condition") return handle === "then" ? "yes" : "no";
   if (sourceType === "approval") return handle === "onNo" ? "if no" : "if yes";
+  if (sourceType === "pay") return handle === "onNo" ? "if no" : "once paid";
   return undefined;
 }
 
@@ -112,6 +115,8 @@ export function contentOf(step: Step): StepContent {
       return { type: "memory", slice: step.slice, note: step.note };
     case "together":
       return { type: "together", members: step.steps.map((member) => ({ id: member.id, agent: member.agent, ask: member.ask, ...(member.optional ? { optional: true } : {}) })) };
+    case "pay":
+      return step.onNo === "end" ? { type: "pay", shop: step.shop, cart: step.cart, noFinishes: true } : { type: "pay", shop: step.shop, cart: step.cart };
   }
 }
 
@@ -135,6 +140,8 @@ export function defaultContent(type: StepType, assistants: readonly Assistant[],
       });
       return { type, members };
     }
+    case "pay":
+      return { type, shop: assistants.find((assistant) => assistant.connector === "shop")?.id ?? "", cart: "" };
   }
 }
 
@@ -151,6 +158,8 @@ export function isIncomplete(content: StepContent, assistants: readonly Assistan
       return !content.slice.trim() || !content.note.trim();
     case "together":
       return content.members.length < FEWEST_MEMBERS || content.members.some((member) => !member.ask.trim() || !assistants.some((assistant) => assistant.id === member.agent));
+    case "pay":
+      return !content.cart.trim() || !assistants.some((assistant) => assistant.id === content.shop && assistant.connector === "shop");
   }
 }
 
@@ -303,6 +312,7 @@ export function flowToGraph(flow: Flow): Graph {
         link(step, "else", step.else);
         break;
       case "approval":
+      case "pay":
         link(step, "next", step.next ?? following);
         link(step, "onNo", step.onNo);
         break;
@@ -400,6 +410,11 @@ export function graphToFlow(meta: Meta, nodes: readonly EditorNode[], edges: rea
           next: to(id, "next") ?? "end",
         });
         break;
+      case "pay": {
+        const onNo = to(id, "onNo") ?? (content.noFinishes ? "end" : undefined);
+        steps.push({ id, type: "pay", shop: content.shop, cart: content.cart, next: to(id, "next") ?? "end", ...(onNo ? { onNo } : {}) });
+        break;
+      }
     }
   }
   const positions: Record<string, XYPosition> = {};
@@ -437,6 +452,8 @@ export function retargetContent(content: StepContent, from: string, to: string):
       return { ...content, note: retarget(content.note, from, to) };
     case "together":
       return { ...content, members: content.members.map((member) => ({ ...member, ask: retarget(member.ask, from, to) })) };
+    case "pay":
+      return { ...content, cart: retarget(content.cart, from, to) };
   }
 }
 

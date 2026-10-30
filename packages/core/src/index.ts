@@ -48,7 +48,7 @@ export {
   starterInput,
   toolId,
 } from "./monid.ts";
-export { Engine, type EngineOptions, HeldElsewhere, LEARNING, MAX_STEPS, OverBudget, type RunView, type StartedBy } from "./engine.ts";
+export { Engine, type EngineOptions, HeldElsewhere, LEARNING, MAX_STEPS, NeedsSignature, OverBudget, PAY_MINUTES, type RunView, type StartedBy } from "./engine.ts";
 export { type AgentStep, type Guard, type HandOff, type Outcome, type Verdict } from "./guard.ts";
 export { GUARDS, guardFromEnv } from "./guards/index.ts";
 export { httpGuard, type HttpGuardOptions } from "./guards/http.ts";

@@ -53,3 +53,36 @@ describe("a together step on the canvas", () => {
     assert.deepEqual(renamed.members.map((member) => member.ask), ["Work: {{request}}", "Home: {{request}}"]);
   });
 });
+
+describe("a pay step on the canvas", () => {
+  const coffee: Flow = {
+    name: "Coffee run",
+    trigger: { type: "manual" },
+    assistants: [
+      { id: "beans", name: "Bean & Leaf", connector: "shop", url: "http://localhost:7700/shop", memory: [] },
+      { id: "hud", name: "Hud", connector: "nebius", memory: [] },
+    ],
+    steps: [
+      { id: "pick", type: "agent", agent: "hud", ask: "Pick for {{input}}", next: "pay" },
+      { id: "pay", type: "pay", shop: "beans", cart: "{{pick.data}}", next: "tell", onNo: "end" },
+      { id: "tell", type: "agent", agent: "hud", ask: "{{pay.text}}", next: "end" },
+    ],
+  };
+
+  it("has a way on once paid and a way out on no, and saves back to the same step", () => {
+    const graph = flowToGraph(coffee);
+    const pay = graph.edges.filter((edge) => edge.source === "pay");
+    assert.deepEqual(pay.map((edge) => [edge.sourceHandle, edge.target, edge.label]), [["next", "tell", "once paid"]]);
+    const saved = graphToFlow(graph.meta, graph.nodes, graph.edges);
+    assert.deepEqual(saved.steps.find((step) => step.id === "pay"), { id: "pay", type: "pay", shop: "beans", cart: "{{pick.data}}", next: "tell", onNo: "end" });
+  });
+
+  it("starts at the flow's shop, is incomplete without a shop and a cart, and follows a rename into its cart", () => {
+    const fresh = defaultContent("pay", coffee.assistants);
+    assert.deepEqual(fresh, { type: "pay", shop: "beans", cart: "" });
+    assert.equal(isIncomplete(fresh, coffee.assistants), true);
+    assert.equal(isIncomplete({ type: "pay", shop: "hud", cart: "[]" }, coffee.assistants), true, "Hud isn't a shop");
+    assert.equal(isIncomplete({ type: "pay", shop: "beans", cart: "{{pick.data}}" }, coffee.assistants), false);
+    assert.deepEqual(retargetContent({ type: "pay", shop: "beans", cart: "{{pick.data}}" }, "pick", "choose"), { type: "pay", shop: "beans", cart: "{{choose.data}}" });
+  });
+});

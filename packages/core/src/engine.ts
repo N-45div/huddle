@@ -1,12 +1,14 @@
 import { evaluate } from "./condition.ts";
 import { type Connector, memoryText, type Reply } from "./connector.ts";
 import { type Budget, budgetName, dollars, periodStart, priceOf, spendOf } from "./cost.ts";
+import { amountText, expired, keyText, parseSignable, type Payment, signableId, signableLine, signableText, signableTime, signedBy } from "./countersign.ts";
 import type { FactCheck, FactChecker } from "./factcheck.ts";
 import type { AgentStep, Guard } from "./guard.ts";
 import { alreadySays, type Learner } from "./memory/learn.ts";
 import { Memory } from "./memory/memory.ts";
 import { type Assistant, type Flow, type Step, turnAt } from "./schema.ts";
-import type { Approval, Note, Run, Store } from "./store.ts";
+import { cartLines, type ShopClient, shopClient, ShopError, type ShopOrder } from "./shop.ts";
+import type { Approval, Note, Run, SignRequest, Store } from "./store.ts";
 
 /** The setting that turns learning from what you say on ("on") or off. */
 export const LEARNING = "memory.learn";
@@ -19,6 +21,8 @@ import { type RunContext, render } from "./template.ts";
 
 /** A loop in a flow can't spin forever: a run stops after this many steps. */
 export const MAX_STEPS = 100;
+/** How long a payment waits for your board's signature before it has to be asked for again. */
+export const PAY_MINUTES = 10;
 
 export interface RunView {
   readonly id: string;
@@ -52,6 +56,9 @@ export interface EngineOptions {
   readonly checker?: FactChecker;
   /** Suggests notes from what you said in runs you start yourself, once you turn learning on; none by default. */
   readonly learner?: Learner;
+  /** How pay steps reach a shop, by its address (default: over HTTP); tests pass a stand-in. */
+  readonly shops?: (url: string) => ShopClient;
+  readonly now?: () => number;
 }
 
 /** A hand-off to a paid assistant when the budget is spent. */
@@ -66,6 +73,13 @@ export class HeldElsewhere extends Error {
   }
 }
 
+/** A yes for a payment, which only your board's signature can give. */
+export class NeedsSignature extends Error {
+  constructor() {
+    super("This payment needs your board's signature: hold the button on your board, or sign it on the virtual board in Devices. You can still say no here.");
+  }
+}
+
 export class Engine {
   readonly store: Store;
   readonly connectors: Readonly<Record<string, Connector>>;
@@ -74,6 +88,8 @@ export class Engine {
   readonly budget: Budget | null;
   readonly checker: FactChecker | null;
   readonly learner: Learner | null;
+  private readonly shops: (url: string) => ShopClient;
+  private readonly now: () => number;
   /** Runs to learn from once they end, with what the person said. */
   private readonly toLearn = new Map<string, string>();
 
@@ -85,6 +101,8 @@ export class Engine {
     this.budget = options.budget ?? null;
     this.checker = options.checker ?? null;
     this.learner = options.learner ?? null;
+    this.shops = options.shops ?? ((url) => shopClient(url));
+    this.now = options.now ?? Date.now;
   }
 
   /** What hand-offs with a known cost have spent in the budget's period (this month without one). */
@@ -126,18 +144,68 @@ export class Engine {
     if (!approval) throw new Error(`There's no approval ${approvalId}.`);
     if (approval.status !== "waiting") throw new Error(`Approval ${approvalId} was already answered (${approval.status}).`);
     if (yes && approval.heldBy) throw new HeldElsewhere(approval.heldBy.by, approval.heldBy.url);
+    if (yes && approval.signs) throw new NeedsSignature();
     void this.decide(approvalId, yes).catch((error: unknown) => console.error(`[huddle] approval ${approvalId}:`, error));
     return approval.runId;
   }
 
+  /** Takes your board's signature of a payment and returns at once; the run carries on in the background. Throws straight away if it isn't taken. */
+  sign(signId: string, signature: string, key: string): string {
+    const request = this.signable(signId, signature, key);
+    const late = expired(parseSignable(request.text), this.now());
+    // An expired one still goes through countersign, which fails its step so the run can ask again.
+    void this.countersign(signId, signature, key).catch((error: unknown) => console.error(`[huddle] signature for ${signId}:`, error));
+    if (late) throw new Error(`That payment expired before it was signed (it waits ${PAY_MINUTES} minutes). Try the run again to be asked again.`);
+    return request.runId ?? "";
+  }
+
+  /**
+   * Takes your board's signature of a payment a pay step is waiting on, and carries the run on to the shop's
+   * checkout. Taken only from a board you've added, of exactly the text it was shown, before it expires; a
+   * payment that expired fails its step, so trying the run again asks your board again.
+   */
+  async countersign(signId: string, signature: string, key: string): Promise<RunView> {
+    const request = this.signable(signId, signature, key);
+    const approval = this.store.approvalForSign(signId);
+    if (!approval) throw new Error("Nothing is waiting on that payment's signature any more.");
+    if (expired(parseSignable(request.text), this.now())) {
+      this.store.moveSignRequest(signId, "waiting", { status: "expired" });
+      this.store.decide(approval.id, false);
+      const run = this.store.run(approval.runId)!;
+      return this.fail(run.id, approval.stepId, run.context, `The payment expired before your board signed it (it waits ${PAY_MINUTES} minutes). Try the run again to be asked again.`);
+    }
+    const board = this.store.signer(keyText(key))!;
+    if (!this.store.markSigned(signId, signature, board.key)) throw new Error("That payment was already signed or answered.");
+    this.store.log(approval.runId, approval.stepId, "signed", { sign: signId, by: board.name, board: board.fingerprint });
+    return this.decide(approval.id, true, { signed: true });
+  }
+
+  /** The waiting payment a signature is for, once it's checked: one of your boards', of exactly its text. */
+  private signable(signId: string, signature: string, key: string): SignRequest {
+    const request = this.store.signRequest(signId);
+    if (!request || request.kind !== "buy") throw new Error(`There's no payment ${signId} waiting to be signed.`);
+    if (request.status !== "waiting") throw new Error(`That payment was already ${request.status}.`);
+    let board;
+    try {
+      board = this.store.signer(keyText(key));
+    } catch {
+      board = null;
+    }
+    if (!board) throw new Error("That key isn't one of your boards'. Add the board in Devices first.");
+    if (!signedBy(request.text, signature, board.key)) throw new Error("That isn't your board's signature of this payment, so it wasn't taken.");
+    return request;
+  }
+
   /**
    * Answers an approval and carries its run on: yes goes to `next`, no to `onNo` or ends the run as declined.
-   * A hand-off held by a guard's own approver takes a yes only from there (`released`); a no works anywhere.
+   * A hand-off held by a guard's own approver takes a yes only from there (`released`), and a payment only from
+   * your board's signature (`signed`); a no works anywhere.
    */
-  async decide(approvalId: string, yes: boolean, options: { readonly released?: boolean } = {}): Promise<RunView> {
+  async decide(approvalId: string, yes: boolean, options: { readonly released?: boolean; readonly signed?: boolean } = {}): Promise<RunView> {
     const approval = this.store.approval(approvalId);
     if (!approval) throw new Error(`There's no approval ${approvalId}.`);
     if (yes && approval.heldBy && !options.released) throw new HeldElsewhere(approval.heldBy.by, approval.heldBy.url);
+    if (yes && approval.signs && !options.signed) throw new NeedsSignature();
     const run = this.store.run(approval.runId);
     if (!run) throw new Error(`The run for approval ${approvalId} is gone.`);
     if (!this.store.decide(approvalId, yes)) throw new Error(`Approval ${approvalId} was already answered (${approval.status}).`);
@@ -150,6 +218,15 @@ export class Engine {
       return this.end(run.id, "declined", null, run.context, null);
     }
     const step = run.flow.steps.find((candidate) => candidate.id === approval.stepId);
+    // A payment: signed, the run goes on to the shop's checkout; no, it goes to onNo or ends as declined.
+    if (step?.type === "pay") {
+      if (yes) return this.advance(run, step.id);
+      if (approval.signs) this.store.moveSignRequest(approval.signs, "waiting", { status: "declined" });
+      this.store.log(run.id, step.id, "declined", { message: approval.message });
+      const context: RunContext = { ...run.context, steps: { ...run.context.steps, [step.id]: { text: "no", data: { paid: false } } } };
+      if (step.onNo) return this.advance({ ...run, context }, step.onNo);
+      return this.end(run.id, "declined", null, context, null);
+    }
     if (!step || step.type !== "approval") throw new Error(`Approval ${approvalId} points at a step that isn't an approval.`);
     this.store.log(run.id, step.id, yes ? "approved" : "declined", { message: approval.message });
     const context: RunContext = { ...run.context, steps: { ...run.context.steps, [step.id]: { text: yes ? "yes" : "no", data: yes } } };
@@ -256,6 +333,8 @@ export class Engine {
         this.store.log(run.id, step.id, "waiting", { approval: approval.id, message });
         return { wait: true };
       }
+      case "pay":
+        return this.pay(run, step, context);
       case "memory": {
         const note = render(step.note, context);
         const source = `run ${run.id}, step ${step.id}`;
@@ -331,6 +410,75 @@ export class Engine {
     this.store.addSpend(run, step.id, assistant.id, cost);
     this.store.log(run.id, step.id, "answered", { ...answer, cost });
     return { text: answer.text, data: answer.data };
+  }
+
+  /**
+   * A pay step. First the shop prices the cart, and the payment is written for your board to show and sign; the
+   * run waits. Once your board has signed, the shop is sent the signed payment, and its order is the step's answer.
+   * A step whose payment failed asks your board again when the run is tried again; one still with PayPal is sent
+   * to the shop again, which never charges a payment twice.
+   */
+  private async pay(run: Run, step: Extract<Step, { type: "pay" }>, context: RunContext): Promise<{ wait: true } | { wait: false; context: RunContext; next: string }> {
+    const assistant = run.flow.assistants.find((candidate) => candidate.id === step.shop);
+    if (!assistant?.url || assistant.connector !== "shop") throw new Error(`Step "${step.id}" buys at "${step.shop}", which isn't one of the flow's shops.`);
+    const shop = this.shops(assistant.url);
+    const next = step.next ?? following(run.flow, step);
+    const earlier = this.store.signRequestFor(run.id, step.id);
+    if (earlier?.status === "signed") return { wait: false, context: await this.checkout(run, step.id, shop, earlier, context), next };
+    // Paid, then cut off before the run moved on (Huddle stopped): what was paid is the answer, not a second payment.
+    if (earlier?.status === "paid" && !(step.id in context.steps)) return { wait: false, context: paidContext(context, step.id, earlier), next };
+
+    let lines;
+    try {
+      lines = cartLines(render(step.cart, context));
+    } catch (error) {
+      throw new Error(`Step "${step.id}" can't buy anything: ${error instanceof Error ? error.message : String(error)}.`);
+    }
+    const cart = await shop.price(lines);
+    const until = Math.min(Date.parse(cart.expires), this.now() + PAY_MINUTES * 60_000);
+    if (!(until > this.now() + 60_000)) throw new Error(`${cart.shop.name}'s prices for that cart don't hold long enough to be signed; try again.`);
+    const payment: Payment = {
+      v: 1,
+      kind: "buy",
+      id: signableId("pay"),
+      shop: cart.shop,
+      cart: cart.id,
+      items: cart.items.map((line) => ({ name: line.name, qty: line.qty, price: line.price })),
+      total: cart.total,
+      currency: cart.currency,
+      expires: signableTime(until),
+    };
+    const text = signableText(payment);
+    try {
+      parseSignable(text);
+    } catch (error) {
+      throw new Error(`${cart.shop.name}'s cart can't be signed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    this.store.addSignRequest({ id: payment.id, kind: "buy", text, runId: run.id, stepId: step.id, shop: shop.url, expires: payment.expires });
+    const approval = this.store.addApproval(run.id, step.id, signableLine(payment), null, null, payment.id);
+    this.store.log(run.id, step.id, "waiting", { approval: approval.id, sign: payment.id, shop: payment.shop, cart: cart.id, total: payment.total, currency: payment.currency, lines: payment.items.length, expires: payment.expires });
+    return { wait: true };
+  }
+
+  /** Sends the shop a payment your board signed, and keeps what the shop answers. */
+  private async checkout(run: Run, stepId: string, shop: ShopClient, request: SignRequest, context: RunContext): Promise<RunContext> {
+    let order: ShopOrder;
+    try {
+      order = await shop.checkout({ text: request.text, signature: request.signature!, key: request.key! });
+    } catch (error) {
+      // The shop said no (not linked, the cart changed, PayPal declined): asked again only with a new signature.
+      // The shop couldn't be reached: the same signed payment goes again when the run is tried again.
+      if (error instanceof ShopError) this.store.moveSignRequest(request.id, "signed", { status: "failed", error: error.message });
+      throw error;
+    }
+    if (order.status === "charging") throw new Error("The shop is still waiting to hear from PayPal. Try the run again in a moment: the same payment is never charged twice.");
+    if (order.status !== "paid" && order.status !== "pending") {
+      this.store.moveSignRequest(request.id, "signed", { status: "failed", error: order.error ?? order.status });
+      throw new Error(`PayPal didn't take the payment${order.error ? `: ${order.error}` : ` (the order is ${order.status})`}.`);
+    }
+    this.store.moveSignRequest(request.id, "signed", { status: "paid", result: order });
+    this.store.log(run.id, stepId, "paid", { sign: request.id, order: order.id, status: order.status, paypal: order.paypal, total: order.total, currency: order.currency });
+    return paidContext(context, stepId, { ...request, status: "paid", result: order });
   }
 
   /** Waits on every held approval still waiting (after a restart, say): they carry on when their approver decides. */
@@ -452,6 +600,19 @@ interface Answer {
 }
 
 const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** A paid payment as its step's answer: what was paid, to whom, and the shop's order with PayPal's ids. */
+function paidContext(context: RunContext, stepId: string, request: SignRequest): RunContext {
+  const payment = parseSignable(request.text) as Payment;
+  const order = request.result as ShopOrder;
+  const amount = amountText(payment.total, payment.currency);
+  const text =
+    order.status === "pending"
+      ? `PayPal is reviewing the ${amount} payment to ${payment.shop.name} (order ${order.paypal.orderId ?? order.id}); it isn't taken yet.`
+      : `Paid ${amount} to ${payment.shop.name} with PayPal (order ${order.paypal.orderId ?? order.id}).`;
+  const data = { paid: true, status: order.status, shop: payment.shop, total: payment.total, currency: payment.currency, items: payment.items, payment: payment.id, order: order.id, paypal: order.paypal };
+  return { ...context, steps: { ...context.steps, [stepId]: { text, data } } };
+}
 
 /** The step after this one in the file, or "end". */
 function following(flow: Flow, step: Step): string {

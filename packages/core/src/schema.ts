@@ -201,7 +201,26 @@ const TogetherStep = z.object({
   next: target.optional(),
 });
 
-export const Step = z.discriminatedUnion("type", [AgentStep, ConditionStep, ApprovalStep, MemoryStep, TogetherStep]);
+/**
+ * Buys a cart at a shop, once your board has signed for it. The shop prices the cart, never an assistant; Huddle
+ * writes the payment (the shop, each line, the total, when it expires) for your board to show and sign, and only
+ * that signature lets the run go on, to the shop's checkout, which checks the signature again and charges your
+ * PayPal saved there. The step's answer says what was paid; its data has the shop's order and PayPal's ids. A no,
+ * from anywhere, goes to onNo, or ends the run as declined.
+ */
+const PayStep = z.object({
+  id,
+  type: z.literal("pay"),
+  /** The shop: one of the flow's assistants, with the shop connector and the shop's address. */
+  shop: id,
+  /** What to buy, as JSON: [{ "sku": "beans-house", "qty": 2 }] or { "items": [...] }, usually an earlier step's answer: "{{pick.data}}". */
+  cart: z.string().min(1),
+  next: target.optional(),
+  /** Where a "no" goes; without it, the run ends as declined. */
+  onNo: target.optional(),
+});
+
+export const Step = z.discriminatedUnion("type", [AgentStep, ConditionStep, ApprovalStep, MemoryStep, TogetherStep, PayStep]);
 export type Step = z.infer<typeof Step>;
 
 /** One assistant's turn: an agent step, or one of a together step's members (`group` is that step's id). */
@@ -370,7 +389,12 @@ export const Flow = z
         check(step.id, step.else);
       } else {
         check(step.id, step.next);
-        if (step.type === "approval") check(step.id, step.onNo);
+        if (step.type === "approval" || step.type === "pay") check(step.id, step.onNo);
+      }
+      if (step.type === "pay") {
+        const shop = flow.assistants.find((assistant) => assistant.id === step.shop);
+        if (!shop) ctx.addIssue({ code: "custom", message: `step "${step.id}" buys at "${step.shop}", which isn't one of the flow's assistants` });
+        else if (shop.connector !== "shop") ctx.addIssue({ code: "custom", message: `step "${step.id}" buys at "${step.shop}", which isn't a shop (its connector is ${shop.connector})` });
       }
     }
   });
