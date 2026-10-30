@@ -18,7 +18,7 @@ export { CONTEXT_DEV_API, CONTEXT_DEV_CREDIT_USD, contextDev, type ContextDevRes
 export { type ChatModel, type CheckedFact, type FactCheck, type FactChecker, factChecker, type FactCheckOptions, quoted, type Verdict as FactVerdict } from "./factcheck.ts";
 export { TAVILY_API, TAVILY_CREDIT_USD, type TavilyResult, type TavilySearch, tavilySearch } from "./tavily.ts";
 export { nemoSpeech, type NemoSpeechOptions, numberWords, SAMPLE_RATE, sentences, type Speech, speechLanguage, spokenForm, wav } from "./speech.ts";
-export { isTokenFactory, NEMOTRON, refreshTokenFactoryPrices, thinkingFor, TOKEN_FACTORY_URL, tokenFactoryModels, tokenFactoryPrice } from "./tokenfactory.ts";
+export { currentModel, isTokenFactory, NEMOTRON, RETIRED, refreshTokenFactoryPrices, thinkingFor, TOKEN_FACTORY_URL, tokenFactoryModels, tokenFactoryPrice } from "./tokenfactory.ts";
 export { openshell } from "./connectors/openshell.ts";
 export { cli, type Ran, type Runner, type RunOptions, runProgram } from "./connectors/cli.ts";
 export { type PactDelegation, pact } from "./connectors/pact.ts";

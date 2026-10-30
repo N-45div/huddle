@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
-import { Assistants, type Budget, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, factChecker, jevJudge, jevPresenter, type Judge, Memory, Meter, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, OWN_CALLS_PER_MINUTE, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, nemoSpeech, noteTaker, SignIns, Store, storedGrants, tidyMemory, viewWriter } from "@huddle/core";
+import { Assistants, type Budget, currentModel, isTokenFactory, DEFAULT_MAX_USD, defaultConnectors, dollars, embedder, Engine, factChecker, jevJudge, jevPresenter, type Judge, Memory, Meter, modelJudge, modelPresenter, NEMOTRON, OpenShell, openshell, OWN_CALLS_PER_MINUTE, PactIdentity, pact, parseBudget, RECALL_BUDGET, refreshTokenFactoryPrices, reranker, Router, TOKEN_FACTORY_URL, rulesPresenter, type Guard, guardFromEnv, nemoSpeech, noteTaker, SignIns, Store, storedGrants, tidyMemory, viewWriter } from "@huddle/core";
 import { createApp } from "./app.ts";
 import { describer } from "./describe.ts";
 import { Asker, planner } from "./just-ask.ts";
@@ -93,7 +93,8 @@ const nebiusKey = env("NEBIUS_API_KEY");
 const onNemotron = !env("HUDDLE_LLM_URL") && Boolean(nebiusKey);
 const llmUrl = env("HUDDLE_LLM_URL") ?? (onNemotron ? TOKEN_FACTORY_URL : undefined);
 const llmKey = env("HUDDLE_LLM_KEY") ?? (onNemotron ? nebiusKey : undefined);
-const llmModel = env("HUDDLE_LLM_MODEL");
+// A model Token Factory retired, named here, is asked as its replacement.
+const llmModel = ((model) => (model && isTokenFactory(llmUrl) ? currentModel(model) : model))(env("HUDDLE_LLM_MODEL"));
 const modelFor = (tier: keyof typeof NEMOTRON): string | undefined => llmModel ?? (onNemotron ? NEMOTRON[tier] : undefined);
 const quickModel = modelFor("lightning");
 const fillModel = modelFor("super");

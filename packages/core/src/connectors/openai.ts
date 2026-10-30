@@ -1,6 +1,7 @@
 import { type Connector, dataIn, keyFor, memoryText } from "../connector.ts";
 import type { Usage } from "../cost.ts";
 import type { Assistant } from "../schema.ts";
+import { currentModel, isTokenFactory } from "../tokenfactory.ts";
 
 /**
  * Assistants that answer the OpenAI chat-completions format, which many self-hosted ones serve:
@@ -31,7 +32,8 @@ export function openai(fetcher: typeof fetch = globalThis.fetch, extra?: (assist
         fetcher(url, {
           method: "POST",
           headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) },
-          body: JSON.stringify({ model: assistant.model ?? "default", messages, stream: false, ...(cap ? { [cap]: assistant.maxTokens } : {}), ...extra?.(assistant) }),
+          // On Token Factory, a model it retired is asked as its replacement.
+          body: JSON.stringify({ model: assistant.model ? (isTokenFactory(assistant.url) ? currentModel(assistant.model) : assistant.model) : "default", messages, stream: false, ...(cap ? { [cap]: assistant.maxTokens } : {}), ...extra?.(assistant) }),
           signal: signal ?? AbortSignal.timeout(TIMEOUT_MS),
         });
       const read = async (response: Response) =>
