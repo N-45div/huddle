@@ -24,7 +24,7 @@ export const NEMOTRON = {
 } as const;
 
 /**
- * Models Token Factory retired from Serverless on November 9 2026, and what to ask instead: Nebius's own
+ * Models Token Factory takes off Serverless on November 9 2026, and what to ask instead: Nebius's own
  * replacement for Nemotron 3 Super, and Lightning, at Nano's price, for Nano. A flow or an assistant saved with
  * one of them is asked its replacement, so it keeps working.
  */
@@ -33,7 +33,7 @@ export const RETIRED: Readonly<Record<string, string>> = {
   "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B": NEMOTRON.lightning,
 };
 
-/** The model to ask Token Factory for: a retired one's replacement, else the model itself. */
+/** The model to ask Token Factory for: a retiring one's replacement, else the model itself. */
 export const currentModel = (model: string): string => RETIRED[model] ?? model;
 
 export const isTokenFactory = (url: string | undefined): boolean => {
@@ -55,7 +55,7 @@ const prices = new Map<string, Price>([
   [NEMOTRON.ultra, { input: 1, output: 3, call: 0 }],
 ]);
 
-/** What a Token Factory model charges, if Huddle knows it: a retired one, what its replacement charges. */
+/** What a Token Factory model charges, if Huddle knows it: a retiring one, what its replacement charges. */
 export const tokenFactoryPrice = (model: string | undefined): Price | null => (model ? (prices.get(currentModel(model)) ?? null) : null);
 
 /** Reads every model's current price from Token Factory's public catalog (no key needed); answers how many it read. */
