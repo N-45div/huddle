@@ -16,6 +16,7 @@ import { openshell } from "./openshell.ts";
 import { pact } from "./pact.ts";
 import { openai } from "./openai.ts";
 import { vllm } from "./vllm.ts";
+import { shop } from "./shop.ts";
 import { sochen } from "./sochen.ts";
 
 /** Every connector Huddle ships, by the name a flow file uses. openclaw and hermes are A2A presets. */
@@ -42,5 +43,6 @@ export function defaultConnectors(): Readonly<Record<string, Connector>> {
     instinct: instinct(),
     email: email(),
     monid: monid(),
+    shop: shop(),
   };
 }

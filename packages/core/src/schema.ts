@@ -28,10 +28,10 @@ export const Assistant = z.object({
   /** What it's good at, in a sentence: what the router's judge reads to pick it. */
   description: z.string().max(500).optional(),
   /** How to reach it: openclaw and hermes are A2A with their usual local address filled in. */
-  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "vllm", "nebius", "tavily", "contextdev", "cli", "openshell", "pact", "homeassistant", "agentzero", "instinct", "email", "monid"]),
+  connector: z.enum(["mock", "http", "sochen", "a2a", "openclaw", "hermes", "openai", "ollama", "vllm", "nebius", "tavily", "contextdev", "cli", "openshell", "pact", "homeassistant", "agentzero", "instinct", "email", "monid", "shop"]),
   /** The slices of shared memory this assistant may read. */
   memory: z.array(z.string().min(1)).default([]),
-  /** http: where to POST. a2a: the agent's base address or its card. openai: the API base. sochen: if not https://sochen.dev. instinct: if not http://127.0.0.1:8080. */
+  /** http: where to POST. a2a: the agent's base address or its card. openai: the API base. sochen: if not https://sochen.dev. instinct: if not http://127.0.0.1:8080. shop: the shop's address. */
   url: z.string().url().optional(),
   /** The environment variable that holds this assistant's key. Never the key itself. */
   keyEnv: z.string().regex(/^[A-Z][A-Z0-9_]*$/, "an environment variable name, like SOCHEN_API_KEY").optional(),
@@ -119,6 +119,9 @@ export function assistantProblems(assistant: Assistant): string[] {
   }
   if (assistant.connector === "monid" && !assistant.tool) {
     problems.push(`assistant "${assistant.id}" is a Monid tool: say which one (tool), as provider/endpoint; \`huddle monid find\` lists them`);
+  }
+  if (assistant.connector === "shop" && !assistant.url) {
+    problems.push(`assistant "${assistant.id}" is a shop: give its address (url), like http://localhost:7700/shop`);
   }
   if (assistant.connector === "pact" && (!assistant.url || !assistant.audience)) {
     problems.push(`assistant "${assistant.id}" is a business's agent over PACT: give its Agent Card URL (url) and the Provider's audience (audience)`);

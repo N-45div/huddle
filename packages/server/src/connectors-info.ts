@@ -202,6 +202,13 @@ export const CONNECTORS: readonly ConnectorInfo[] = [
     ],
   },
   {
+    id: "shop",
+    name: "Shop (pays with PayPal)",
+    description:
+      "A shop that sells to agents, like Bean & Leaf at /shop: the step's request is what to look for, and the answer is what it has, with each sku and price. Buying is a Pay step, which waits for your board's signature before the shop charges your PayPal. Memory isn't sent.",
+    fields: [{ key: "url", label: "Shop's address", required: true, placeholder: "http://localhost:7700/shop" }],
+  },
+  {
     id: "email",
     name: "Email (Resend)",
     description:

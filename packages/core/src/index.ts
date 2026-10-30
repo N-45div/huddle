@@ -27,6 +27,7 @@ export { type GrantStore, type SignIn, SignIns, storedGrants } from "./pact/sign
 export { newKey, PactIdentity, type PrivateJwk, type PublicJwk, thumbprint } from "./pact/identity.ts";
 export { DEFAULT_CERT_DIR, type ExecResult, OpenShell, type OpenShellOptions, type SandboxRequest } from "./openshell/client.ts";
 export { sochen } from "./connectors/sochen.ts";
+export { shop } from "./connectors/shop.ts";
 export { DEFAULT_MAX_USD, monid, monidInput } from "./connectors/monid.ts";
 export {
   blockedReason,
@@ -90,3 +91,4 @@ export {
   signableTime,
   signedBy,
 } from "./countersign.ts";
+export { type CartLine, cartLines, type PricedCart, type ShopClient, shopClient, ShopError, type ShopOrder, type ShopProduct } from "./shop.ts";
